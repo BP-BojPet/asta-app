@@ -1,0 +1,118 @@
+<!-- was.läuft – Banner für die AStA-Website (WordPress/Elementor: Widget „HTML" einfügen).
+     EINMAL einsetzen, danach alles aus der Verwaltung steuern: Das Stück hier holt sich Texte
+     und Ein/Aus bei jedem Seitenaufruf von banner.php. Ohne Antwort zeigt es gar nichts –
+     lieber kein Band als ein veraltetes.
+     Alles in dieser einen Datei: kein Plugin, keine Schrift, kein Skript von außen.
+     Alle Regeln hängen unter #wlb, damit sie mit dem Theme nicht ins Gehege kommen. -->
+<div id="wlb" hidden data-quelle="WLB_URL">
+  <div class="wlb-box">
+    <a class="wlb-in" href="#">
+      <span class="wlb-mark">was<i>.</i><b>läuft</b></span>
+      <span class="wlb-txt">
+        <strong></strong>
+        <span class="wlb-satz"></span>
+        <span class="wlb-chips"></span>
+      </span>
+      <span class="wlb-cta"></span>
+    </a>
+    <button class="wlb-zu" type="button" aria-label="Hinweis schließen">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6 L18 18 M18 6 L6 18"/></svg>
+    </button>
+  </div>
+</div>
+
+<style>
+/* Der äußere Rahmen hält Abstand zum Fensterrand, der innere begrenzt die Breite: So klebt das
+   Band auf breiten Bildschirmen nicht an den Kanten und läuft auf dem Handy trotzdem randlos
+   durch. Die Breite orientiert sich an üblichen Theme-Containern. */
+#wlb{padding:1.4rem 1.2rem 0}
+#wlb .wlb-box{position:relative;max-width:1180px;margin:0 auto;border-radius:22px;overflow:hidden;
+  background:#141220;color:#f4f1ea;font-family:inherit;
+  box-shadow:0 22px 50px rgba(20,18,32,.30);
+  animation:wlb-rein .55s cubic-bezier(.16,.9,.3,1) both}
+#wlb .wlb-box::before{content:"";position:absolute;inset:-40% -10% auto;height:200%;pointer-events:none;
+  background:radial-gradient(60% 55% at 20% 0%,rgba(255,92,114,.45),transparent 70%),
+             radial-gradient(52% 52% at 84% 15%,rgba(255,217,61,.32),transparent 70%)}
+#wlb .wlb-in{position:relative;z-index:1;display:flex;flex-wrap:wrap;align-items:center;
+  gap:1.1rem 1.8rem;padding:2.1rem 4rem 2.1rem 2.2rem;text-decoration:none;color:inherit}
+#wlb .wlb-mark{flex:none;font-size:1.9rem;font-weight:800;letter-spacing:-.035em;white-space:nowrap}
+#wlb .wlb-mark i{font-style:normal;color:#d9f24b}
+#wlb .wlb-mark b{background:linear-gradient(92deg,#ffd93d,#ff5c72);-webkit-background-clip:text;
+  background-clip:text;color:transparent}
+#wlb .wlb-txt{flex:1 1 20rem;display:flex;flex-direction:column;gap:.3rem;min-width:0}
+#wlb .wlb-txt strong{font-size:1.42rem;font-weight:800;letter-spacing:-.015em;line-height:1.2}
+#wlb .wlb-satz{font-size:.98rem;color:rgba(244,241,234,.80);line-height:1.5}
+/* Stichpunkte als Pillen: geben dem Band Höhe und sagen in drei Wörtern, was es ist. */
+#wlb .wlb-chips{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.35rem}
+#wlb .wlb-chips em{font-style:normal;font-size:.76rem;font-weight:700;letter-spacing:.01em;
+  padding:.26rem .68rem;border-radius:999px;
+  background:rgba(255,255,255,.10);color:rgba(244,241,234,.92)}
+#wlb .wlb-cta{flex:none;background:#d9f24b;color:#17141c;font-weight:800;font-size:1rem;
+  padding:.8rem 1.6rem;border-radius:999px;transition:transform .15s ease,box-shadow .15s ease}
+#wlb .wlb-in:hover .wlb-cta{transform:translateY(-2px);box-shadow:0 10px 22px rgba(217,242,75,.28)}
+/* Der Schließer sitzt IM Band, nicht auf seiner Kante: eigener Abstand, eigene Fläche, und als
+   SVG statt „×" – das Zeichen sitzt je nach Theme-Schrift unterschiedlich hoch. */
+#wlb .wlb-zu{position:absolute;top:.9rem;right:.9rem;z-index:2;width:2.3rem;height:2.3rem;
+  display:grid;place-items:center;padding:0;border:0;border-radius:999px;cursor:pointer;
+  background:rgba(255,255,255,.10);color:#f4f1ea;transition:background .15s ease}
+#wlb .wlb-zu:hover{background:rgba(255,255,255,.24)}
+#wlb .wlb-zu svg{width:1.05rem;height:1.05rem;fill:none;stroke:currentColor;stroke-width:2.2;
+  stroke-linecap:round}
+@media (max-width:720px){
+  #wlb{padding:1rem .8rem 0}
+  #wlb .wlb-in{padding:1.5rem 1.3rem;gap:.8rem}
+  #wlb .wlb-mark{font-size:1.6rem}
+  #wlb .wlb-txt strong{font-size:1.2rem}
+  #wlb .wlb-cta{width:100%;text-align:center}
+  #wlb .wlb-zu{top:.6rem;right:.6rem}
+}
+@keyframes wlb-rein{
+  from{opacity:0;transform:translateY(-1.4rem) scale(.985)}
+  to  {opacity:1;transform:none}
+}
+@media (prefers-reduced-motion:reduce){
+  #wlb .wlb-box{animation:none}
+  #wlb .wlb-in:hover .wlb-cta{transform:none;box-shadow:none}
+}
+</style>
+
+<script>
+(function () {
+  'use strict';
+  var el = document.getElementById('wlb');
+  if (!el || !window.fetch) return;
+
+  /* Weggeklickt bleibt weggeklickt – aber nur für eine Weile, sonst sieht das Banner nach dem
+     ersten Klick nie wieder jemand. Fällt der Speicher aus (privates Fenster), zeigen wir es
+     lieber einmal zu viel als gar nicht. */
+  var KEY = 'wlb-zu-bis', TAGE = 21;
+  var bis = 0;
+  try { bis = parseInt(localStorage.getItem(KEY) || '0', 10) || 0; } catch (e) {}
+  if (bis > Date.now()) return;
+
+  /* Texte und Ein/Aus kommen aus der Verwaltung. Schlägt der Abruf fehl oder steht die Seite
+     auf „aus", bleibt das Banner unsichtbar – ein Band mit leerem Text wäre schlimmer. */
+  fetch(el.getAttribute('data-quelle'), { credentials: 'omit' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) {
+      if (!d || !d.aktiv) return;
+      el.querySelector('.wlb-in').setAttribute('href', d.url);
+      el.querySelector('.wlb-txt strong').textContent = d.titel;
+      el.querySelector('.wlb-satz').textContent = d.satz;
+      el.querySelector('.wlb-cta').textContent = d.knopf;
+      var chips = el.querySelector('.wlb-chips');
+      (d.chips || []).forEach(function (c) {
+        var e = document.createElement('em');
+        e.textContent = c;
+        chips.appendChild(e);
+      });
+      el.hidden = false;
+    })
+    .catch(function () {});
+
+  el.querySelector('.wlb-zu').addEventListener('click', function () {
+    el.hidden = true;
+    try { localStorage.setItem(KEY, String(Date.now() + TAGE * 86400000)); } catch (e) {}
+  });
+})();
+</script>

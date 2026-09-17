@@ -1,0 +1,26 @@
+# Statische Dateien lange zwischenspeichern lassen.
+#
+# WARUM: Ohne Vorgabe fragt der Browser bei JEDEM Seitenwechsel für jede Datei nach, ob sie
+# noch aktuell ist (bedingte Anfrage → „304 Nicht geändert"). Das sind pro Klick mehrere
+# Netz-Runden zum Server, bevor überhaupt etwas gezeichnet werden kann – in Firefox sieht man
+# die Seite dadurch sichtbar entstehen. Safari kaschiert dasselbe hinter den View Transitions.
+#
+# GEFAHRLOS, WEIL VERSIONIERT: Alle hier ausgelieferten Dateien hängen an einer Versions-Kennung
+# in der Adresse (asset_v() setzt ?v=<Änderungszeit>, der Icon-Font trägt ?v3.31.0). Nach einem
+# Deploy ändert sich die Adresse und der Browser holt die Datei neu – „immutable" kann also
+# keine veraltete Fassung festhalten.
+<IfModule mod_headers.c>
+    <FilesMatch "\.(css|js|woff2|woff|ttf|png|jpg|jpeg|gif|svg|webp|ico)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
+</IfModule>
+
+# Fallback, falls mod_headers fehlt, mod_expires aber da ist
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/css                  "access plus 1 year"
+    ExpiresByType application/javascript    "access plus 1 year"
+    ExpiresByType font/woff2                "access plus 1 year"
+    ExpiresByType image/png                 "access plus 1 year"
+    ExpiresByType image/svg+xml             "access plus 1 year"
+</IfModule>

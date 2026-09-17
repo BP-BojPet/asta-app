@@ -1,0 +1,1936 @@
+/* =================================================================================================
+   was.läuft – das öffentliche Veranstaltungsportal.
+
+   BEWUSST EIGENSTÄNDIG: Dies ist der einzige öffentliche Bereich, der NICHT die style.css der App
+   mitbenutzt. Die App ist Petrol, ruhig, ein Arbeitswerkzeug. Diese Seite soll wie ein
+   Stadtmagazin wirken – dunkler Kopf, große Typografie, Bild zuerst. Wer hier etwas ändert, ändert
+   es nur hier; umgekehrt zieht eine Änderung an der App hier nichts nach.
+
+   ACHTUNG CSP: Die Seiten laufen unter default-src 'none' ohne 'unsafe-inline'. Ein style="…"
+   im HTML wird stillschweigend verworfen. ALLES Gestalterische steht hier – auch die acht
+   Platzhalterfarben für Beiträge ohne Bild (.wl-ph-1 … .wl-ph-8, vergeben in wl_placeholder_class()).
+   ================================================================================================= */
+
+/* ---------- Farben ------------------------------------------------------------------------------
+   ALLES kommt aus dem Logo: der Verlauf Gelb → Koralle und die Limette. MEHR FARBEN GIBT ES
+   NICHT – jede weitere lässt die Seite beliebig wirken.
+
+   Drei Rollen, sauber getrennt:
+   • Koralle  = das Interaktive (Links, aktive Zustände, Ränder)
+   • Gelb     = das Auszeichnende (zusammen mit Koralle im Logo, Glanzlichter)
+   • Limette  = das Signalisierende („kostenlos", Hauptknopf) – knallt und meint auch etwas
+
+   Die Grautöne sind WARM (ein Hauch Gelb), nicht kühl-lila: Kühles Grau neben Koralle wirkt
+   schmutzig, warmes Grau trägt sie. */
+:root {
+  --wl-ink:    #17141c;   /* Kopf, Fußzeile, Schrift – fast schwarz mit warmem Stich */
+  --wl-ink-2:  #241f2c;
+  --wl-paper:  #fbf9f5;   /* warmes Papier statt Blauweiß */
+  --wl-card:   #ffffff;
+  --wl-line:   #eae4da;
+  --wl-mut:    #6e6960;   /* auf Papier 5,4:1 – als Fließtext zulässig */
+  --wl-acc:    #ff5c72;   /* Koralle: Flächen, Ränder, aktive Zustände */
+  --wl-acc-2:  #ffd93d;   /* Gelb: zweite Logo-Farbe */
+  --wl-acc-3:  #d9f24b;   /* Limette: „kostenlos", Hauptknopf */
+  /* Koralle als SCHRIFT auf Weiß hat nur 3,1:1 und wäre unlesbar. Für Text deshalb die
+     abgedunkelte Fassung – 4,8:1. Das ist kein Schönheitsfehler, sondern der Grund für zwei
+     Variablen: Fläche und Schrift brauchen verschiedene Helligkeiten. */
+  --wl-link:   #d1364d;
+  --wl-rad:    16px;
+  /* 1360 statt 1520: Bei 1520 kippte das Raster auf sehr breiten Schirmen in FÜNF Spalten
+     (5 × 268 px + Lücken = 1424) und die Seite zerlief. 1360 bleibt unter dieser Schwelle –
+     höchstens vier Spalten, atmet aber immer noch deutlich mehr als die alten 1180. */
+  --wl-max:    1360px;
+  --wl-logo:   #ff5c72;  /* Koralle – das Zielende des Marken-Verlaufs; färbt Akzente wie den
+                            Strich unterm Zeitwort, damit sie zur Marke gehören */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --wl-paper: #100e13;
+    --wl-card:  #1c1922;
+    --wl-line:  #2f2935;
+    --wl-mut:   #a09a90;
+    --wl-link:  #ff8095;   /* umgekehrt: auf Dunkel muss die Koralle HELLER werden */
+  }
+  body.wl { color: #f4f1ea; }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+
+body.wl {
+  margin: 0;
+  background: var(--wl-paper);
+  /* Wie in der App: Der Body ist mindestens sichtbereichshoch und wiederholt seinen
+     Hintergrund nie – auf kurzen Seiten kachelte der Browser ihn sonst über die Leinwand. */
+  min-height: 100vh;
+  background-repeat: no-repeat;
+  color: var(--wl-ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+@media (prefers-color-scheme: dark) { body.wl { color: #f4f1ea; } }
+
+body.wl a { color: inherit; text-decoration: none; }
+body.wl img { display: block; max-width: 100%; }
+
+/* EIN Container für alles – Kopfleiste, Bühne, Filter, Abschnitte, Fußzeile. Bliebe die
+   Kopfleiste als einzige randlos (Menü ganz außen, Inhalt darunter eingerückt), ließe genau
+   dieser Versatz die Seite eng wirken, obwohl sie es nicht ist. */
+/* Bewusst als GRUPPE und nicht als Klasse im HTML: Eine im Markup vergessene Klasse ließe
+   den Bereich randlos über den Bildschirm laufen. Hier kann das nicht passieren – wer einen
+   Abschnitt anlegt, trägt ihn einmal hier ein. */
+/* Banner und Karussell stehen INNERHALB eines .wl-sect („Nicht verpassen") und
+   dürfen sich deshalb nicht noch einmal selbst begrenzen – sie wären sonst schmaler als der
+   Abschnitt, in dem sie liegen. */
+.wl-in,
+.wl-top-in,
+.wl-hero-in,
+.wl-filters-in,
+.wl-sect,
+.wl-foot-in,
+.wl-wrap {
+  width: min(100% - 2.4rem, var(--wl-max));
+  margin-inline: auto;
+}
+
+/* ---------- Kopfleiste ------------------------------------------------------------------------ */
+.wl-top { background: var(--wl-ink); color: #fff; }
+/* Band für angemeldete Gruppen, wenn das Portal für alle anderen zu ist. Es sitzt direkt unter
+   der Kopfleiste und trägt Gelb – die auszeichnende Farbe: kein Fehler, keine Warnung, sondern
+   „du siehst hier mehr als die anderen". Bewusst über die volle Breite und nicht als Kärtchen im
+   Inhalt: Es gilt für die ganze Seite, nicht für einen Abschnitt. */
+.wl-intern { background: var(--wl-acc-2); color: var(--wl-ink); font-size: .82rem; line-height: 1.45; }
+.wl-intern .wl-in { padding: .5rem 0; }
+.wl-intern strong { font-weight: 800; }
+.wl-top-in {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+  padding: .9rem 0;
+}
+/* Die Wortmarke. „was" weiß, der Punkt in Limette, „läuft" im Verlauf Gelb → Koralle
+   (die Verlaufs-Regel steht unten bei „Farbe der Wortmarke"). Sie steht in der
+   Kopfleiste UND in der Überschrift – deshalb erbt sie Größe und Gewicht vom Umfeld, statt
+   eigene Werte zu setzen. was/Punkt sind inline-block, damit die Klick-Ostereier sie
+   verwandeln können – innerhalb des nowrap unbedenklich (die Land/au-Falle betrifft nur
+   umbrechbare Wortmitten). */
+.wl-mark { font-weight: 800; letter-spacing: -.03em; white-space: nowrap; }
+.wl-mark-was, .wl-mark-dot { display: inline-block; }
+/* Der Punkt ist der „."-GLYPH der Schrift, bewusst: Ein gezeichneter Ersatz-Kreis (::after
+   über unsichtbarem Zeichen) schwebt je nach Umgebung neben der Grundlinie und wirkt in der
+   Größe fremd. Lieber der echte Glyph mit seinen System-Eigenheiten – unter Windows/Segoe
+   fällt er leicht oval aus – als eine Attrappe, die überall fast stimmt. */
+.wl-mark-dot { color: var(--wl-acc-3); }
+
+/* ---------- Ostereier an der großen Überschrift (Klick auf was / Punkt / läuft / Landau) ---- */
+.wl-h1 .wl-mark-was, .wl-h1 .wl-mark-dot, .wl-h1 .wl-mark-w, .wl-h1-ort em { cursor: pointer; }
+/* „was" wächst kurz, der Impuls hallt zeitversetzt in Punkt und Wort hinein. */
+.wl-mark.is-hall .wl-mark-was { animation: wl-hall .5s cubic-bezier(.3,1.5,.5,1); }
+.wl-mark.is-hall .wl-mark-dot { animation: wl-hall .5s cubic-bezier(.3,1.5,.5,1) .14s; }
+.wl-mark.is-hall .wl-mark-w   { animation: wl-hall .5s cubic-bezier(.3,1.5,.5,1) .28s; }
+@keyframes wl-hall { 0%, 100% { transform: none; } 40% { transform: scale(1.16); } }
+/* „läuft" nimmt sich beim Anklicken wörtlich: Es beugt sich vor und joggt ein paar federnde
+   Schritte auf der Stelle, dann richtet es sich wieder auf. Absichtlich NUR eine Neigung
+   plus Hüpfer – kein Weglaufen (das Wort müsste über den restlichen Satz hinweg) und kein
+   erneutes Rad (das wirkt wie ein Schluckauf, nicht wie Laufen). */
+.wl-mark.is-los .wl-mark-w { animation: wl-lauf .75s ease-in-out; transform-origin: 18% 100%; }
+@keyframes wl-lauf {
+  0%, 100% { transform: none; }
+  16% { transform: skewX(-10deg) scaleY(.95); }
+  32% { transform: skewX(-13deg) translateY(-.12em); }
+  48% { transform: skewX(-11deg) translateY(.01em) scaleY(.97); }
+  64% { transform: skewX(-13deg) translateY(-.08em); }
+  82% { transform: skewX(-6deg)  translateY(0); }
+}
+/* Der Punkt fliegt wie ein angeschossener Ball davon: EINE Richtung, schräg nach oben raus,
+   dabei ausfaden – KEIN Bogen (hoch, dann runter), der liest sich wie ein Abprallen an einer
+   unsichtbaren Decke. Der Nachfolger fällt von oben ein und federt kurz nach. */
+.wl-mark-dot.is-kick { animation: wl-dot-kick .64s cubic-bezier(.2,.5,.4,1) forwards; }
+@keyframes wl-dot-kick {
+  0%   { transform: none; opacity: 1; }
+  60%  { opacity: .7; }
+  100% { transform: translate(1.9em, -1.6em); opacity: 0; }
+}
+.wl-mark-dot.is-fall { animation: wl-dot-fall .55s cubic-bezier(.34,1.4,.6,1); }
+@keyframes wl-dot-fall {
+  0%   { transform: translateY(-1.3em); opacity: 0; }
+  55%  { transform: translateY(.1em); opacity: 1; }
+  78%  { transform: translateY(-.07em); }
+  100% { transform: none; }
+}
+/* Die Landau-Blase: kleine Frage überm Wort, verschwindet nach 5 Sekunden von selbst.
+   Der Anker gilt NUR bei offener Blase (.is-pop, setzt das Skript): Ein dauerhaftes
+   position: relative gibt „in Landau?" eine eigene Render-Ebene, und beim Ebenen-Abbau
+   nach dem Buchstaben-Auftritt blitzt die linke Worthälfte kurz weg. */
+.wl-h1-ort.is-pop { position: relative; }
+.wl-stadt-pop {
+  position: absolute; left: 50%; bottom: 100%; transform: translateX(-50%);
+  margin-bottom: .45rem; white-space: nowrap;
+  background: var(--wl-acc-3); color: var(--wl-ink); border: 0; cursor: pointer;
+  font: inherit; font-size: .32em; font-weight: 700; letter-spacing: 0;
+  padding: .55em 1em; border-radius: 99px; box-shadow: 0 8px 24px rgba(23,20,28,.35);
+  animation: wl-pop-auf .22s cubic-bezier(.34,1.5,.6,1);
+}
+.wl-stadt-pop::after { /* Sprechblasen-Zipfel */
+  content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  border: .5em solid transparent; border-top-color: var(--wl-acc-3); border-bottom: 0;
+}
+@keyframes wl-pop-auf { from { opacity: 0; transform: translateX(-50%) translateY(.4em); } }
+/* Die Marke in der Kopfleiste soll sich als klickbar zu erkennen geben: Sie hebt sich beim
+   Zeigen leicht, und der Punkt hüpft einmal. */
+.wl-logo { font-size: 1.1rem; color: #fff; display: inline-block; transition: transform .16s ease; }
+.wl-logo:hover { transform: scale(1.05); }
+/* Der Hüpfer hängt an einer Skript-Klasse (mouseenter), NICHT an :hover: Nach einem Klick
+   auf die Marke lädt die Zielseite mit dem Zeiger noch über dem Logo – ein :hover-Auftritt
+   spielte dann sofort noch einmal, was bei schnellem Klicken wie ein Doppel-Hüpfer wirkt.
+   mouseenter feuert erst bei echter Zeiger-Bewegung ins Element. */
+.wl-logo.is-gruss .wl-mark-dot { animation: wl-dot-hop .4s ease; }
+@keyframes wl-dot-hop { 40% { transform: translateY(-.18em); } }
+.wl-nav { display: flex; align-items: center; gap: 1.1rem; font-size: .84rem; flex-wrap: wrap; }
+.wl-nav a { color: #b5aea4; }
+.wl-nav a:hover, .wl-nav a.on { color: #fff; }
+.wl-cta {
+  background: var(--wl-acc-3); color: var(--wl-ink) !important; font-weight: 700; font-size: .8rem;
+  padding: .45rem .85rem; border-radius: 99px;
+}
+.wl-cta:hover { filter: brightness(1.06); }
+/* Auf sehr schmalen Geräten reicht die Zeile nicht für Marke UND alle drei Verweise – dann
+   flog ausgerechnet die MARKE heraus. Stattdessen weicht „Veranstaltungen": Ein Klick auf die
+   Marke führt zur selben Startseite, der Verweis ist dort schlicht doppelt. Die Grenze liegt
+   knapp unter der Breite, ab der alles nebeneinander passt (~420 px bei Standardschrift) –
+   wer mehr Platz hat, sieht weiterhin alle drei. */
+@media (max-width: 419px) { .wl-nav-events { display: none; } }
+/* „Über" ist Kür, nicht Pflicht: nur am Desktop und nur, wenn die Zeile Luft hat – am Handy
+   und auf schmalen Tablets trüge er zur Enge bei. Der Fußzeilen-Link führt überall hin. */
+@media (max-width: 899px) { .wl-nav-ueber { display: none; } }
+
+/* Das Wort-Rad – wie das Auswahlmenü am iPhone.
+
+   ENTSCHEIDEND ist, was NICHT im Textfluss steht: Das Rad liegt ABSOLUT über dem Zielwort.
+   Zwei Dinge gehen sonst kaputt –
+
+   • Der Kasten darf weder feste Höhe noch `overflow` bekommen: Ein Inline-Element mit
+     `overflow: hidden` richtet sich an seiner Unterkante aus statt an der Schriftlinie, „läuft"
+     säße tiefer als „was.". So groß wie das Wort, sitzt er von selbst richtig.
+   • Der Kasten ist von Anfang bis Ende genau so breit wie „läuft"; die längeren Wörter ragen
+     darüber hinaus, statt zu schieben. Änderte sich die Breite, bräche die Überschrift anders
+     um und die zweite Zeile spränge. Damit die überstehenden Wörter nichts überdecken, liegt
+     der Rest des Satzes so lange auf durchsichtig und blendet erst ein, wenn das Rad steht.
+
+   Die Spalte läuft VERKEHRT HERUM (column-reverse): „läuft" – das letzte Wort der Liste – steht
+   dadurch oben und ist der Ruhezustand. Ohne JavaScript und bei „Ruhe bewahren" liest man sofort
+   „was.läuft"; das Rad dreht sich nur auf den Zustand zu, der ohnehin dastünde. */
+/* Das Tempo steht in Variablen, nicht in den Regeln: Wer die Seite zum ersten Mal aufruft, soll
+   die Marke in Ruhe lesen – wer nur auf „Diesen Monat" klickt, will die Ansicht sehen und nicht
+   noch einmal denselben Vorspann. index.php setzt die Werte am Element neu; die Voreinstellung
+   hier ist die gemütliche Ankunft. */
+.wl-mark { --wl-zeile: 1.16em; --wl-rad-t: .34s; }
+.wl-mark-w { display: inline-block; }
+/* Die Zeilenhöhe MUSS hier dieselbe sein wie im Rad. Die Überschrift läuft mit 1.06, die
+   Rad-Zeilen mit 1.16 – dadurch lagen die Schriftlinien 0,05 em auseinander, und das Wort
+   wanderte beim Überblenden sichtbar nach unten. Beides auf --wl-zeile, dann liegen sie
+   aufeinander und der Wechsel ist unsichtbar. */
+.wl-mark-anim .wl-mark-w { position: relative; line-height: var(--wl-zeile); }
+
+/* Das echte Wort: es allein bestimmt Breite und Schriftlinie.
+
+   KEINE Überblendung – der Wechsel zwischen Rad und echtem Wort ist HART. Es sind zwei Kopien
+   DESSELBEN Wortes an derselben Stelle: Zwei halbdurchsichtige Lagen ergeben nie wieder das
+   volle Wort, sondern eine Delle in der Dichte – „läuft" scheint am Ende kurz weg- und wieder
+   aufzupoppen. Beim Verlaufs-Logo fällt das besonders auf, weil der Farbverlauf mit ausdünnt.
+   Ein harter Schnitt zwischen zwei identischen Darstellungen ist unsichtbar. */
+.wl-mark-anim.is-rad .wl-mark-live { opacity: 0; }
+
+/* Das Rad: außerhalb des Textflusses, unten bündig mit dem Zielwort, nach oben offen. */
+.wl-mark-rad {
+  position: absolute; left: 0; bottom: 0; opacity: 0; pointer-events: none;
+  height: calc(var(--wl-zeile) * 2); overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 4%, #000 54%);
+          mask-image: linear-gradient(to bottom, transparent 4%, #000 54%);
+}
+.wl-mark-anim.is-rad .wl-mark-rad { opacity: 1; }
+.wl-mark-roll {
+  display: flex; flex-direction: column-reverse;
+  transition: transform var(--wl-rad-t) cubic-bezier(.3,.72,.34,1);
+}
+/* Der Verlauf im Rad – eine BEWUSSTE Ungleichheit: Die Spalte dehnt jedes Wort auf die Breite
+   des längsten, der Verlauf wird am Kasten ausgeschnitten – jedes Wort zeigt ihn dadurch
+   anders angeschnitten – das ist so gewollt. NUR das Zielwort ist textbreit: „läuft", das
+   LETZTE der Liste, das durch column-reverse oben steht. Es trägt damit schon im Rad exakt den
+   Verlauf des echten Worts, und der harte Wechsel am Ende bleibt unsichtbar. */
+.wl-mark-item:last-child { align-self: flex-start; }
+.wl-mark-item { display: block; height: var(--wl-zeile); line-height: var(--wl-zeile); white-space: nowrap; }
+
+/* Der Rest der Überschrift wartet, solange sich das Rad dreht – nur Deckkraft, keine Größe:
+   So kann sich am Umbruch nichts verschieben. */
+.wl-h1-rest { transition: opacity var(--wl-rest-t, .3s) ease; }
+.wl-h1.is-warten .wl-h1-rest { opacity: 0; }
+
+/* ---------- Farbe der Wortmarke ---------------------------------------------------------------
+   Der Verlauf Gelb → Koralle ist gesetzt; es gibt keine umschaltbaren Varianten.
+
+   Die Regel gilt für .wl-mark-w (die schlichte Marke) UND .wl-mark-item (die Wörter im Rad),
+   sonst bliebe die Animation farblos. */
+.wl-mark-w, .wl-mark-item {
+  background: linear-gradient(92deg, #ffd93d, #ff5c72 75%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+
+/* ---------- Bühne ----------------------------------------------------------------------------- */
+/* Die Bühne ist keine flache dunkle Fläche: Zwei weiche Lichter aus den Logo-Farben liegen
+   darin – Gelb links unten, Koralle rechts oben. Sie sind so schwach, dass man sie nicht als
+   „Farbverlauf" liest, sondern nur merkt, dass die Fläche lebt. Sie liegen in einem ::before,
+   damit der Text darüber nicht mit durchsichtig wird. */
+.wl-hero { position: relative; background: var(--wl-ink); color: #fff; padding: 1.2rem 0 2.8rem; overflow: hidden; }
+/* Am Handy rückt die Bühne zusammen: ein VIERTEL weniger Luft zwischen Kopfleiste und
+   Überschrift, die HÄLFTE unter der Suche. Die Rechnung: Oben wirken Bühnen-Polster (1.2rem)
+   plus Überschrift-Abstand (.6rem) = 1.8rem zusammen → 1.35rem, also Polster auf .75rem.
+   Unten schlicht 2.8rem → 1.4rem. */
+@media (max-width: 640px) {
+  .wl-hero { padding: .75rem 0 1.4rem; }
+}
+.wl-hero::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(60% 120% at 8% 118%, rgba(255,217,61,.14), transparent 60%),
+    radial-gradient(52% 110% at 88% -18%, rgba(255,92,114,.24), transparent 62%);
+}
+.wl-hero-in { position: relative; padding: 0; }
+.wl-h1 {
+  font-weight: 800; font-size: clamp(1.7rem, 5.2vw, 2.9rem); line-height: 1.06;
+  letter-spacing: -.03em; margin: .6rem 0 .55rem; max-width: 34ch;
+}
+/* Die Wortmarke in der Überschrift ist GRÖSSER als der Rest des Satzes – sie ist das Logo,
+   der Satz nur ihr Rahmen. Gilt nur hier; Kopfleiste und Fußzeile bleiben unberührt. In em,
+   damit alles Innere (etwa die Rad-Zeilenhöhe --wl-zeile) einfach mitwächst. */
+.wl-h1 .wl-mark { font-size: 1.28em; }
+.wl-h1 em { font-style: normal; color: var(--wl-acc-3); }
+
+/* KEIN Schein hinter „läuft" – kein ::before mit radial-gradient am Wort. Die Bühne
+   leuchtet allein über die beiden festen Lichter in .wl-hero::before. */
+
+/* Das Zeitwort – „heute", „diese Woche", „diesen Monat", „am Wochenende".
+   Es ist das einzige Wort im Satz, das sich beim Umschalten der Ansicht ändert, also bekommt es
+   auch einen eigenen Auftritt: Es rückt aus der Unschärfe von unten in die Zeile, und ein Strich
+   in der Markenfarbe zieht darunter durch und verschwindet wieder.
+
+   Bewegt werden ausschließlich Deckkraft, Unschärfe und Verschiebung – nie eine Größe. Deshalb
+   kann sich am Zeilenumbruch nichts verschieben, obwohl „am Wochenende" mehr als doppelt so lang
+   ist wie „heute". `nowrap` hält die Wortgruppe zusammen: „diese\nWoche" wäre unschön.
+   Der Strich liegt in einem ::after und damit außerhalb des Textflusses. */
+.wl-h1-zeit { position: relative; display: inline-block; white-space: nowrap; }
+.wl-h1-zeit::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: -.04em; height: .06em;
+  background: var(--wl-logo); border-radius: 1em;
+  transform: scaleX(0); transform-origin: left center; opacity: 0;
+}
+.wl-h1.is-zeit .wl-h1-zeit { animation: wl-zeit-in .52s cubic-bezier(.2,.72,.3,1) both; }
+.wl-h1.is-zeit .wl-h1-zeit::after { animation: wl-zeit-strich .8s cubic-bezier(.2,.72,.3,1) both; }
+@keyframes wl-zeit-in {
+  from { opacity: 0; filter: blur(8px); transform: translateY(.24em); }
+  to   { opacity: 1; filter: blur(0);   transform: none; }
+}
+@keyframes wl-zeit-strich {
+  0%   { transform: scaleX(0); opacity: 0; }
+  14%  { opacity: 1; }
+  50%  { transform: scaleX(1); opacity: 1; }
+  100% { transform: scaleX(1); opacity: 0; }
+}
+
+/* „Landau" tritt buchstabenweise auf, von links nach rechts – kurz und leise, ein Nicken,
+   kein zweiter Vorspann. Das Skript zerlegt das Wort erst beim Start in Spannen (im HTML
+   bleibt es ein Wort, ohne JavaScript steht es einfach da) und staffelt die Verzögerungen
+   über die CSSOM – das ist unter der CSP erlaubt, nur style="…"-ATTRIBUTE werden verworfen.
+
+   Die Spannen MÜSSEN gewöhnliche Inline-Elemente bleiben und die Animation NUR die Deckkraft
+   bewegen – kein Anheben, denn das bräuchte inline-block, und Atomic-Inline-Kästen erzeugen
+   Umbruchgelegenheiten ZWISCHEN sich: „Landau" bräche am Handy mitten im Wort („Land / au?").
+   Gewöhnliche Inline-Spannen brechen wie das Wort selbst, nämlich gar nicht; nowrap ist der
+   doppelte Boden. */
+/* „in Landau?" bricht als GANZES um (beide Startseiten tragen die Klasse im Markup):
+   Ein einzelnes „in" am Zeilenende sieht verloren aus. */
+.wl-h1-ort { white-space: nowrap; }
+.wl-h1-stadt { white-space: nowrap; }
+/* Versteckt sind die Buchstaben NUR, solange der Auftritt noch bevorsteht (:not(.is-zeit)).
+   Feuert die Animation dann aus irgendeinem Grund nicht (Browser-Laune beim Einfügen samt
+   Klasse im selben Moment), stehen die Buchstaben trotzdem da – ohne Auftritt statt gar
+   nicht. Ein unsichtbares „Landau" wäre der teuerste Preis für eine Spielerei.
+   .wl-h1-frage ist das Fragezeichen: Es MUSS als letztes Zeichen mit auftreten, sonst hängt es
+   während des Auftritts allein neben dem freigehaltenen Loch („in     ?") und sieht nach
+   Darstellungsfehler aus. */
+.wl-h1:not(.is-zeit) .wl-h1-stadt span, .wl-h1:not(.is-zeit) .wl-h1-frage { opacity: 0; }
+.wl-h1.is-zeit .wl-h1-stadt span, .wl-h1.is-zeit .wl-h1-frage { animation: wl-stadt-in .26s ease-out both; }
+@keyframes wl-stadt-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+/* Die Begrenzungen sind Absicht – die Zahlen gehören aber zur Container-Breite und müssen
+   mitwandern, wenn die sich ändert.
+   Warum überhaupt begrenzt: Eine Textzeile über die volle Breite eines großen Bildschirms
+   liest sich schlecht – das Auge findet den Zeilenanfang nicht wieder. Deshalb bleibt die
+   Fließtext-Zeile bei rund 58 Zeichen; die Überschrift darf breiter, sie wird ohnehin
+   überflogen und nicht gelesen. */
+.wl-hero p { color: #cdc6bb; font-size: .95rem; max-width: 58ch; margin: 0 0 1.35rem; }
+
+/* Die Suche ist EIN Bauteil, nicht zwei. Ein dunkles Eingabefeld und ein dunkler Knopf mit
+   Lücke dazwischen wären beide kaum vom dunklen Hintergrund zu unterscheiden – das Feld sähe
+   aus wie ein Schatten und der Knopf wie eine Beschriftung. Eine helle Kapsel umschließt
+   deshalb beides, die Lupe sagt ohne
+   Wort, worum es geht, und der Knopf trägt den Logo-Verlauf: Er ist das einzige farbige Element
+   der Bühne und damit unmissverständlich das, was man drückt. */
+.wl-suche {
+  display: flex; align-items: center; gap: .55rem; max-width: 620px;
+  background: rgba(255,255,255,.09); border: 1px solid rgba(255,255,255,.2);
+  border-radius: 99px; padding: .3rem .3rem .3rem 1rem;
+  transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+/* Der Fokusring liegt AUSSEN als Schatten, nicht als Rahmen: Ein dickerer Rahmen würde die
+   Kapsel um zwei Pixel wachsen lassen und alles daneben verschieben. */
+.wl-suche:focus-within {
+  background: rgba(255,255,255,.15); border-color: var(--wl-acc);
+  box-shadow: 0 0 0 4px rgba(255,92,114,.2);
+}
+.wl-suche-i {
+  flex: none; width: 19px; height: 19px; color: #a49d92;
+  fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round;
+}
+.wl-suche:focus-within .wl-suche-i { color: #fff; animation: wl-lupe-tilt .45s ease; }
+/* Die Lupe kippt kurz an, wenn man ins Suchfeld klickt – einmal je Fokus. */
+@keyframes wl-lupe-tilt {
+  0%, 100% { transform: none; }
+  35% { transform: rotate(-16deg); }
+  70% { transform: rotate(8deg); }
+}
+.wl-suche input[type="search"], .wl-suche input[type="text"] {
+  flex: 1; min-width: 0; background: none; border: 0; outline: none;
+  color: #fff; padding: .5rem 0; font-size: .95rem; font-family: inherit;
+}
+.wl-suche input::placeholder { color: #8f8880; }
+/* Das Kreuzchen, das Safari in ein type=search malt, sitzt auf hellem Grund und wäre auf der
+   dunklen Kapsel unsichtbar. */
+.wl-suche input[type="search"]::-webkit-search-cancel-button { filter: invert(1); opacity: .5; }
+.wl-suche button {
+  flex: none; border: 0; border-radius: 99px; cursor: pointer; font-family: inherit;
+  font-weight: 800; font-size: .85rem; padding: .62rem 1.25rem; color: var(--wl-ink);
+  background: linear-gradient(96deg, var(--wl-acc-2), var(--wl-acc) 88%);
+}
+.wl-suche button:hover { filter: brightness(1.07); }
+
+/* ---------- Banner (Ankündigung) --------------------------------------------------------------
+   Der Banner als SCHLAGZEILEN-PLAKAT, in derselben Sprache wie der Rest der Seite: Das Bild
+   füllt die GANZE Karte (Bild zuerst), darüber liegt von links ein Tinten-Scrim, damit die
+   Schrift auf jedem Motiv sitzt. Links läuft die Verlaufs-Kante Gelb → Koralle als
+   Plakat-Merkmal, über dem Titel steht der aus von/bis abgeleitete Zeitraum, und ein Ziel
+   bekommt eine echte „Mehr dazu"-Pille. Ohne Bild trägt die Karte die dunkle Fläche mit den
+   Logo-Lichtern – dasselbe Mittel wie bei den Kacheln ohne Bild.
+   Scrim UND Kante wohnen im ::after (zwei background-Schichten): Ein ::before läge UNTER
+   dem <img> (Pseudo-Elemente malen vor den echten Kindern), der Scrim muss aber DARÜBER. */
+.wl-banners { display: grid; gap: .8rem; margin: 1.2rem auto .2rem; }
+.wl-banner {
+  position: relative; display: block; overflow: hidden; border-radius: var(--wl-rad);
+  min-height: 150px;
+  background-color: var(--wl-ink);
+  background-image: radial-gradient(85% 150% at 8% 135%, rgba(255,217,61,.30), transparent 62%),
+                    radial-gradient(60% 130% at 78% -30%, rgba(255,92,114,.30), transparent 64%);
+  transition: transform .16s ease, box-shadow .16s ease;
+}
+a.wl-banner:hover { transform: translateY(-2px); box-shadow: 0 14px 30px rgba(23,20,28,.22); }
+.wl-banner-bild {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+  transition: transform .25s ease;
+}
+a.wl-banner:hover .wl-banner-bild { transform: scale(1.03); }
+.wl-banner::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background:
+    linear-gradient(180deg, var(--wl-acc-2), var(--wl-acc) 75%) left / 5px 100% no-repeat,
+    linear-gradient(88deg, rgba(23,20,28,.94) 22%, rgba(23,20,28,.55) 52%, rgba(23,20,28,.06) 80%);
+}
+/* Ohne Bild braucht es keinen Scrim – der würde nur die Marken-Lichter ersäufen. Übrig
+   bleibt die Kante. (Ältere Browser ohne :has() zeigen den Scrim mit – nur dunkler, nie kaputt.) */
+.wl-banner:not(:has(.wl-banner-bild))::after {
+  background: linear-gradient(180deg, var(--wl-acc-2), var(--wl-acc) 75%) left / 5px 100% no-repeat;
+}
+.wl-banner-t {
+  position: relative; z-index: 1; padding: 1.25rem 1.4rem 1.25rem 1.7rem; color: #fff;
+  max-width: 68%; min-height: 150px;
+  display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: .3rem;
+}
+.wl-banner-kick {
+  font-size: .68rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--wl-acc-2);
+}
+.wl-banner-t strong {
+  font-size: clamp(1.25rem, 2.6vw, 1.7rem); font-weight: 800;
+  letter-spacing: -.03em; line-height: 1.12;
+}
+/* AUSDRÜCKLICH nur der Untertitel – ein allgemeines `.wl-banner-t > span` traf auch Kicker
+   und CTA-Pille und schlug deren Farben per Spezifität: helle Schrift auf Limette. */
+.wl-banner-sub { font-size: .86rem; color: rgba(255, 255, 255, .82); }
+.wl-banner-cta {
+  margin-top: .55rem; display: inline-flex; align-items: center; gap: .45em;
+  font-size: .78rem; font-weight: 800; color: var(--wl-ink);
+  background: var(--wl-acc-3); padding: .45em 1em; border-radius: 99px;
+}
+.wl-banner-cta i { font-style: normal; transition: transform .16s ease; }
+a.wl-banner:hover .wl-banner-cta i { transform: translateX(3px); }
+@media (max-width: 640px) {
+  /* Am Handy trägt der Scrim mehr Tinte in die Mitte, weil der Text die volle Breite nutzt –
+     das Bild bleibt vollflächig, nur die Lesbarkeitsschicht wird kräftiger. */
+  .wl-banner-t { max-width: 100%; padding-right: 1.2rem; }
+  .wl-banner::after {
+    background:
+      linear-gradient(180deg, var(--wl-acc-2), var(--wl-acc) 75%) left / 5px 100% no-repeat,
+      linear-gradient(88deg, rgba(23,20,28,.94) 30%, rgba(23,20,28,.7) 62%, rgba(23,20,28,.22) 92%);
+  }
+}
+
+/* ---------- Filterleiste ---------------------------------------------------------------------- */
+/* Die Leiste bleibt stehen und liegt über den Kacheln – deshalb ist sie durchscheinend mit
+   Weichzeichner statt deckend weiß. Man sieht, dass sich darunter etwas bewegt, und die Leiste
+   wirkt nicht wie ein zweiter Seitenkopf. */
+.wl-filters {
+  position: sticky; top: 0; z-index: 5;
+  background: rgba(251, 249, 245, .82);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--wl-line); padding: .58rem 0;
+}
+@media (prefers-color-scheme: dark) { .wl-filters { background: rgba(16, 14, 19, .82); } }
+
+/* DREI GRUPPEN statt einer Reihe aus fünfzehn gleichen Knöpfen: Stünden Zeitraum, Kategorie
+   und Eigenschaften ununterscheidbar nebeneinander, müsste man jeden einzeln lesen, um zu
+   merken, dass „Diese Woche" und „Sport" gar nicht dieselbe Art von Entscheidung sind. */
+.wl-filters-in { display: flex; align-items: center; gap: .4rem; overflow-x: auto; scrollbar-width: none; }
+.wl-filters-in::-webkit-scrollbar { display: none; }
+/* Ab dieser Breite passt alles ohne Schieben – dann darf es umbrechen statt zu verstecken.
+   Ein waagerechtes Rollfeld ohne sichtbaren Hinweis versteckt Möglichkeiten, und auf einem
+   großen Schirm gibt es dafür keinen Grund. */
+@media (min-width: 1080px) {
+  /* Sobald gefiltert wird, kommt „Alles zurücksetzen" dazu und die Leiste braucht eine zweite
+     Zeile. Das ist in Ordnung – man sieht dann ohnehin auf die Filter – aber sie soll dabei
+     nicht zum Block werden, deshalb die knappe Zeilenlücke. Ohne Filter bleibt es einzeilig. */
+  .wl-filters-in { flex-wrap: wrap; overflow: visible; row-gap: .42rem; }
+}
+.wl-fdiv { flex: none; width: 1px; height: 22px; background: var(--wl-line); margin: 0 .2rem; }
+/* Ausgeblendet wird gezielt nur der OBERSTE Trenner (siehe Handy-Block). Eine pauschale
+   Regel „unter 1080 px kein Trenner" überstimmte die gezielte Regel für die zweite
+   Handy-Zeile, und der Trenner zwischen Schaltern und Kategorien wäre nie zu sehen. */
+/* Am Rechner lösen sich die beiden Behälter auf: Alles steht in EINER Reihe, so als gäbe es
+   sie nicht. Kein margin-left:auto – das schiebt die Gruppe bei einem Umbruch allein in eine
+   zweite Zeile rechts, und das sieht nach Versehen aus. */
+.wl-frest { display: contents; }
+.wl-fend { flex: none; display: flex; align-items: center; gap: .4rem; }
+
+/* ---- Am Handy: ZWEI Zeilen -------------------------------------------------------------------
+   Der Zeit-Schalter allein ist breiter als ein Handy-Bildschirm. In einer einzigen schiebbaren
+   Reihe sähe man deshalb nur ihn – dass dahinter noch sieben Kategorien und die zwei beliebten
+   Schalter „Kostenlos" und „Barrierefrei" stehen, wäre nicht zu ahnen.
+
+   Deshalb: Zeile 1 der Zeitraum, Zeile 2 alles andere – und dort stehen die beiden Schalter VORNE
+   (order: -1), weil sie am häufigsten gebraucht werden. Die Kategorien schließen sich an und
+   werden geschoben; der weiche Rand rechts sagt, dass da noch mehr kommt.
+
+   Die Grenze ist bewusst dieselbe, ab der eine Zeile wirklich reicht (1080 px). Mit 860 px
+   bliebe dazwischen ein Bereich, in dem es zwar eine Zeile ist, die Schalter aber trotzdem
+   rechts außer Sicht liegen – also dasselbe Problem, nur auf dem Tablett. */
+@media (max-width: 1079px) {
+  .wl-filters-in { flex-direction: column; align-items: stretch; gap: .4rem; overflow: visible; }
+  .wl-filters-in > .wl-fdiv { display: none; }
+  .wl-seg {
+    align-self: flex-start; max-width: 100%; overflow-x: auto; scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to right, #000 88%, transparent 100%);
+            mask-image: linear-gradient(to right, #000 88%, transparent 100%);
+  }
+  .wl-seg::-webkit-scrollbar { display: none; }
+  /* Zeile 2 hat nur DREI Bedienelemente – die passen ohne Schieben nebeneinander. Deshalb
+     hier weder overflow noch weicher Rand: Beides würde das aufgeklappte Kategorie-Menü
+     an der Kante abschneiden. Reicht der Platz auf sehr
+     schmalen Geräten doch nicht, bricht es um statt zu schieben. */
+  .wl-frest { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+  .wl-fend  { display: flex; align-items: center; gap: .4rem; }
+}
+
+/* Der Zeitraum: EINE Entscheidung, also EIN Schalter mit Stufen – nicht fünf lose Knöpfe.
+   Man sieht auf einen Blick, dass genau eine Stufe aktiv ist und welche Alternativen es gibt. */
+.wl-seg {
+  flex: none; display: inline-flex; gap: 2px; padding: 3px; border-radius: 99px;
+  background: var(--wl-line);
+}
+.wl-seg-i {
+  white-space: nowrap; font-size: .79rem; font-weight: 600; padding: .38rem .72rem;
+  border-radius: 99px; color: var(--wl-mut);
+}
+.wl-seg-i:hover { color: var(--wl-ink); }
+@media (prefers-color-scheme: dark) { .wl-seg-i:hover { color: #fff; } }
+.wl-seg-i.on { background: var(--wl-card); color: var(--wl-ink); box-shadow: 0 1px 3px rgba(23,20,28,.16); }
+@media (prefers-color-scheme: dark) { .wl-seg-i.on { color: #f4f1ea; } }
+
+/* Die Kategorien: neutrale Kapsel mit farbigem Punkt, KEINE farbige Füllung mehr.
+   Sieben Pastellflächen nebeneinander lassen die Leiste neben dem Zeit-Schalter altbacken
+   wirken: Der Schalter ist ein Bauteil, getönte Chips sind Dekoration. Sieben Flächen sind
+   außerdem viel Farbe für etwas, das man nur zum Auswählen ansieht, und sie konkurrieren mit
+   den Kacheln darunter.
+
+   Die Farbe verschwindet aber nicht, sie wird zum MERKMAL statt zur Fläche: derselbe Punkt, den
+   die Kachel schon für die Veranstalter-Art benutzt (.wl-pip). Ein Gedanke, zweimal verwendet. */
+.wl-chip {
+  flex: none; display: inline-flex; align-items: center; gap: .45rem;
+  white-space: nowrap; font-size: .8rem; font-weight: 600; padding: .42rem .7rem;
+  border-radius: 99px; border: 1px solid var(--wl-line); color: var(--wl-mut); background: transparent;
+  transition: border-color .12s ease, color .12s ease;
+}
+.wl-chip:hover { border-color: var(--wl-acc); color: var(--wl-link); }
+.wl-chip.on { background: var(--wl-ink); color: #fff; border-color: var(--wl-ink); }
+.wl-cat-punkt { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--wl-c); }
+/* Ist die Kategorie gewählt, liegt ihr Punkt auf dunklem Grund – im Feld selbst wie im
+   aufgeklappten Menü. Dort braucht es die helle Fassung der Farbe, sonst versinkt er. */
+.wl-drop.on > summary .wl-cat-punkt,
+.wl-drop-i.on .wl-cat-punkt { background: var(--wl-c-d); }
+
+/* Die beiden Eigenschaften-Schalter: größer und kräftiger als alles andere in der Leiste.
+   Sie werden am häufigsten gebraucht – „kostenlos" und „barrierefrei" sind für viele die
+   eigentliche Frage – und dürfen deshalb nicht als zwei von neun gleichen Chips am Rand stehen.
+
+   Eingeschaltet werden sie LIMETTE, nicht dunkel wie die übrigen aktiven Zustände: Limette ist
+   in diesem Entwurf die Signalfarbe, sie klebt auch als „kostenlos" auf den Kacheln. Damit sagt
+   die Leiste dieselbe Sprache wie das Ergebnis darunter.
+   Die Rahmenstärke ist in beiden Zuständen gleich – sonst wüchse der Knopf beim Einschalten und
+   die Leiste bräche um. */
+.wl-prom { font-size: .84rem; font-weight: 700; padding: .5rem .95rem; border-width: 1.5px; }
+.wl-prom:hover { border-color: var(--wl-acc); }
+.wl-prom.on {
+  background: var(--wl-acc-3); border-color: var(--wl-acc-3); color: var(--wl-ink);
+  box-shadow: 0 1px 3px rgba(23,20,28,.14);
+}
+@media (prefers-color-scheme: dark) { .wl-prom.on { color: var(--wl-ink); } }
+
+/* ---- Kategorie als Aufklapp-Menü -------------------------------------------------------------
+   Sieben Chips füllten die halbe Leiste. Eingeklappt ist es EIN Feld; ist eine Kategorie
+   gewählt, steht sie samt Punkt darin, man sieht den Zustand also ohne zu öffnen.
+   Kein Skript – siehe wl_kat_dropdown(): Unter der strengen CSP wäre ein Menü, das erst durch
+   JavaScript aufgeht, ohne JavaScript unbedienbar. */
+.wl-drop { position: relative; flex: none; }
+.wl-drop > summary {
+  display: inline-flex; align-items: center; gap: .45rem; cursor: pointer; list-style: none;
+  white-space: nowrap; font-size: .8rem; font-weight: 600; padding: .42rem .7rem;
+  border-radius: 99px; border: 1px solid var(--wl-line); color: inherit;
+}
+.wl-drop > summary::-webkit-details-marker { display: none; }
+.wl-drop > summary:hover { border-color: var(--wl-acc); }
+.wl-drop.on > summary { background: var(--wl-ink); color: #fff; border-color: var(--wl-ink); }
+/* Der Pfeil dreht sich beim Öffnen – das ist die einzige Rückmeldung, die ein <details> von
+   sich aus nicht mitbringt. */
+.wl-drop-pfeil {
+  width: 0; height: 0; margin-left: .1rem;
+  border-left: 4px solid transparent; border-right: 4px solid transparent;
+  border-top: 5px solid currentColor; transition: transform .14s ease;
+}
+.wl-drop[open] .wl-drop-pfeil { transform: rotate(180deg); }
+.wl-drop-p {
+  position: absolute; z-index: 20; top: calc(100% + .4rem); left: 0; min-width: 190px;
+  background: var(--wl-card); border: 1px solid var(--wl-line); border-radius: 12px;
+  padding: .35rem; box-shadow: 0 12px 28px rgba(23,20,28,.16);
+  display: flex; flex-direction: column;
+}
+.wl-drop-i {
+  display: flex; align-items: center; gap: .5rem; white-space: nowrap;
+  font-size: .84rem; font-weight: 600; padding: .42rem .6rem; border-radius: 8px;
+}
+.wl-drop-i:hover { background: var(--wl-paper); }
+.wl-drop-i.on { background: var(--wl-ink); color: #fff; }
+/* Rechts darf das Menü nicht aus dem Bild laufen – am Handy sitzt es deshalb rechtsbündig. */
+@media (max-width: 520px) { .wl-drop-p { left: auto; right: 0; } }
+
+/* Das Etikett auf der Detailseite ist etwas anderes als ein Filter: Es sagt, WAS das hier ist,
+   und man kann es nicht drücken. Deshalb behält es die getönte Fläche – dort ist Farbe eine
+   Auskunft und keine Verzierung. */
+.wl-badge {
+  display: inline-flex; align-items: center; font-size: .78rem; font-weight: 700;
+  padding: .3rem .7rem; border-radius: 99px;
+  background: var(--wl-c-bg, #efeae1); color: var(--wl-c, #5c564b);
+}
+
+/* Eigenschaften sind Schalter – erkennbar an derselben Füllung wie überall sonst, NICHT an
+   einem zusätzlichen Häkchen.
+
+   Ein Häkchen macht den Schalter breiter, sobald er aktiv ist – und ein Bedienelement, das
+   seine Breite ändert, bricht die Leiste um, sobald beide Schalter an sind.
+
+   Gefüllt = an, das genügt: Die Kategorien machen es genauso, und die Bedeutung steht für
+   Vorlesegeräte ohnehin in aria-pressed. Die Leiste hat damit in JEDEM Zustand dieselbe
+   Breite – das ist mehr wert als die feine Unterscheidung zwischen Auswahl und Schalter. */
+/* Zurücksetzen erscheint nur, wenn es etwas zurückzusetzen gibt – und zwar in der Zeile über
+   den Treffern, nicht in der Filterleiste: Dort ließe es die Leiste bei jedem gesetzten Filter
+   umbrechen (siehe index.php). Oben sitzt es neben der Überschrift, wo ohnehin Platz ist. */
+.wl-fclear { white-space: nowrap; font-size: .8rem; font-weight: 600; color: var(--wl-link); }
+.wl-fclear:hover { text-decoration: underline; }
+
+/* Kategorien tragen ihre eigene Farbe – die Zuordnung steht in wl_cats().
+   Die Palette liegt jetzt in der warmen Familie (Koralle, Gelb, Limette, Sand, Terrakotta) mit
+   EINEM kühlen Ton für „Markt & Tausch", damit die Reihe nicht monoton wird. Sieben Farben
+   aus sieben verschiedenen Familien ergäben dagegen einen Regenbogen-Eindruck.
+   Alle Textfarben sind so gewählt, dass sie auf ihrem eigenen Feld über 4,5:1 liegen. */
+/* Jede Kategorie legt ihre zwei Werte EINMAL fest. Chip und Kachel-Zeile greifen beide darauf zu –
+   sonst stünde dieselbe Farbe an zwei Stellen und eine davon würde beim nächsten Mal vergessen. */
+/* Drei Werte je Kategorie: Schrift auf hell, Feldfarbe, Schrift auf dunkel. Der dritte wird
+   gebraucht, weil die Kategorie-Zeile auf der Kachel direkt auf dem Seitenhintergrund steht –
+   im Dunkelmodus wäre das dunkle Oliv dort unlesbar. Der Chip dagegen behält seine Farbe, denn
+   er bringt sein helles Feld mit. */
+.c-party     { --wl-c: #bf2b41; --wl-c-bg: #ffe4e7; --wl-c-d: #ff8093; }
+.c-kultur    { --wl-c: #a4501a; --wl-c-bg: #ffe7d3; --wl-c-d: #f5a25f; }
+.c-sport     { --wl-c: #4d6b0a; --wl-c-bg: #eaf5c9; --wl-c-d: #b6d95a; }
+.c-bildung   { --wl-c: #8a6100; --wl-c-bg: #fff0c9; --wl-c-d: #ffd166; }
+.c-ehrenamt  { --wl-c: #b03f1e; --wl-c-bg: #fddcd3; --wl-c-d: #ff9673; }
+.c-markt     { --wl-c: #10646f; --wl-c-bg: #dceef2; --wl-c-d: #6ec7d6; }
+.c-sonstiges { --wl-c: #5c564b; --wl-c-bg: #efeae1; --wl-c-d: #b8b0a3; }
+
+.wl-chip.c-party.on, .wl-chip.c-kultur.on, .wl-chip.c-sport.on, .wl-chip.c-bildung.on,
+.wl-chip.c-ehrenamt.on, .wl-chip.c-markt.on, .wl-chip.c-sonstiges.on {
+  background: var(--wl-ink); color: #fff;
+}
+
+/* ---------- Abschnitte und Kachelraster ------------------------------------------------------- */
+.wl-sect { padding: 1.4rem 0 0; }
+.wl-sect-h { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: .85rem; }
+/* Größer als die Kacheltitel (1rem): Mit 1,1rem sähe eine Abschnitts-Überschrift daneben
+   nicht mehr wie eine Überschrift aus. */
+.wl-sect-h h2 { font-size: 1.4rem; font-weight: 800; letter-spacing: -.03em; margin: 0; }
+/* nowrap: Am Handy bricht „Alle Kurse →" hinter der zweizeiligen Überschrift sonst um und der
+   Pfeil steht allein in einer Zeile. Der Link ist kurz – er darf nie brechen. */
+.wl-sect-h a { font-size: .8rem; color: var(--wl-link); font-weight: 600; white-space: nowrap; flex: none; }
+/* Rechts neben der Überschrift können ZWEI Links stehen (kurse.php: „Filter zurücksetzen" +
+   „Eigenen Kurs eintragen") – als eigene kleine Reihe, damit sie nicht aneinanderkleben.
+   Die REIHE darf umbrechen (am Handy stehen die beiden dann rechtsbündig untereinander),
+   die einzelnen Links bleiben ungebrochen – zusammen sind sie schmaler als 375 px nie. */
+.wl-sect-links { display: flex; align-items: baseline; gap: .3rem 1.1rem; flex-wrap: wrap; justify-content: flex-end; }
+
+.wl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(268px, 1fr)); gap: 1.7rem 1.3rem; }
+/* Zuordnung Text→Bild über das NÄHE-Gesetz:
+   Der Abstand IN der Kachel (Bild→Text, .5rem) ist deutlich kleiner als der zwischen den
+   Zeilen (2.4rem am Desktop) – so liest sich jedes Duo als Einheit, ohne dass irgendeine
+   Trenn-Optik an die Kachel muss (die bleibt gesperrt, siehe ENDSTAND-Kommentar unten). */
+@media (min-width: 621px) { .wl-grid { row-gap: 2.4rem; } }
+
+/* Die Kachel ist KEIN Kasten: Ein weißes Feld mit Rahmen, Bild oben bündig eingeklebt, Text
+   eng darunter, ergäbe auf einer ohnehin weißen Seite ein Raster aus Umrissen, das an eine
+   Tabelle erinnert.
+   Stattdessen: das Bild ist das einzige Objekt mit Kante, der Text steht frei auf dem Papier.
+   Getrennt werden die Kacheln durch Luft, nicht durch Linien. Das ist der Unterschied zwischen
+   einem Formular und einem Magazin. */
+.wl-card { display: flex; flex-direction: column; gap: .5rem; }
+.wl-card-img {
+  position: relative; aspect-ratio: 3 / 2; border-radius: var(--wl-rad); overflow: hidden;
+  background-color: var(--wl-ink-2);
+  transition: transform .16s ease, box-shadow .16s ease;
+}
+.wl-card-img img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* Ein 1px-Innenring NUR auf dem Bild – er fasst vor allem helle Plakate, die sonst mit dem
+   Seitenhintergrund verschwimmen.
+   Die Kachel selbst bleibt nackt (siehe ENDSTAND-Kommentar unten). Als Overlay-::after,
+   nicht als Ring am Container: Ein inset-Schatten dort läge UNTER dem absoluten <img>.
+   Kein z-index – die Chips (.wl-day/.wl-free/.wl-card-tipp, z-index 1) bleiben darüber. */
+.wl-card-img::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(23, 20, 28, .1);
+  pointer-events: none;
+}
+@media (prefers-color-scheme: dark) {
+  .wl-card-img::after { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .09); }
+}
+/* Es hebt sich nur das BILD, nicht die ganze Kachel: Springender Text unter dem Zeiger ist
+   unruhig, ein anhebendes Bild wirkt greifbar. */
+.wl-card:hover .wl-card-img { transform: translateY(-3px); box-shadow: 0 14px 30px rgba(23,20,28,.18); }
+.wl-card:hover .wl-card-t {
+  text-decoration: underline; text-decoration-color: var(--wl-acc);
+  text-decoration-thickness: .1em; text-underline-offset: .16em;
+}
+
+/* Der Datumsblock – das Element, das der Kachel ihren Kalender-Charakter gibt. Er sitzt jetzt
+   oben links statt unten: Dort beginnt der Blick, und dort verdeckt er kein Motiv-Zentrum.
+   Drei Zeilen (Wochentag / Zahl / Monat) statt zwei – so ist er auch ohne Umgebung eindeutig. */
+.wl-day {
+  position: absolute; top: .62rem; left: .62rem; z-index: 1; min-width: 3.05rem;
+  background: #fff; color: var(--wl-ink); border-radius: 13px; padding: .36rem .5rem .32rem;
+  text-align: center; font-weight: 800; line-height: 1; box-shadow: 0 4px 12px rgba(23,20,28,.22);
+}
+.wl-day i  { display: block; font-style: normal; font-size: .58rem; letter-spacing: .1em; color: var(--wl-link); }
+.wl-day b  { display: block; font-size: 1.34rem; letter-spacing: -.035em; margin: .12rem 0 .1rem; }
+.wl-day em { display: block; font-style: normal; font-size: .58rem; letter-spacing: .08em; color: #8b857b; }
+.wl-day-kurs { min-width: 0; font-size: .68rem; letter-spacing: .06em; padding: .42rem .6rem; }
+/* „Empfohlen" bleibt IN der chronologischen Liste – eine eigene Reihe nähme wertvollen Platz
+   weg – und sticht dort NUR über den Stern-Chip heraus, unten links (oben sind Datum und
+   „kostenlos" zu Hause). Kein goldener Rahmen ums Bild dazu. GELB, nicht Koralle: Gelb ist
+   die Auszeichnungs-Farbe der Seite, Koralle heißt „interaktiv". */
+.wl-card-tipp {
+  position: absolute; bottom: .55rem; left: .62rem; z-index: 1;
+  background: #ffd93d; color: var(--wl-ink); font-size: .68rem; font-weight: 800;
+  letter-spacing: .04em; padding: .24rem .55rem; border-radius: 99px;
+  box-shadow: 0 4px 12px rgba(23,20,28,.28);
+}
+.wl-free {
+  position: absolute; top: .62rem; right: .62rem; z-index: 1;
+  background: var(--wl-acc-3); color: var(--wl-ink);
+  font-weight: 800; font-size: .64rem; letter-spacing: .03em; padding: .34rem .58rem; border-radius: 99px;
+}
+/* „Wir erinnern dich …"-Sprechblase am Erinnere-mich-Knopf (kein Dialog,
+   den man wegklicken muss): dieselbe Sprache wie die Landau-Blase – Limette, Zipfel unten,
+   ploppt auf und geht nach ein paar Sekunden von selbst. Das Skript setzt sie fixed über
+   den Knopf (kein Ahnen-Clipping) und räumt sie selbst wieder ab. */
+.wl-push-pop {
+  position: fixed; transform: translate(-50%, -100%); z-index: 60; pointer-events: none;
+  /* width: max-content, sonst quetscht die left-Position die Blase am rechten Rand schmal,
+     BEVOR das transform sie zentriert (shrink-to-fit rechnet mit dem Platz rechts von left). */
+  width: max-content; max-width: min(280px, 88vw); text-align: center;
+  background: var(--wl-acc-3); color: #17141c;
+  font-size: .8rem; font-weight: 700; line-height: 1.35;
+  padding: .5rem .8rem; border-radius: 13px; box-shadow: 0 8px 24px rgba(23, 20, 28, .35);
+  /* Eigene Auftritts-Keyframe: wl-pop-auf (Landau-Blase) setzt nur translateX und würde
+     unser translate(-50%, -100%) im from-Zustand überschreiben – die Blase spränge. */
+  animation: wl-push-pop-auf .22s cubic-bezier(.34, 1.5, .6, 1);
+  transition: opacity .5s ease;
+}
+@keyframes wl-push-pop-auf {
+  from { opacity: 0; transform: translate(-50%, calc(-100% + .4rem)); }
+}
+.wl-push-pop::after {
+  content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  border: .45rem solid transparent; border-top-color: var(--wl-acc-3); border-bottom: 0;
+}
+.wl-push-pop.weg { opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .wl-push-pop { animation: none; transition: none; }
+}
+
+/* Absage-Banderole: Abgesagtes bleibt in der Liste stehen – wer den Termin gesehen
+   hat, soll auch die Absage sehen. Gefahr-Rot wie .wl-note.bad, NICHT Marken-Koralle: Koralle
+   heißt interaktiv, das hier ist eine Warnung. Oben rechts, wo sonst „kostenlos" säße – die
+   beiden schließen sich aus (wl_kachel lässt „kostenlos" bei Absagen weg). */
+.wl-card-abges {
+  position: absolute; top: .62rem; right: .62rem; z-index: 1;
+  background: #a51e33; color: #fff; font-size: .68rem; font-weight: 800;
+  letter-spacing: .04em; padding: .24rem .55rem; border-radius: 99px;
+  box-shadow: 0 4px 12px rgba(23, 20, 28, .28);
+}
+
+.wl-card-b { display: flex; flex-direction: column; gap: .26rem; }
+/* Die Kategorie steht als kleine Zeile über dem Titel und bringt die Farbe ins Raster, ohne
+   dass dafür die ganze Kachel eingefärbt werden müsste. */
+.wl-card-cat { font-size: .66rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--wl-c, var(--wl-mut)); }
+/* „Tipp" steht in derselben Zeile wie die Kategorie, aber in der Signalfarbe – es erklärt, warum
+   diese Kachel vor einem früheren Termin steht. Ein Wort, kein Etikett. */
+/* Die Empfehlung sitzt als .wl-card-tipp-Chip auf dem Bild, nicht als Wort-Marke in der
+   Kategoriezeile. */
+.wl-card-t { font-weight: 700; font-size: 1rem; line-height: 1.3; letter-spacing: -.015em; }
+.wl-card-m { font-size: .8rem; color: var(--wl-mut); }
+.wl-card-by { margin-top: .12rem; font-size: .77rem; color: var(--wl-mut);
+  display: flex; align-items: center; gap: .42rem; }
+/* Ein Punkt in der Farbe der Veranstalter-Art, KEIN Quadrat mit Initialen: Zwei Buchstaben in
+   9 Pixeln kann niemand lesen, und der Name steht daneben. */
+.wl-pip { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+
+.wl-dot {
+  width: 17px; height: 17px; border-radius: 5px; flex: none; color: #fff;
+  font-weight: 800; font-size: .58rem; line-height: 17px; text-align: center;
+}
+.o-asta { background: var(--wl-acc); }
+.o-hsg  { background: #e8a300; }
+.o-fs   { background: #7fa515; }
+.o-ext  { background: #8b857b; }
+
+/* Platzhalter für Beiträge OHNE Bild – acht Stück, vergeben aus der ID.
+   Sie müssen hier stehen: unter der CSP gibt es kein style="…" im HTML.
+
+   KEINE kräftigen Zweifarben-Verläufe aus verschiedenen Familien (Violett auf Koralle, Türkis
+   auf Blau, Neongrün …): Nebeneinander im Raster sieht das aus wie eine Farbmustertafel und hat
+   mit dem Logo nichts zu tun.
+   Stattdessen ist jeder Platzhalter dieselbe dunkle Fläche wie Kopf und Fußzeile, in die zwei
+   weiche Lichter aus den Logo-Farben scheinen. Sie unterscheiden sich nur in Ort und Mischung. Damit
+   sind Kacheln ohne Bild ruhige dunkle Karten – ein Gestaltungsmittel statt eines Notbehelfs –
+   und der weiße Datumsblock steht auf allen acht gleich gut lesbar. */
+.wl-ph-1, .wl-ph-2, .wl-ph-3, .wl-ph-4,
+.wl-ph-5, .wl-ph-6, .wl-ph-7, .wl-ph-8 { background-color: var(--wl-ink); }
+.wl-ph-1 { background-image: radial-gradient(85% 115% at 12% 112%, rgba(255,92,114,.82), transparent 68%),
+                             radial-gradient(65% 85% at 92% -8%, rgba(255,217,61,.44), transparent 66%); }
+.wl-ph-2 { background-image: radial-gradient(80% 110% at 88% 112%, rgba(255,217,61,.70), transparent 68%),
+                             radial-gradient(70% 90% at 6% 4%, rgba(255,92,114,.48), transparent 66%); }
+.wl-ph-3 { background-image: radial-gradient(90% 120% at 50% 128%, rgba(217,242,75,.58), transparent 66%),
+                             radial-gradient(60% 80% at 84% 6%, rgba(255,92,114,.66), transparent 68%); }
+.wl-ph-4 { background-image: radial-gradient(75% 105% at 14% -12%, rgba(255,217,61,.58), transparent 66%),
+                             radial-gradient(85% 110% at 82% 116%, rgba(255,92,114,.44), transparent 64%); }
+.wl-ph-5 { background-image: radial-gradient(95% 120% at 96% 52%, rgba(255,92,114,.64), transparent 68%),
+                             radial-gradient(70% 95% at 4% 96%, rgba(217,242,75,.48), transparent 66%); }
+.wl-ph-6 { background-image: radial-gradient(80% 110% at 20% 8%, rgba(255,92,114,.56), transparent 66%),
+                             radial-gradient(75% 100% at 74% 110%, rgba(255,217,61,.52), transparent 66%); }
+.wl-ph-7 { background-image: radial-gradient(120% 130% at 50% 132%, rgba(255,217,61,.66), transparent 64%),
+                             radial-gradient(55% 75% at 12% 2%, rgba(217,242,75,.44), transparent 64%); }
+.wl-ph-8 { background-image: radial-gradient(90% 115% at 6% 50%, rgba(255,217,61,.54), transparent 66%),
+                             radial-gradient(90% 115% at 98% 52%, rgba(255,92,114,.62), transparent 66%); }
+
+/* ---------- Kurse-Streifen -------------------------------------------------------------------- */
+/* Kurse sind keine Termine, sondern Angebote – sie bekommen deshalb ein eigenes Bild: dunkle
+   Tafeln statt heller Kästchen. Das hat zwei Gründe. Erstens sind sie so auf einen Blick vom
+   Terminraster zu unterscheiden, ohne dass es einer Überschrift bedarf. Zweitens haben Kurse
+   fast nie ein Bild – als weiße Kästen mit Rahmen sähen sie aus wie ein Formular, das man
+   vergessen hat auszufüllen. */
+.wl-kurse { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 1rem; }
+.wl-ku {
+  position: relative; overflow: hidden;
+  border: 0; border-radius: var(--wl-rad); padding: 1.05rem 1.1rem 1.1rem; min-height: 138px;
+  background-color: var(--wl-ink);
+  background-image: radial-gradient(85% 130% at 96% 118%, rgba(255,217,61,.42), transparent 66%);
+  display: flex; flex-direction: column; gap: .28rem;
+  transition: transform .16s ease, box-shadow .16s ease;
+}
+.wl-ku:hover { transform: translateY(-3px); box-shadow: 0 14px 30px rgba(23,20,28,.2); }
+/* Das Foto unter der Tafel (siehe index.php): Es liegt zuunterst, darüber der Abdunkler im
+   ::before, obenauf der Text. Die drei Lagen sind ausdrücklich gestapelt – ohne die z-Indizes
+   läge der Abdunkler auch über dem Text, und die Tafel sähe „ausgegraut" aus. Der Abdunkler
+   ist unten am dunkelsten, dort stehen Meta-Zeile und der limette Rhythmus. Ohne Foto (keine
+   Kategorie-Zuordnung, Registry leer) bleibt die alte dunkle Tafel mit dem gelben Licht –
+   der Abdunkler darüber ist auf dem ohnehin dunklen Grund praktisch unsichtbar. */
+.wl-ku-bg { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; object-fit: cover; }
+.wl-ku::before {
+  content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: linear-gradient(rgba(23,20,28,.62), rgba(23,20,28,.86) 78%);
+}
+.wl-ku > span { position: relative; z-index: 2; }
+/* Die Farben stehen auf den KINDERN, nicht auf .wl-ku – die a-Falle von weiter oben:
+   .wl-ku ist ein <a>, und `body.wl a { color: inherit }` ist
+   spezifischer als eine einzelne Klasse – ein color am Element selbst würde still verworfen. */
+/* Auf der dunklen Kurs-Tafel braucht „Tipp" die helle Fassung der Signalfarbe. */
+.wl-ku-tipp { font-size: .66rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase;
+  color: #ff8095; margin-bottom: .1rem; }
+.wl-ku-t { font-weight: 700; font-size: .95rem; line-height: 1.28; color: #fff; }
+.wl-ku-m { font-size: .78rem; color: #b5aea4; }
+.wl-ku-w {
+  align-self: flex-start; margin-top: auto; padding-top: .1rem; font-size: .7rem; font-weight: 700;
+  color: var(--wl-acc-3);
+}
+
+/* ---------- Detailseite ----------------------------------------------------------------------- */
+/* background-COLOR, nicht die Kurzschrift: Ohne Bild trägt die Fläche eine .wl-ph-Klasse mit den
+   Logo-Lichtern (v.php). Diese Regel steht SPÄTER in der Datei als die .wl-ph-Regeln – ein
+   `background:` setzte deshalb auch background-image zurück auf none und löschte die Lichter
+   stillschweigend. Zu sehen war ein toter dunkler Balken über die volle Breite. */
+/* ACHTUNG Falle: aspect-ratio ÜBERTRÄGT eine feste min-height auf die Breite (190 px × 21/8
+   = 499 px Mindestbreite) – unter 499 px Viewport scrollte die Detailseite deshalb seitwärts.
+   Die Mindesthöhe ist darum an die Breite gekoppelt: nie mehr, als das Seitenverhältnis
+   bei voller Breite hergibt (8/21 ≈ 38vw); ab ~500 px greifen die 190 px. */
+.wl-det-hero { position: relative; aspect-ratio: 21 / 8; background-color: var(--wl-ink-2); min-height: min(190px, 38vw); }
+.wl-det-hero img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* a-FALLE (siehe .wl-uc-voll): `body.wl a { color: inherit }` schlägt die nackte Klasse –
+   ohne das body.wl-Präfix steht hier dunkle Tinte auf der dunklen Pille. */
+body.wl .wl-back {
+  position: absolute; top: .8rem; left: .8rem; background: rgba(23,20,28,.75); color: #fff;
+  font-size: .78rem; font-weight: 600; padding: .35rem .7rem; border-radius: 99px; backdrop-filter: blur(4px);
+}
+.wl-det { width: min(100% - 2.4rem, 820px); margin-inline: auto; padding: 1.3rem 0 2.5rem; }
+.wl-det h1 { font-size: clamp(1.35rem, 4vw, 1.85rem); font-weight: 800; letter-spacing: -.025em;
+  line-height: 1.14; margin: .5rem 0 .7rem; }
+/* Fakten als ruhige ZEILEN (Symbol + Wert), NICHT als gerahmte Chips: lauter Kästchen unterm
+   Bild wirken wie Streuware. Die Symbole tragen die Marken-Koralle (wie der Strich unterm
+   Zeitwort) – Schmuck der Marke, kein Interaktions-Versprechen. */
+.wl-df-list { display: flex; flex-direction: column; gap: .5rem; margin: .15rem 0 1.25rem; }
+.wl-df { display: flex; gap: .62rem; align-items: flex-start; font-size: .9rem; color: var(--wl-mut); line-height: 1.45; }
+.wl-df > svg { width: 1.1rem; height: 1.1rem; flex: none; color: var(--wl-logo); margin-top: .14rem; }
+.wl-df b { color: var(--wl-ink); font-weight: 700; }
+@media (prefers-color-scheme: dark) { .wl-df b { color: #f4f1ea; } }
+.wl-text { font-size: .93rem; line-height: 1.62; color: var(--wl-mut); margin: 0 0 1.2rem; white-space: pre-line; }
+.wl-btns { display: flex; gap: .55rem; flex-wrap: wrap; }
+/* Die Knopfreihe der Detailseite: EIN dunkler Hauptknopf (Anmeldung > Kalender > Infos),
+   alles andere gleich leise, jeder mit Symbol; sonst konkurrieren bis zu fünf Knöpfe.
+   Am Handy bekommt der Hauptknopf die volle Zeile. */
+.wl-det-akt { margin: 0 0 1.4rem; }
+.wl-det-akt .wl-btn { display: inline-flex; align-items: center; gap: .5rem; }
+.wl-det-akt .wl-btn svg { width: 1.02rem; height: 1.02rem; flex: none; }
+.wl-det-akt .wl-push-btn .pa { display: inline-flex; align-items: center; gap: .5rem; }
+.wl-det-akt .wl-push-btn.on .pb { display: inline-flex; align-items: center; gap: .5rem; }
+/* Am Handy FESTES Knopf-Raster statt Flatterzeile (die Knöpfe „flubbern
+   ohne festen Platz"): zwei gleich breite Spalten, der Hauptknopf über die volle Zeile –
+   und bleibt am Ende ein Knopf allein übrig (gerade Kinderzahl = ungerade Zahl Nebenknöpfe),
+   bekommt auch er die volle Zeile, statt als Stummel links zu hängen. */
+@media (max-width: 540px) {
+  .wl-det-akt { display: grid; grid-template-columns: 1fr 1fr; }
+  .wl-det-akt .wl-btn { justify-content: center; }
+  .wl-det-akt .wl-btn.p,
+  .wl-det-akt .wl-btn:last-child:nth-child(even) { grid-column: 1 / -1; }
+}
+.wl-btn {
+  font-weight: 700; font-size: .85rem; padding: .68rem 1.1rem; border-radius: 11px;
+  border: 1px solid var(--wl-line); background: var(--wl-card); cursor: pointer; font-family: inherit;
+  /* color MUSS gesetzt sein: <button> erbt keine Schriftfarbe, und iOS Safari malt
+     Button-Text sonst BLAU (die <a>-Knöpfe daneben blieben Tinte – sah zweifarbig aus). */
+  color: inherit;
+  /* line-height AUCH: <button> steht sonst auf „normal" (≈1.2), während die <a>-Knöpfe die
+     1.5 der Seite erben – Formular-Knöpfe („Absagen" …) fallen dadurch 4 px kleiner aus als
+     ihre Link-Nachbarn. Ein Wert für beide = eine Höhe für alle. */
+  line-height: 1.5;
+}
+.wl-btn.p { background: var(--wl-ink); border-color: var(--wl-ink); color: #fff; }
+.wl-btn:hover { filter: brightness(.98); }
+.wl-org {
+  margin-top: 1.3rem; padding-top: 1rem; border-top: 1px solid var(--wl-line);
+  display: flex; gap: .65rem; align-items: center; font-size: .84rem;
+}
+.wl-org .wl-dot { width: 30px; height: 30px; line-height: 30px; border-radius: 9px; font-size: .82rem; }
+.wl-org-m { color: var(--wl-mut); font-size: .78rem; }
+.wl-credit { font-size: .7rem; color: var(--wl-mut); margin-top: .4rem; }
+
+/* Desktop-Detailseite ZWEISPALTIG („Platz besser nutzen"): links liest
+   man (Titel, Text), rechts steht das Handeln (Fakten, Knöpfe, Veranstalter) als Leiste.
+   Umgesetzt als GRID-AREAS über den UNVERÄNDERTEN Kindern – das Handy behält seine
+   Reihenfolge im normalen Fluss. Die Fakten spannen bis in die Text-Zeile: So schluckt
+   der lange Text die Resthöhe, statt dass zwischen Titel und Text ein Loch aufreißt. */
+@media (min-width: 900px) {
+  .wl-det-2s {
+    width: min(100% - 2.4rem, 1080px);
+    display: grid; align-content: start;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    column-gap: 3.5rem;
+    grid-template-areas:
+      'badge  fakten'
+      'titel  fakten'
+      'note   fakten'
+      'text   fakten'
+      'text   akt'
+      'text   org'
+      'credit hint';
+  }
+  .wl-det-2s .wl-badge     { grid-area: badge; justify-self: start; }
+  .wl-det-2s h1            { grid-area: titel; }
+  .wl-det-2s .wl-note      { grid-area: note; align-self: start; }
+  .wl-det-2s .wl-df-list   { grid-area: fakten; align-self: start; }
+  .wl-det-2s .wl-det-akt   { grid-area: akt; flex-direction: column; align-items: stretch; align-self: start; }
+  .wl-det-2s .wl-text      { grid-area: text; max-width: 70ch; align-self: start; }
+  .wl-det-2s .wl-credit    { grid-area: credit; }
+  .wl-det-2s .wl-org       { grid-area: org; flex-wrap: wrap; align-self: start; }
+  /* In der 320px-Leiste umbricht der Abo-Knopf ohnehin – dann soll er nicht per
+     margin-left:auto verloren rechts hängen, sondern als volle Zeile unterm Namen stehen,
+     im Rhythmus der gestapelten Knöpfe darüber. */
+  .wl-det-2s .wl-org .wl-push-btn { margin-left: 0; flex: 1 1 100%; margin-top: .35rem; }
+  .wl-det-2s .wl-push-hint { grid-area: hint; align-self: start; }
+}
+
+/* ---------- Formulare (Einreichen) ------------------------------------------------------------ */
+.wl-form { width: min(100% - 2.4rem, 760px); margin-inline: auto; padding: 1.4rem 0 2.5rem; }
+.wl-form h1 { font-size: 1.5rem; font-weight: 800; letter-spacing: -.025em; margin: 0 0 .3rem; }
+.wl-form .wl-lead { color: var(--wl-mut); font-size: .9rem; margin: 0 0 1.4rem; }
+.wl-field { margin-bottom: .95rem; }
+.wl-field label { display: block; font-weight: 600; font-size: .84rem; margin-bottom: .28rem; }
+.wl-field .wl-hint { font-size: .76rem; color: var(--wl-mut); margin: .2rem 0 0; }
+.wl-field input[type="text"], .wl-field input[type="url"], .wl-field input[type="email"],
+.wl-field input[type="number"], .wl-field input[type="datetime-local"], .wl-field input[type="date"],
+.wl-field select, .wl-field textarea {
+  width: 100%; border: 1px solid var(--wl-line); border-radius: 10px; padding: .6rem .7rem;
+  font-size: .9rem; font-family: inherit; background: var(--wl-card); color: inherit;
+}
+.wl-field textarea { min-height: 130px; resize: vertical; }
+/* Datei-Felder: dieselbe Idee wie in der App, nur im Papier-Look – gestrichelte Ablagefläche,
+   Knopf in der Koralle. Die Aufzählung oben lässt „file" bewusst aus: Das Feld ist keine Zeile
+   zum Tippen, und mit einem Rahmen wie ein Textfeld sähe es aus wie ein kaputtes Eingabefeld.
+   Ohne .wl-field davor, weil das Logo-Feld im Veranstalter-Bereich in einem eigenen Formular
+   sitzt – dieses Stylesheet gilt ohnehin nur für die öffentlichen Seiten. */
+input[type="file"] { width: 100%; border: 1px dashed var(--wl-line); border-radius: 10px;
+  padding: .5rem .6rem; font-size: .9rem; font-family: inherit; background: var(--wl-card);
+  color: var(--wl-mut); }
+input[type="file"]::file-selector-button { border: 1px solid var(--wl-line);
+  background: color-mix(in srgb, var(--wl-acc) 12%, var(--wl-card)); color: var(--wl-link);
+  border-radius: 8px; padding: .34rem .7rem; font: inherit; font-weight: 700; font-size: .82rem;
+  margin-right: .6rem; cursor: pointer; }
+input[type="file"]:hover::file-selector-button { border-color: var(--wl-acc); }
+
+.wl-row { display: flex; gap: .8rem; flex-wrap: wrap; }
+.wl-row > * { flex: 1 1 180px; }
+.wl-check { display: flex; gap: .5rem; align-items: flex-start; font-size: .85rem; margin-bottom: .6rem; }
+.wl-check input { margin-top: .2rem; flex: none; }
+
+/* Die Seite hinter „+ Eintragen" ohne Anmeldung: EINE schmale, mittige Spalte. Oben die dunkle
+   Login-Karte – sie trägt dieselben Marken-Lichter wie Bühne und Kacheln und ist damit sichtbar
+   die „Tür" der Seite. „Passwort vergessen?" und die Zugangsanfrage sind zugeklappte <details>
+   darunter (ohne Skript, wie das Kategorie-Menü): Zwei nebeneinanderstehende, ungleich hohe
+   Karten sehen nach Formularfriedhof aus. */
+.wl-zugang { max-width: 460px; margin-inline: auto; }
+.wl-tor { border-radius: var(--wl-rad); padding: 1.35rem 1.4rem 1.45rem; margin-top: 1.3rem; }
+.wl-tor h2 { font-size: 1.12rem; font-weight: 800; letter-spacing: -.02em; margin: 0 0 .3rem; }
+.wl-tor .wl-hint { font-size: .8rem; color: var(--wl-mut); margin: 0 0 .9rem; }
+.wl-tor-dunkel {
+  background-color: var(--wl-ink); color: #fff;
+  background-image: radial-gradient(85% 130% at 8% 112%, rgba(255,217,61,.30), transparent 64%),
+                    radial-gradient(70% 110% at 94% -10%, rgba(255,92,114,.34), transparent 66%);
+}
+.wl-tor-dunkel .wl-hint { color: #b5aea4; }
+.wl-tor-feld { margin-bottom: .8rem; }
+.wl-tor-feld label { display: block; font-size: .78rem; font-weight: 600; color: #ded7cc; margin-bottom: .28rem; }
+.wl-tor-feld input {
+  width: 100%; border: 1px solid rgba(255,255,255,.24); border-radius: 10px;
+  padding: .6rem .7rem; font-size: .9rem; font-family: inherit;
+  background: rgba(255,255,255,.09); color: #fff;
+}
+.wl-tor-feld input:focus { outline: none; border-color: var(--wl-acc); box-shadow: 0 0 0 3px rgba(255,92,114,.22); }
+/* Der Anmelde-Knopf ist limette wie „+ Eintragen" in der Kopfleiste – dieselbe Handlung,
+   dieselbe Farbe. */
+.wl-tor-knopf {
+  width: 100%; border: 0; border-radius: 99px; cursor: pointer; font-family: inherit;
+  font-weight: 800; font-size: .88rem; padding: .66rem 1rem; margin-top: .2rem;
+  background: var(--wl-acc-3); color: var(--wl-ink);
+}
+.wl-tor-knopf:hover { filter: brightness(1.06); }
+/* Die zugeklappten Wege unter dem Login. <details> ohne Skript; der Pfeil des Browsers bleibt
+   sichtbar als Aufklapp-Zeichen. */
+.wl-klapp {
+  background: var(--wl-card); border: 1px solid var(--wl-line); border-radius: var(--wl-rad);
+  margin-top: .8rem; padding: 0;
+}
+.wl-klapp > summary {
+  cursor: pointer; font-size: .9rem; font-weight: 700; padding: .85rem 1.15rem;
+  color: var(--wl-ink);
+}
+@media (prefers-color-scheme: dark) { .wl-klapp > summary { color: #f4f1ea; } }
+.wl-klapp > summary:hover { color: var(--wl-link); }
+.wl-klapp[open] > summary { border-bottom: 1px solid var(--wl-line); }
+.wl-klapp > :not(summary) { margin-left: 1.15rem; margin-right: 1.15rem; }
+.wl-klapp > .wl-hint { font-size: .8rem; color: var(--wl-mut); margin-top: .8rem; }
+.wl-klapp > form { padding-bottom: .35rem; }
+.wl-klapp .wl-btns { margin-bottom: .9rem; }
+.wl-zugang-kontakt { font-size: .8rem; color: var(--wl-mut); text-align: center; margin-top: 1.2rem; }
+/* body.wl davor – die a-Falle: `body.wl a { color: inherit }` schlägt eine einzelne Klasse,
+   der Kontakt-Link wäre sonst still grau geblieben. */
+body.wl .wl-zugang-kontakt a { color: var(--wl-link); }
+/* Überschrift + Abmelden nebeneinander, wenn eine Gruppe angemeldet ist. */
+.wl-form-kopf { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.wl-form-kopf h1 { margin-bottom: 0; }
+/* Das Honigtopf-Feld gegen Spam-Skripte: außerhalb des Bildes, nicht display:none –
+   manche Skripte überspringen Unsichtbares, aber kaum eines misst Positionen. */
+.wl-hp { position: absolute; left: -9999px; top: auto; }
+
+/* Rechtstexte: schmale Spalte, klare Abschnitte. Bewusst schlicht – hier soll man lesen
+   können, nicht bewundern. */
+.wl-recht { max-width: 46rem; margin: 2.2rem auto 3.5rem; padding: 0 1.1rem; }
+.wl-recht h1 { font-size: 1.9rem; margin: 0 0 1.6rem; }
+.wl-recht h2 { font-size: 1.02rem; margin: 1.9rem 0 .35rem; }
+.wl-recht p  { margin: 0 0 .6rem; font-size: .93rem; line-height: 1.62; color: var(--wl-mut); }
+.wl-recht a  { color: var(--wl-link); }
+
+/* ---- Geschlossen (Betriebszustand „aus") -------------------------------------------------
+   Eine einzelne Karte in der Mitte, sonst nichts: keine Kopfleiste, keine Fußzeile, kein Bild.
+   Die Marke steht groß darüber, damit sofort klar ist, WO man gelandet ist – die Seite wird ja
+   fast immer über einen geteilten Link erreicht. Auf dem Papierton des Portals statt auf Weiß,
+   sonst sähe sie aus wie eine Fehlerseite des Servers. */
+.wl-zu { min-height: 100vh; display: grid; place-items: center; padding: 2rem 1.2rem; }
+.wl-zu-in { max-width: 30rem; text-align: center; }
+.wl-zu-marke { font-size: 2.1rem; font-weight: 800; letter-spacing: -.02em; margin-bottom: 1.4rem; }
+/* Die lebende Marke: Der Punkt hüpft im Takt, das Wort dahinter wippt versetzt nach – zusammen
+   sieht es aus wie ein Aufprall, der sich fortsetzt. Die Teile kommen aus wl_marke(). */
+.wl-zu-marke.is-lebt .wl-mark-dot { display: inline-block; animation: wl-zu-huepf 2.6s ease-in-out infinite; }
+.wl-zu-marke.is-lebt .wl-mark-w   { display: inline-block; animation: wl-zu-wippe 2.6s ease-in-out infinite .12s; }
+@keyframes wl-zu-huepf {
+  0%, 62%, 100% { transform: translateY(0); }
+  70%           { transform: translateY(-.42em) scale(1.15); }
+  84%           { transform: translateY(0)      scale(.92); }
+  92%           { transform: translateY(-.08em); }
+}
+@keyframes wl-zu-wippe {
+  0%, 66%, 100% { transform: translateY(0) rotate(0deg); }
+  76%           { transform: translateY(-.06em) rotate(-1.6deg); }
+  88%           { transform: translateY(0) rotate(1deg); }
+}
+
+/* Der Absender ganz unten: klein, ruhig, erst beim Zeigen ganz da. Das Logo trägt keine
+   Bildunterschrift – der Satz daneben ist sie, deshalb steht das Bild auf aria-hidden. */
+/* Zwei Wege UNTEREINANDER: oben der Knopf (im Vorabstart „Zum Login"), darunter der Kontakt als
+   schlichter Verweis. Nebeneinander lasen sie sich als gleichrangiges Paar – untereinander ist
+   die Rangfolge sofort klar. */
+.wl-zu-wege { display: flex; flex-direction: column; gap: .8rem; align-items: center; }
+.wl-zu-mail { color: var(--wl-link); font-weight: 700; font-size: .85rem; text-decoration: none; }
+.wl-zu-mail:hover { text-decoration: underline; }
+
+/* Eigene Zeile unter dem Knopf (fit-content + auto-Ränder): Als inline-flex setzte sich der
+   Absender NEBEN den Knopf und wirkte damit gleich wichtig. */
+.wl-zu-asta { display: flex; width: fit-content; align-items: center; gap: .55rem; margin: 2.4rem auto 0;
+  color: var(--wl-mut); text-decoration: none; font-size: .78rem; opacity: .72;
+  transition: opacity .15s ease; }
+.wl-zu-asta img { width: 34px; height: auto; border-radius: 6px; }
+.wl-zu-asta:hover { opacity: 1; }
+
+/* Pflichtangaben in die unteren Ecken – da erwartet man sie, und in der Mitte stünden sie als
+   dritte Zeile im Weg. Sie hängen am Fenster (fixed), nicht am Inhalt: Die Seite ist ein
+   zentrierter Block ohne eigenen Fuß, ein mitlaufender Absatz landete sonst irgendwo unter der
+   Marke. Der Rest der Seite ist mittig, deshalb bleibt hier nur die volle Breite. */
+.wl-zu-recht { position: fixed; left: 0; right: 0; bottom: 0; z-index: 2;
+  display: flex; justify-content: space-between; pointer-events: none;
+  padding: 1.5rem 1.8rem; font-size: .72rem; }
+.wl-zu-recht a { pointer-events: auto; color: var(--wl-mut); text-decoration: none;
+  opacity: .62; transition: opacity .15s ease; }
+.wl-zu-recht a:hover { opacity: 1; text-decoration: underline; }
+/* Steht nur EINE Adresse, säße sie sonst links – die Datenschutz-Adresse gehört aber nach
+   rechts, sonst wandert sie beim Nachtragen des Impressums plötzlich rüber. */
+.wl-zu-recht a:only-child { margin-left: auto; }
+.wl-zu-in h1 { font-size: 1.5rem; margin: 0 0 .6rem; }
+.wl-zu-in p { color: var(--wl-mut); margin: 0 0 1.5rem; }
+/* ---- Countdown der Vorab-Seite -------------------------------------------------------------
+   Hier darf es laut sein: Die Zahl ist der Grund, warum jemand die Seite überhaupt anschaut.
+   Sie trägt den Marken-Verlauf (Gelb → Koralle) und sitzt auf einem weichen Schein, der ruhig
+   atmet – die Bewegung ersetzt das, was sonst Bilder tun müssten, kostet aber nichts.
+   Die Größe hängt an der Fensterbreite (clamp), damit die Zahl auf dem Handy nicht die halbe
+   Seite verschluckt und am Rechner nicht verloren wirkt. */
+/* overflow-x: clip AM BLOCK, nicht am Körper: Der Countdown ragt absichtlich über seinen
+   Kasten hinaus – der weiche Schein zur Seite, die Funken auf ihrem Weg nach oben. Ohne das
+   wächst die Seite in die Breite und lässt sich am Handy seitwärts schieben.
+   Zwei Feinheiten: `clip` statt `hidden`, weil nur clip „waagerecht abschneiden, senkrecht frei"
+   erlaubt (der Schein soll nach oben und unten weiterhin auslaufen) – und am BLOCK, weil der
+   Körper hier selbst die Seite ist und sein overflow zum Fenster durchschlägt statt zu greifen. */
+.wl-vor { position: relative; margin: .6rem 0 .2rem; line-height: 1;
+  overflow-x: clip; overflow-y: visible; }
+.wl-vor::before {
+  content: ""; position: absolute; inset: -18% -12%; z-index: 0; pointer-events: none;
+  background: radial-gradient(closest-side, rgba(255, 92, 114, .38), transparent 70%);
+  filter: blur(26px); animation: wl-vor-atem 6s ease-in-out infinite;
+}
+/* Der Verlauf FLIESST durch die Ziffern – und zwar NAHTLOS. Vier Bedingungen, und jede einzelne
+   hat beim Bauen eine sichtbare Naht erzeugt:
+     1. Die KACHEL ist die Periode: background-size legt die Bildbreite fest, daneben wiederholt
+        der Browser dasselbe Bild. Ohne diese Angabe ist das Bild so breit wie das Element – die
+        Kachelgrenze liegt dann mitten in der Zahl, als senkrechter Schnitt.
+        Ein repeating-linear-gradient hilft dagegen NICHT: Der wiederholt sich nur INNERHALB
+        seines Bildes und bricht an dessen Kante genauso hart ab.
+     2. Erste und letzte Farbe sind dieselbe – sonst stoßen an der Kachelgrenze zwei Farben
+        unvermittelt aufeinander.
+     3. Verschoben wird um GENAU eine Kachelbreite, in derselben Einheit (em).
+     4. 90deg: Bei geneigter Achse entspricht eine Verschiebung in x keiner ganzen Periode.
+   Prozentwerte wären die fünfte Falle: background-position rechnet in Prozent NICHT die
+   Bildbreite, sondern den Rest zwischen Bild und Flaeche. */
+.wl-vor-zahl {
+  position: relative; z-index: 1; display: block;
+  font-size: clamp(5.5rem, 26vw, 11rem); font-weight: 800; letter-spacing: -.055em;
+  background: linear-gradient(90deg, var(--wl-acc-2) 0%, var(--wl-acc) 25%,
+    var(--wl-link) 50%, var(--wl-acc-3) 75%, var(--wl-acc-2) 100%);
+  background-size: 10em 100%; background-repeat: repeat;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: wl-vor-fluss 7s linear infinite, wl-vor-wippen 3.4s ease-in-out infinite;
+}
+.wl-vor-wort, .wl-vor-jetzt {
+  position: relative; z-index: 1; display: block; font-weight: 800; letter-spacing: -.01em;
+}
+.wl-vor-wort { font-size: 1.05rem; margin-top: .35rem; color: var(--wl-ink); }
+.wl-vor-jetzt {
+  font-size: clamp(2.2rem, 11vw, 4rem);
+  background: linear-gradient(90deg, var(--wl-acc-2) 0%, var(--wl-acc) 25%,
+    var(--wl-link) 50%, var(--wl-acc-3) 75%, var(--wl-acc-2) 100%);
+  background-size: 10em 100%; background-repeat: repeat;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: wl-vor-fluss 4s linear infinite, wl-vor-wippen 2.2s ease-in-out infinite;
+}
+.wl-vor-datum { font-size: .92rem; margin: 1.1rem 0 1.6rem; color: var(--wl-mut); }
+.wl-vor-datum strong { color: var(--wl-ink); }
+@media (prefers-color-scheme: dark) {
+  .wl-vor-wort, .wl-vor-datum strong { color: #f4f1ea; }
+}
+@keyframes wl-vor-atem {
+  0%, 100% { opacity: .7;  transform: scale(1)    rotate(0deg); }
+  50%      { opacity: 1;   transform: scale(1.12) rotate(6deg); }
+}
+/* Genau eine Periode (10em) – ein Pixel mehr oder weniger, und es zuckt bei jedem Durchlauf.
+   Und die Periode muss BREITER sein als die Zahl: Bei 2.4em liefen zwei volle Farbrunden über
+   die Ziffern, und aus dem Verlauf wurde ein wandernder Streifen. */
+@keyframes wl-vor-fluss {
+  from { background-position: 0 0; }
+  to   { background-position: 10em 0; }
+}
+/* Die Zahl wippt statt zu hüpfen: Ein Sprung würde die Zeile darunter mitverschieben. */
+@keyframes wl-vor-wippen {
+  0%, 100% { transform: translateY(0)      rotate(-.8deg); }
+  50%      { transform: translateY(-.14em) rotate(.8deg); }
+}
+
+/* Funken: sechs Punkte in den Markenfarben, die hinter der Zahl aufsteigen und oben verwehen.
+   Jeder hat eigene Startseite, Größe, Dauer und Verzögerung – gleichmäßige wären ein Regen. */
+.wl-vor-funken { position: absolute; inset: -10% 0 -5%; z-index: 0; pointer-events: none; }
+.wl-vor-funken i {
+  position: absolute; bottom: 0; width: .55rem; height: .55rem; border-radius: 99px;
+  opacity: 0; animation: wl-vor-funke 5.5s ease-in infinite;
+}
+.wl-vor-funken .f1 { left: 8%;  background: var(--wl-acc);   animation-duration: 5.2s; animation-delay: 0s;   }
+.wl-vor-funken .f2 { left: 24%; background: var(--wl-acc-2); animation-duration: 6.4s; animation-delay: .9s;  width: .4rem; height: .4rem; }
+.wl-vor-funken .f3 { left: 42%; background: var(--wl-acc-3); animation-duration: 4.6s; animation-delay: 1.8s; }
+.wl-vor-funken .f4 { left: 61%; background: var(--wl-acc);   animation-duration: 6.9s; animation-delay: .4s;  width: .35rem; height: .35rem; }
+.wl-vor-funken .f5 { left: 78%; background: var(--wl-acc-2); animation-duration: 5.8s; animation-delay: 2.6s; }
+.wl-vor-funken .f6 { left: 91%; background: var(--wl-acc-3); animation-duration: 7.4s; animation-delay: 1.3s; width: .3rem; height: .3rem; }
+@keyframes wl-vor-funke {
+  0%   { opacity: 0;   transform: translate(0, 0)          scale(.6); }
+  12%  { opacity: .95; }
+  70%  { opacity: .55; }
+  100% { opacity: 0;   transform: translate(.9rem, -13rem) scale(1.15); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wl-vor::before, .wl-vor-zahl, .wl-vor-jetzt, .wl-vor-funken i,
+  .wl-zu-marke.is-lebt .wl-mark-dot, .wl-zu-marke.is-lebt .wl-mark-w { animation: none !important; }
+  .wl-vor-funken { display: none; }
+}
+
+/* Der Demo-Hinweis auf der Startseite steht zwischen zwei Abschnitten und braucht deshalb
+   eigenen Abstand nach oben – im Beitrag sitzt er ohnehin im Textfluss. */
+.wl-demo-hin { margin-top: 1.1rem; }
+.wl-note { border-radius: 11px; padding: .75rem .85rem; font-size: .84rem; margin-bottom: 1.1rem; }
+.wl-note.ok   { background: #e2f6e8; color: #1d5c33; }
+.wl-note.warn { background: #fff3d6; color: #7a5200; }
+.wl-note.bad  { background: #ffe9ec; color: #a51e33; }
+
+/* Bildauswahl beim Einreichen */
+/* Bild-Auswahl im Formular = VORSCHAU der Kachel: dieselbe Bildfläche wie draußen (3:2,
+   runde Ecken wie .wl-card-img). FALLE hinter den früheren „vertikalen Ungetümen": Das
+   height-Attribut des <img> schlägt aspect-ratio – aspect-ratio greift nur, wenn die
+   Gegenseite auto ist. Deshalb steht height: auto ausdrücklich da.
+   Auswahl = Korallen-Ring + Haken; das Kästchen liegt unsichtbar über der ganzen Karte. */
+.wl-picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .6rem; }
+.wl-pick { position: relative; border-radius: var(--wl-rad); cursor: pointer; }
+.wl-pick img, .wl-pick-std { aspect-ratio: 3 / 2; width: 100%; height: auto;
+  object-fit: cover; border-radius: var(--wl-rad); display: block; }
+.wl-pick input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; margin: 0; z-index: 1; }
+.wl-pick:has(input:checked) { box-shadow: 0 0 0 3px var(--wl-acc); }
+.wl-pick:has(input:focus-visible) { outline: 2px solid var(--wl-link); outline-offset: 3px; }
+.wl-pick:has(input:checked)::after { content: "✓"; position: absolute; top: .45rem; right: .45rem;
+  width: 22px; height: 22px; border-radius: 50%; background: var(--wl-acc); color: #fff;
+  font-weight: 800; font-size: .8rem; line-height: 22px; text-align: center; }
+/* Die Automatik-Karte („Standard-Foto"): dunkle Fläche wie eine Kachel ohne geladenes Bild. */
+.wl-pick-std { display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: .15rem; background: var(--wl-ink-2); color: #fff; text-align: center; padding: .6rem; }
+.wl-pick-std svg { opacity: .65; margin-bottom: .15rem; }
+.wl-pick-std strong { font-size: .82rem; }
+.wl-pick-std span { font-size: .68rem; color: #b5aea4; }
+/* Die Live-Vorschau der Kachel im Einreich-Formular: eine echte .wl-card in Rasterbreite. */
+.wl-vorschau { max-width: 290px; margin-top: .3rem; }
+.wl-vorschau .wl-card { pointer-events: none; }
+
+/* ---------- Leerzustand und Fußzeile ---------------------------------------------------------- */
+.wl-leer {
+  text-align: center; color: var(--wl-mut); font-size: .9rem;
+  border: 1px dashed var(--wl-line); border-radius: var(--wl-rad); padding: 2.2rem 1rem;
+}
+/* Die Fußzeile trägt die volle Breite: Marke links, Links in benannten Spalten rechts, darunter
+   eine abgesetzte Schlusszeile. Marke, Absatz und alle Links in einer Zeile ergäben auf einem
+   1520 px weiten Fuß einen schmalen Klumpen links unten. */
+.wl-foot { background: var(--wl-ink); color: #b5aea4; margin-top: 4rem; padding: 3rem 0 1.5rem; }
+.wl-foot-in {
+  padding: 0; display: grid; align-items: start; gap: 2rem;
+  grid-template-columns: minmax(240px, 1.7fr) repeat(2, minmax(150px, 1fr));
+}
+@media (max-width: 760px) { .wl-foot-in { grid-template-columns: 1fr; gap: 1.7rem; } }
+.wl-foot-brand { color: #fff; font-weight: 800; font-size: 1.4rem; letter-spacing: -.025em; }
+.wl-foot p { font-size: .87rem; max-width: 44ch; margin: .6rem 0 0; line-height: 1.6; }
+.wl-foot-col h3 {
+  color: #fff; font-size: .71rem; font-weight: 800; letter-spacing: .11em; text-transform: uppercase;
+  margin: .3rem 0 .8rem;
+}
+/* Untereinander statt nebeneinander: Als Zeile sind die Links nicht als eigener Bereich zu
+   erkennen, sondern lesen sich wie ein weiterer Satz. */
+.wl-foot-nav { display: flex; flex-direction: column; gap: .55rem; font-size: .86rem; }
+/* „Was demnächst läuft" + „Kurse & Angebote" nur am Handy: Am Desktop stehen beide ohnehin
+   in der Kopfleiste. Grenze = die Zeile, ab der der Footer mehrspaltig wird (760px, oben) –
+   so gilt „Desktop" hier und dort gleich. */
+@media (min-width: 761px) { .wl-foot-doppel { display: none; } }
+.wl-foot-nav a { color: #b5aea4; }
+.wl-foot-nav a:hover { color: #fff; }
+.wl-foot-end {
+  margin-top: 2.6rem; padding-top: 1.15rem; border-top: 1px solid rgba(255,255,255,.11);
+  display: flex; justify-content: space-between; gap: .8rem 1.6rem; flex-wrap: wrap;
+  font-size: .76rem; color: #8d867d;
+}
+
+/* ---------- Teilen-Seite (Weitersagen) --------------------------------------------------------
+   Fertiges Werbematerial aus dem Beitrag: Link/Text zum Kopieren, Insta-Bilder aus dem
+   Canvas, QR-Code. Die Canvas-Vorschauen sind die ECHTEN Export-Flächen, nur klein
+   dargestellt – was man sieht, lädt man herunter. */
+.wl-tl { padding: 1.6rem 0 3rem; display: grid; gap: 1.2rem; }
+.wl-tl-zurueck { font-weight: 700; color: inherit; text-decoration: underline; }
+.wl-tl-block {
+  background: var(--wl-card); border: 1px solid var(--wl-line);
+  border-radius: var(--wl-rad); padding: 1.2rem 1.25rem 1.3rem;
+}
+.wl-tl-block h2 { margin: 0 0 .35rem; font-size: 1.15rem; font-weight: 800; letter-spacing: -.02em; }
+.wl-tl .wl-hint { font-size: .8rem; color: var(--wl-mut); margin: 0 0 .2rem; }
+.wl-tl-zeile { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin: .6rem 0; }
+.wl-tl-zeile input,
+.wl-tl-ziel {
+  flex: 1 1 260px; min-width: 0; font: inherit; font-size: .9rem;
+  border: 1px solid var(--wl-line); border-radius: 10px; padding: .55rem .7rem;
+  background: var(--wl-paper); color: inherit;
+}
+/* Aussehen & Ziel: das Feld für die eigene QR-Adresse und die Options-Blöcke. */
+.wl-tl-ziel { display: block; width: 100%; box-sizing: border-box; margin-top: .55rem; }
+.wl-tl .wl-field { margin: .7rem 0 .4rem; }
+.wl-tl .wl-field > label { display: block; font-weight: 700; font-size: .86rem; margin-bottom: .45rem; }
+/* Das Web-Banner ist quer – seine Kachel darf deutlich breiter laufen als die Insta-Formate. */
+.wl-tl-breit { flex: 1 1 420px; max-width: 620px; }
+.wl-tl textarea {
+  width: 100%; box-sizing: border-box; font: inherit; font-size: .9rem; line-height: 1.5;
+  border: 1px solid var(--wl-line); border-radius: 10px; padding: .6rem .75rem;
+  background: var(--wl-paper); color: inherit; resize: vertical; margin: .3rem 0 .5rem;
+}
+.wl-tl-bilder { display: flex; gap: 1.2rem; flex-wrap: wrap; margin-top: .9rem; }
+.wl-tl-bilder figure { margin: 0; flex: 0 1 250px; }
+.wl-tl-bilder canvas { width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--wl-line); display: block; }
+.wl-tl-bilder figcaption {
+  display: flex; justify-content: space-between; align-items: center; gap: .6rem;
+  margin-top: .5rem; font-size: .8rem; color: var(--wl-mut);
+}
+.wl-tl-qr { background: #fff; padding: 10px; border-radius: 10px; line-height: 0; border: 1px solid var(--wl-line); display: inline-block; }
+.wl-leer { padding: 3rem 0 4rem; }
+.wl-leer h1 { font-weight: 800; letter-spacing: -.02em; }
+/* „Neuer Beitrag" („grundlegend überarbeiten, auch optisch"):
+   nummerierte Abschnitte mit Haarlinie (Ziffer in Marken-Koralle), der Typ als zwei
+   Kacheln statt Dropdown, und ab 900px klebt die Live-Vorschau rechts NEBEN dem Formular
+   (Grid-Areas auf dem form-Element; am Handy steht sie zwischen Feldern und Abschicken). */
+.wl-form-breit { width: min(100% - 2.4rem, 1100px); margin-inline: auto; }
+.wl-nb-abs { margin: 0 0 2.1rem; border: 0; padding: 0; }
+.wl-nb-h {
+  display: flex; align-items: baseline; gap: .6rem; width: 100%;
+  font-size: 1.02rem; font-weight: 800; letter-spacing: -.01em;
+  margin: 0 0 1rem; padding: 0 0 .5rem; border-bottom: 1px solid var(--wl-line);
+}
+.wl-nb-h span { color: var(--wl-logo); font-weight: 800; }
+legend.wl-nb-h { float: left; }  /* fieldset-Legende verhält sich sonst nicht wie eine Überschrift */
+legend.wl-nb-h + * { clear: both; }
+.wl-typ { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
+.wl-typ label {
+  position: relative; display: block; background: var(--wl-card);
+  border: 1px solid var(--wl-line); border-radius: 14px; padding: .85rem 1rem; cursor: pointer;
+}
+.wl-typ input { position: absolute; opacity: 0; pointer-events: none; }
+.wl-typ strong { display: block; margin-bottom: .2rem; }
+.wl-typ label > span { font-size: .78rem; color: var(--wl-mut); line-height: 1.45; display: block; }
+.wl-typ label:has(input:checked) { border-color: var(--wl-acc); box-shadow: inset 0 0 0 1px var(--wl-acc); }
+@media (max-width: 480px) { .wl-typ { grid-template-columns: 1fr; } }
+@media (min-width: 900px) {
+  form.wl-neu {
+    display: grid; align-items: start; column-gap: 3rem;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-areas: 'haupt seite' 'fuss seite';
+  }
+  .wl-nb-haupt { grid-area: haupt; min-width: 0; }
+  .wl-nb-fuss  { grid-area: fuss; }
+  .wl-nb-seite { grid-area: seite; position: sticky; top: 1.2rem; }
+}
+
+/* Logo als Absender-Marke (Promo-Seite): dieselben Maße wie der farbige Kurz-Punkt der
+   jeweiligen Stelle (die .wl-dot-Größen gelten weiter), nur eben als Bild. Weißer Grund,
+   weil viele Logos transparent kommen und auf Dunkel absaufen würden. */
+img.wl-dot-logo { object-fit: cover; background: #fff; border: 1px solid var(--wl-line); }
+.wl-logo-zeile { display: flex; align-items: center; gap: 1.1rem; flex-wrap: wrap; }
+.wl-logo-gross, .wl-logo-zeile .wl-dot.gross {
+  width: 84px; height: 84px; border-radius: 18px; flex: none;
+}
+.wl-logo-gross { object-fit: cover; background: #fff; border: 1px solid var(--wl-line); }
+.wl-logo-zeile .wl-dot.gross { line-height: 84px; font-size: 1.4rem; }
+.wl-nb-zahl { margin-left: auto; font-size: .78rem; font-weight: 600; color: var(--wl-mut); }
+.wl-promo-bilder { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .7rem; margin: 0 0 1.2rem; }
+.wl-promo-bild { margin: 0; }
+.wl-promo-bild img {
+  width: 100%; aspect-ratio: 3 / 2; object-fit: cover; border-radius: 12px;
+  border: 1px solid var(--wl-line); display: block; margin-bottom: .35rem;
+}
+
+/* Der Veranstalter-BEREICH (einreichen.php) als eine Art Dashboard:
+   Nach dem Login erst die Übersicht – Lage in drei Zahlen (nackte Ziffern, keine Chips),
+   die Wege als Karten (Anlegen dunkel als Hauptweg), darunter die Beiträge offen sichtbar.
+   Das Formular kommt erst auf ausdrücklichen Klick (?t=neu). */
+.wl-dash-kopf { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.wl-dash-kopf h1 { margin: 0; }
+.wl-dash-kopf form { margin-left: auto; }
+.wl-dash-zahlen { display: flex; gap: 2.4rem; flex-wrap: wrap; margin: 1.2rem 0 1.5rem; }
+.wl-dz b { display: block; font-size: 1.75rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; }
+.wl-dz span { font-size: .78rem; color: var(--wl-mut); }
+.wl-dash-karten { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .8rem; margin: 0 0 2rem; }
+.wl-dk {
+  display: block; background: var(--wl-card); border: 1px solid var(--wl-line);
+  border-radius: var(--wl-rad); padding: 1rem 1.1rem;
+}
+.wl-dk strong { display: block; margin-bottom: .3rem; letter-spacing: -.01em; }
+.wl-dk span { font-size: .8rem; color: var(--wl-mut); line-height: 1.45; display: block; }
+a.wl-dk:hover { border-color: var(--wl-acc); }
+.wl-dk.p { background: var(--wl-ink); border-color: var(--wl-ink); color: #fff; }
+.wl-dk.p span { color: #b5aea4; }
+.wl-dash h2 { font-size: 1.05rem; margin: 0 0 .2rem; letter-spacing: -.01em; }
+
+/* Der rote Papierkorb an den Beiträgen: Symbol-Knopf in Knopfhöhe der Nachbarn – Rot ist
+   auf den öffentlichen Seiten die Gefahr-Farbe (wie .wl-note.bad), nicht die Marken-Koralle. */
+.wl-beitrag-weg { display: flex; }   /* streckt den Knopf auf die Höhe der Nachbar-Knöpfe */
+.wl-weg-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: .68rem .8rem; color: #a51e33; border-color: rgba(165, 30, 51, .35);
+  /* inline-flex hat keinen Zeilen-Strut – ohne Mindesthöhe richtet sich der Knopf nur nach
+     dem 1.05rem-Symbol und bleibt 3–4 px flacher als die Text-Knöpfe daneben. Die Rechnung
+     ist deren Höhe: 1.5 × .85rem Zeile + 2 × .68rem Polster + 2 px Rand. */
+  min-height: calc(2.635rem + 2px);
+}
+.wl-weg-btn svg { width: 1.05rem; height: 1.05rem; }
+.wl-weg-btn:hover { background: #ffe9ec; border-color: #a51e33; filter: none; }
+@media (prefers-color-scheme: dark) {
+  .wl-weg-btn { color: #ff8095; border-color: rgba(255, 128, 149, .4); }
+  .wl-weg-btn:hover { background: rgba(165, 30, 51, .25); border-color: #ff8095; }
+}
+.wl-btn-rot { background: #a51e33; border-color: #a51e33; color: #fff; }
+
+/* Kategorie als PILLEN-Wahl statt Dropdown – dieselbe Mechanik wie die
+   Typ-Kacheln: unsichtbare Radios, gewählt = Koralle-Ring. Die gestrichelte Pille öffnet
+   den Vorschlags-Dialog; sie ist bewusst KEINE Wahlmöglichkeit. */
+.wl-kats { display: flex; flex-wrap: wrap; gap: .45rem; }
+.wl-kat-pill { position: relative; cursor: pointer; }
+.wl-kat-pill input { position: absolute; opacity: 0; pointer-events: none; }
+.wl-kat-pill span {
+  display: inline-flex; align-items: center; gap: .35em; font-size: .85rem; font-weight: 600;
+  border: 1px solid var(--wl-line); background: var(--wl-card); border-radius: 99px;
+  padding: .45rem .85rem;
+}
+.wl-kat-pill:has(input:checked) span { border-color: var(--wl-acc); box-shadow: inset 0 0 0 1px var(--wl-acc); }
+.wl-kat-neu {
+  border: 1px dashed var(--wl-line); background: transparent; color: var(--wl-mut);
+  border-radius: 99px; padding: .45rem .85rem; font-size: .85rem; font-weight: 600;
+  cursor: pointer; font-family: inherit;
+}
+.wl-kat-neu:hover { border-color: var(--wl-acc); color: inherit; }
+
+/* Der eigene Rückfrage-Dialog (kein Browser-confirm – wie in der App). */
+.wl-dialog {
+  border: 1px solid var(--wl-line); border-radius: var(--wl-rad);
+  background: var(--wl-card); color: inherit; padding: 1.3rem 1.4rem;
+  width: min(92vw, 400px); box-shadow: 0 24px 60px rgba(23, 20, 28, .25);
+}
+.wl-dialog::backdrop { background: rgba(23, 20, 28, .45); backdrop-filter: blur(2px); }
+.wl-dialog h3 { margin: 0 0 .5rem; font-size: 1.05rem; letter-spacing: -.01em; }
+.wl-dialog p { margin: 0 0 1.1rem; font-size: .88rem; line-height: 1.55; color: var(--wl-mut); }
+.wl-dialog .wl-btns { justify-content: flex-end; }
+.wl-dialog textarea {
+  width: 100%; border: 1px solid var(--wl-line); border-radius: 10px; padding: .6rem .7rem;
+  font: inherit; font-size: .88rem; background: var(--wl-paper); color: inherit;
+  margin-bottom: .9rem; resize: vertical;
+}
+.wl-dialog .wl-note { margin-bottom: .9rem; }
+@media (prefers-color-scheme: dark) { .wl-dialog p strong { color: #f4f1ea; } }
+
+/* „Eure Beiträge" im Dashboard: jede Zeile führt zu Teilen/Ansehen. */
+.wl-meine { list-style: none; margin: .6rem 0 0; padding: 0; display: grid; gap: .45rem; }
+.wl-meine li {
+  display: flex; align-items: center; justify-content: space-between; gap: .5rem 1rem; flex-wrap: wrap;
+  border: 1px solid var(--wl-line); border-radius: 12px; padding: .55rem .75rem;
+}
+.wl-meine-t em { font-style: normal; font-size: .78rem; color: var(--wl-mut); margin-left: .4rem; }
+/* „abgesagt" im Dashboard in Gefahr-Rot – dieselben Töne wie .wl-note.bad, nicht Koralle. */
+.wl-meine-abges { color: #a51e33; font-weight: 700; }
+@media (prefers-color-scheme: dark) { .wl-meine-abges { color: #ff8095; } }
+/* Die Ablehnungs-Begründung des AStA – eigene Zeile unterm Titel, direkt am Weg zurück. */
+.wl-meine-grund { display: block; font-size: .78rem; color: var(--wl-mut); margin-top: .15rem; }
+.wl-meine-a { display: flex; gap: .4rem; margin-left: auto; flex-wrap: wrap; }
+/* JEDES Formular in der Knopf-Zeile streckt seinen Knopf auf Nachbarhöhe; ohne das stehen
+   „Absagen"/„Absage zurücknehmen" kleiner da als die Nachbar-Knöpfe. */
+.wl-meine-a form { display: flex; }
+.wl-meine-a form .wl-btn { flex: 1 1 auto; }
+
+/* ---------- Über-Seite ------------------------------------------------------------------------
+   Die Visitenkarte: erst die Marke (riesig, sonst nichts), dann der Absender, dann das Netzwerk.
+   Alle Auftritte liegen im no-preference-Block; ohne Bewegung ist die Seite von Anfang an
+   vollständig da. Die Scroll-Auftritte (is-wart/is-da) vergibt erst das Skript – kein
+   JavaScript heißt: nichts ist versteckt. */
+/* Die Lichter liegen als background-SCHICHTEN direkt auf der Bühne, NICHT in einem ::before:
+   Firefox (Windows) rundet das Pseudo-Element bei manchen Zoomstufen anders als sein
+   Elternteil, und der Hintergrund wirkt dann „geteilt" (sichtbare Kante mitten in der
+   Fläche). Schichten EINES Elements können sich nicht gegeneinander verschieben. */
+.wl-uh {
+  position: relative; color: #fff; overflow: hidden;
+  background:
+    radial-gradient(46% 60% at 12% 88%, rgba(255,217,61,.18), transparent 62%),
+    radial-gradient(50% 64% at 88% 10%, rgba(255,92,114,.26), transparent 64%),
+    radial-gradient(30% 40% at 55% 58%, rgba(217,242,75,.06), transparent 70%),
+    var(--wl-ink);
+  /* Kappung 1200 statt 920: Bei herausgezoomten Fenstern (mehr CSS-Pixel) endet die Bühne
+     sonst mitten im Sichtbereich – die Kante zur nächsten Sektion wirkt im Dunkel-Modus wie
+     ein „Teilstrich" mit gespiegeltem Hintergrund. */
+  min-height: clamp(430px, 86vh, 1200px); display: grid; place-items: center;
+  text-align: center; padding: 3rem 0;
+}
+@supports (height: 1svh) { .wl-uh { min-height: clamp(430px, 86svh, 1200px); } }
+.wl-uh-in { position: relative; }
+.wl-uh-badge {
+  display: inline-flex; align-items: center; gap: .55em; margin: 0 0 1.2rem;
+  font-size: .8rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  color: #cdc6bb; border: 1px solid rgba(255,255,255,.18); border-radius: 99px;
+  padding: .5em 1.1em;
+}
+/* In der Pille: das AStA-Logo (Original – Umfärbungen sind Geschichte) und hinter dem Text
+   das Herz aus dem Pat:innenprogramm-Baukasten, an die wl-Palette angepasst (Koralle). */
+.wl-uh-logo { height: 1.6em; width: auto; flex: none; }
+.wl-uh-herz {
+  position: relative; display: inline-block; width: 1.05em; height: 1.05em;
+  color: var(--wl-acc); letter-spacing: normal; text-transform: none;
+  animation: wl-herz-auf .85s cubic-bezier(.34, .8, .4, 1) 1.6s both;
+}
+.wl-uh-herz svg { display: block; width: 100%; height: 100%; }
+@keyframes wl-herz-auf {
+  0%   { transform: scale(0, 0);       opacity: 0; }
+  20%  { transform: scale(.45, .45);   opacity: 1; }
+  45%  { transform: scale(1.22, 1.04); opacity: 1; }
+  62%  { transform: scale(.9, 1.1);    opacity: 1; }
+  80%  { transform: scale(1.09, .96);  opacity: 1; }
+  100% { transform: scale(1, 1);       opacity: 1; }
+}
+/* Fleißig, ohne Skript: Der Flug selbst dauert ~1,8 s (die Prozente sind auf die kürzeren
+   Durchläufe umgerechnet), aber die Pausen
+   dazwischen sind kurz – links alle 3,5 s, rechts alle 5 s. Die Takte bleiben teilerfremd
+   genug, dass die beiden nie in einen Gleichtakt fallen. */
+@keyframes wl-herz-weg-l {
+  0%   { transform: translate(0, 0)         scale(.35) rotate(0deg);   opacity: 0; }
+  7%   { transform: translate(-2px, -3px)   scale(.7)  rotate(-4deg);  opacity: .95; }
+  20%  { transform: translate(-9px, -14px)  scale(.9)  rotate(-11deg); opacity: .9; }
+  50%  { transform: translate(-25px, -35px) scale(.72) rotate(-24deg); opacity: 0; }
+  100% { transform: translate(-25px, -35px) scale(.72) rotate(-24deg); opacity: 0; }
+}
+@keyframes wl-herz-weg-r {
+  0%   { transform: translate(0, 0)        scale(.35) rotate(0deg);  opacity: 0; }
+  7%   { transform: translate(2px, -3px)   scale(.65) rotate(5deg);  opacity: .95; }
+  18%  { transform: translate(8px, -13px)  scale(.85) rotate(13deg); opacity: .9; }
+  41%  { transform: translate(22px, -33px) scale(.68) rotate(28deg); opacity: 0; }
+  100% { transform: translate(22px, -33px) scale(.68) rotate(28deg); opacity: 0; }
+}
+.wl-uh-herz-l, .wl-uh-herz-r {
+  position: absolute; left: 50%; top: 50%; width: .62em; height: .62em;
+  margin: -.31em 0 0 -.31em; opacity: 0; pointer-events: none;
+}
+.wl-uh-herz-l { animation: wl-herz-weg-l 3.5s ease-out 2.6s infinite; }
+.wl-uh-herz-r { animation: wl-herz-weg-r 5s   ease-out 3.9s infinite; }
+/* DIE Marke. Eine Zeile, so groß wie der Bildschirm es hergibt – der ganze Auftritt der Seite. */
+.wl-uh-marke { margin: 0; line-height: .96; letter-spacing: -.04em; font-size: clamp(3.2rem, 17vw, 13rem); }
+.wl-uh-marke .wl-mark { font-weight: 800; }
+.wl-uh-lead { color: #cdc6bb; font-size: clamp(.95rem, 1.6vw, 1.15rem); max-width: 46ch; margin: 1.3rem auto 0; }
+.wl-uh-lead + .wl-uh-lead { margin-top: .5rem; }
+.wl-uh-weiter {
+  display: inline-grid; place-items: center; width: 46px; height: 46px; margin-top: 2.1rem;
+  border: 1px solid rgba(255,255,255,.22); border-radius: 50%; color: #cdc6bb;
+}
+.wl-uh-weiter:hover { color: #fff; border-color: rgba(255,255,255,.5); }
+
+.wl-ut { padding: clamp(3rem, 7vw, 5.5rem) 0; }
+.wl-ut-schmal { max-width: 760px; }
+.wl-ut-h2 { font-size: clamp(1.6rem, 3.4vw, 2.4rem); font-weight: 800; letter-spacing: -.03em; margin: 0 0 1rem; }
+/* Die betonten Wörter tragen ÜBERALL den Marken-Verlauf – auf Papier nur die abgedunkelte
+   Fassung (das echte Gelb wäre dort unlesbar): gleiche Geometrie (92°, Stopp 75 %),
+   dunkleres Gold → Schrift-Koralle. Auf dunklem Grund (Bühnen-Sektionen und der ganze
+   Dunkelmodus) leuchtet der echte Verlauf. Eine flache Koralle auf hell bisse sich sichtbar
+   mit dem Verlaufs-Rest der Seite. */
+.wl-ut-h2 em {
+  font-style: normal;
+  background: linear-gradient(92deg, #c9920a, #d1364d 75%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+@media (prefers-color-scheme: dark) {
+  .wl-ut-h2 em { background-image: linear-gradient(92deg, #ffd93d, #ff5c72 75%); }
+}
+.wl-ut-dunkel .wl-ut-h2 em { background-image: linear-gradient(92deg, #ffd93d, #ff5c72 75%); }
+p.wl-ut-text { margin: 0 0 .85rem; max-width: 62ch; line-height: 1.65; }
+/* Das AStA-Logo neben dem „Von Studis"-Text: OHNE Karte und OHNE Umfärbung – das Original
+   steht nackt auf der Fläche, wie in der App auch im Dunkel-Modus. Die leichte Drehung beim
+   Zeigen ist der Gruß an den verspielten Logo-Stil. */
+.wl-ua { display: flex; align-items: center; gap: clamp(1.4rem, 4vw, 3rem); flex-wrap: wrap; }
+.wl-ua-text { flex: 1 1 340px; }
+.wl-ua-logo { flex: 0 0 auto; display: block; transition: transform .18s ease; }
+/* Schmal gestapelt (Logo rutscht unter den Text) steht es zentriert statt links am Rand. */
+@media (max-width: 700px) { .wl-ua-logo { margin-inline: auto; } }
+.wl-ua-logo:hover { transform: translateY(-3px) rotate(-1.5deg); }
+.wl-ua-logo img { display: block; width: clamp(160px, 19vw, 230px); height: auto; }
+/* Die Verwandlung: Original unten, was.läuft-Fassung deckungsgleich darüber. Der
+   GRUNDZUSTAND ist das ORIGINAL (die neue Fassung startet zugeklappt): Das Logo beginnt immer
+   als das normale, nie als das bunte. Ohne Bewegung
+   (reduced motion, keine Animation) bleibt entsprechend das Original stehen. */
+.wl-ua-wandel { position: relative; display: block; }
+.wl-ua-neu { position: absolute; inset: 0; clip-path: inset(0 100% 0 0); }
+@media (prefers-reduced-motion: no-preference) {
+  /* Endlose Verwandlung: hereinwischen, kurz stehen, zurückgleiten, kurz Original – alle
+     7 Sekunden von vorn. `backwards` zeigt schon während der Anlauf-Verzögerung das
+     Original (0-%-Bild), nicht den Verlauf. */
+  .wl-ua-neu { animation: wl-ua-wisch 7s cubic-bezier(.3,.72,.34,1) 1.2s infinite backwards; }
+}
+@keyframes wl-ua-wisch {
+  0%        { clip-path: inset(0 100% 0 0); }
+  26%, 60%  { clip-path: inset(0 0 0 0); }
+  86%, 100% { clip-path: inset(0 100% 0 0); }
+}
+/* Lichter als background-Schichten statt ::before – gleiche Firefox-Rundungs-Falle wie
+   bei .wl-uh (siehe dort). */
+.wl-ut-dunkel {
+  color: #fff; position: relative; overflow: hidden;
+  background:
+    radial-gradient(50% 90% at 6% 110%, rgba(255,217,61,.12), transparent 60%),
+    radial-gradient(46% 90% at 94% -10%, rgba(255,92,114,.2), transparent 62%),
+    var(--wl-ink);
+}
+.wl-ut-dunkel .wl-in { position: relative; }
+.wl-ut-dunkel p.wl-ut-text { color: #cdc6bb; }
+
+/* Die fünf Kacheln des Netzwerks – wer alles mit anpackt. */
+.wl-up-gitter { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(235px, 1fr)); margin-top: 1.7rem; }
+.wl-up {
+  background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.12);
+  border-radius: var(--wl-rad); padding: 1.25rem 1.2rem 1.35rem;
+  transition: transform .18s ease, border-color .18s ease, background-color .18s ease;
+}
+.wl-up:hover { transform: translateY(-4px); border-color: rgba(255,255,255,.3); background: rgba(255,255,255,.08); }
+.wl-up-i { display: inline-grid; place-items: center; width: 52px; height: 52px; border-radius: 15px; margin-bottom: .9rem; }
+.wl-up h3 { margin: 0 0 .35rem; font-size: 1.02rem; font-weight: 800; letter-spacing: -.01em; }
+.wl-up p { margin: 0; font-size: .86rem; line-height: 1.55; color: #b5aea4; }
+.wl-up-koralle .wl-up-i { color: #ff8095; background: rgba(255,92,114,.14); }
+.wl-up-gelb .wl-up-i { color: var(--wl-acc-2); background: rgba(255,217,61,.12); }
+.wl-up-lime .wl-up-i { color: var(--wl-acc-3); background: rgba(217,242,75,.12); }
+
+/* Die Zahlen sprechen für sich – im Marken-Verlauf, tabellarische Ziffern fürs Hochzählen. */
+.wl-uz { display: grid; gap: 1.2rem; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); text-align: center; }
+.wl-uz-n {
+  display: block; font-size: clamp(2.6rem, 6vw, 4rem); font-weight: 800; letter-spacing: -.04em;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(92deg, #ffd93d, #ff5c72 75%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.wl-uz-z span { font-size: .88rem; color: var(--wl-mut); font-weight: 600; }
+
+.wl-uc { display: flex; gap: .8rem; flex-wrap: wrap; margin-top: 1.5rem; }
+.wl-uc a { border-radius: 99px; padding: .8em 1.5em; font-weight: 800; font-size: .95rem; }
+/* body.wl davor – die a-Falle (siehe oben): `body.wl a { color: inherit }` schlüge eine
+   einzelne Klasse, und im Dunkel-Modus stünde helle Schrift auf Limette. */
+body.wl .wl-uc-voll { background: var(--wl-acc-3); color: #17141c; }
+.wl-uc-voll:hover { filter: brightness(1.06); }
+.wl-uc-rand { border: 1.5px solid var(--wl-line); color: inherit; }
+.wl-uc-rand:hover { border-color: var(--wl-mut); }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Der Auftritt der Marke: was → Punkt → läuft, danach Zeile, Satz und Pfeil. */
+  .wl-uh-badge            { animation: wl-u-auf .6s ease-out both .8s; }
+  .wl-uh-marke .wl-mark-was { animation: wl-u-auf .7s cubic-bezier(.2,.7,.3,1) both .05s; }
+  .wl-uh-marke .wl-mark-dot { animation: wl-u-auf .7s cubic-bezier(.2,.7,.3,1) both .22s; }
+  .wl-uh-marke .wl-mark-w   { animation: wl-u-auf .7s cubic-bezier(.2,.7,.3,1) both .38s; }
+  .wl-uh-lead   { animation: wl-u-auf .6s ease-out both .95s; }
+  .wl-uh-weiter { animation: wl-u-auf .6s ease-out both 1.15s; }
+  .wl-uh-weiter svg { animation: wl-u-wink 2.4s ease-in-out 2s infinite; }
+  /* Die Abschnitte treten beim Scrollen auf; is-wart vergibt NUR das Skript. */
+  .wl-ut.is-wart { opacity: 0; transform: translateY(26px); }
+  .wl-ut.is-da { opacity: 1; transform: none; transition: opacity .6s ease, transform .6s cubic-bezier(.2,.7,.3,1); }
+}
+@keyframes wl-u-auf { from { opacity: 0; transform: translateY(.45em); } }
+@keyframes wl-u-wink { 0%, 100% { transform: none; } 12% { transform: translateY(4px); } 24% { transform: none; } }
+
+/* ---------- Ruhe bewahren --------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .wl-card-img, .wl-card:hover .wl-card-img { transition: none; transform: none; }
+
+  /* Der Wortwechsel wird gar nicht erst gestartet (siehe index.php) – falls doch, steht er still. */
+  /* Das Rad wird gar nicht erst gestartet (siehe index.php) – falls doch, bewegt sich nichts. */
+  .wl-mark-roll, .wl-h1-rest { transition: none; }
+  /* Die Ostereier: Die Klick-Skripte binden bei „Ruhe bewahren" gar nicht erst – die reinen
+     CSS-Effekte (Lupe, Logo-Hover, Blasen-Aufgang) stehen hier still. Die Landau-Blase selbst
+     bleibt benutzbar, sie erscheint nur ohne Animation. */
+  .wl-suche:focus-within .wl-suche-i, .wl-logo.is-gruss .wl-mark-dot, .wl-stadt-pop,
+  .wl-mark.is-hall .wl-mark-was, .wl-mark.is-hall .wl-mark-dot, .wl-mark.is-hall .wl-mark-w,
+  .wl-mark.is-los .wl-mark-w,
+  .wl-mark-dot.is-kick, .wl-mark-dot.is-fall { animation: none; }
+  /* Über-Seite: Auftritte stehen zwar schon in no-preference, aber doppelt hält – und die
+     Scroll-Klassen dürfen hier nie etwas verstecken. */
+  .wl-uh-badge, .wl-uh-marke .wl-mark-was, .wl-uh-marke .wl-mark-dot, .wl-uh-marke .wl-mark-w,
+  .wl-uh-lead, .wl-uh-weiter, .wl-uh-weiter svg, .wl-ua-neu { animation: none; }
+  /* Das Pillen-Herz steht still und sichtbar; die Flieger-Herzchen bleiben bei Ruhe ganz weg
+     (ihr Grundzustand ist opacity 0 – ohne Animation erscheinen sie also nie). */
+  .wl-uh-herz { animation: none; }
+  .wl-uh-herz-l, .wl-uh-herz-r { animation: none; }
+  .wl-ut.is-wart { opacity: 1; transform: none; }
+  .wl-logo, .wl-logo:hover { transition: none; transform: none; }
+  /* Das Zeitwort ebenso: Ohne die Klasse is-zeit läuft ohnehin nichts, aber wer sie von Hand
+     setzt, soll trotzdem Ruhe haben. */
+  .wl-h1.is-zeit .wl-h1-zeit, .wl-h1.is-zeit .wl-h1-zeit::after { animation: none; }
+  /* Die „Landau"-Buchstaben (und das mitauftretende Fragezeichen): Bei „Ruhe bewahren"
+     zerlegt das Skript gar nicht erst – falls doch (Einstellung mitten auf der Seite
+     umgeschaltet), stehen sie still UND sichtbar.
+     (Gleiche Gewichtung wie die Versteck-Regel oben, sonst verliert diese hier.) */
+  .wl-h1:not(.is-zeit) .wl-h1-stadt span, .wl-h1:not(.is-zeit) .wl-h1-frage { opacity: 1; }
+  .wl-h1.is-zeit .wl-h1-frage { animation: none; }
+  .wl-h1.is-zeit .wl-h1-stadt span { animation: none; }
+}
+
+/* ---------- Push-Paket: Erinnerungen, Abos, Veranstalter, App-Karte ---------------- */
+
+/* hidden MUSS hidden bleiben, auch wenn eine Regel hier display setzt (App-Karte, Info-Kästen,
+   iOS-Zeile). Ohne diese Zeile hebelte jedes display:flex das Attribut wieder aus. */
+[hidden] { display: none !important; }
+
+.wl-btn.s { font-size: .78rem; padding: .45rem .75rem; }
+
+/* Ein Knopf, zwei Beschriftungen („Erinnere mich"/„Erinnerung aus") – sichtbar ist je nach
+   Zustand (.on) genau eine. Das Skript schaltet nur die Klasse, nie den Text. */
+.wl-push-btn .pb { display: none; }
+.wl-push-btn.on .pa { display: none; }
+.wl-push-btn.on .pb { display: inline; }
+.wl-push-btn.on { background: var(--wl-acc-3); border-color: var(--wl-acc-3); color: var(--wl-ink); }
+.wl-push-btn[disabled] { opacity: .6; cursor: wait; }
+.wl-org .wl-push-btn { margin-left: auto; flex: none; }
+
+.wl-push-hint { font-size: .78rem; color: var(--wl-mut); margin: .6rem 0 0; }
+.wl-push-hint a { text-decoration: underline; }
+/* Push-Meldungen kommen als eigener Dialog (wl-push.js baut ihn) – ein Kasten am Seitenende
+   stünde unterhalb des Blickfelds. Der App-Verweis darin ist ein echter Knopf (.wl-btn.p),
+   kein unscheinbarer Textlink. */
+.wl-push-dialog h3 { display: flex; align-items: center; gap: .5rem; }
+.wl-push-dialog h3 svg { flex: none; width: 1.1rem; height: 1.1rem; color: var(--wl-logo); }
+.wl-push-dialog .wl-btn { display: inline-flex; align-items: center; }
+
+/* Erinnerungen & Abos (abos.php) */
+.wl-abo-h { font-size: 1.02rem; font-weight: 800; letter-spacing: -.01em; margin: 1.7rem 0 .45rem; }
+.wl-abo-form { display: flex; gap: .55rem; flex-wrap: wrap; align-items: center; }
+.wl-abo-form select {
+  font: inherit; font-size: .85rem; padding: .58rem .7rem; border-radius: 11px;
+  border: 1px solid var(--wl-line); background: var(--wl-card); color: inherit; max-width: 100%;
+}
+.wl-abo-liste { list-style: none; margin: 0; padding: 0; }
+.wl-abo-liste:empty::before { content: "Noch nichts eingerichtet."; font-size: .82rem; color: var(--wl-mut); }
+.wl-abo-liste li {
+  display: flex; align-items: center; justify-content: space-between; gap: .8rem;
+  padding: .55rem 0; border-bottom: 1px solid var(--wl-line); font-size: .88rem;
+}
+.wl-abo-liste li:last-child { border-bottom: 0; }
+.wl-abo-weg {
+  background: none; border: 0; cursor: pointer; font: inherit; font-size: .78rem;
+  color: var(--wl-link); text-decoration: underline; padding: 0; flex: none;
+}
+.wl-abo-fuss { margin-top: 1.6rem; }
+
+/* Veranstalter-Seiten (veranstalter.php) */
+.wl-vst-kopf { display: flex; align-items: center; gap: .9rem; flex-wrap: wrap; margin: 0 0 1rem; }
+.wl-vst-kopf h1 { margin: 0; }
+.wl-vst-kopf .wl-push-btn { margin-left: auto; flex: none; }
+.wl-dot.gross { width: 52px; height: 52px; line-height: 52px; border-radius: 15px; font-size: 1.1rem; }
+/* Der Bearbeiten-Knopf der eigenen Veranstalter-Seite sitzt dort, wo sonst der Abo-Knopf ist. */
+.wl-vst-kopf .wl-vst-edit { margin-left: auto; flex: none; }
+.wl-vst-h { font-size: 1.02rem; font-weight: 800; margin: 1.5rem 0 0; }
+.wl-vst-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: .7rem; }
+.wl-vst-card {
+  display: flex; align-items: center; gap: .7rem; padding: .8rem .9rem;
+  background: var(--wl-card); border: 1px solid var(--wl-line); border-radius: var(--wl-rad);
+}
+.wl-vst-card .wl-dot { flex: none; }
+.wl-vst-mitte { min-width: 0; flex: 1; }
+.wl-vst-name { font-weight: 800; font-size: .95rem; display: block; }
+.wl-vst-name:hover { color: var(--wl-link); }
+.wl-vst-card .wl-push-btn { flex: none; }
+
+/* App-Hinweis + App-Seite: KEINE große Werbekarte mit Handy-Mockup, sondern EINE leise
+   Zeile auf der Startseite (Glocke, ein Satz, Knopf) – und die eigene Seite app.php mit
+   Anleitung je Plattform und FAQ. Die Schritt-Pille (.wl-app-step) lebt dort in heller
+   Fassung weiter. */
+.wl-app-hinweis {
+  display: flex; align-items: center; gap: .7rem; flex-wrap: wrap;
+  /* Gleich viel Luft über und unter der Zeile (oben 2.2rem zu den Kacheln, unten 2rem zur
+     Haarlinie der Kurs-Tafel – deren margin-top kollabiert über unsere .8rem hinweg). */
+  margin: 2.2rem 0 .8rem; padding: .75rem 1rem;
+  border: 1px solid var(--wl-line); border-radius: 14px;
+  font-size: .86rem; color: var(--wl-mut);
+}
+.wl-app-hinweis > svg { flex: none; width: 1.15rem; height: 1.15rem; color: var(--wl-logo); }
+.wl-app-hinweis > span { flex: 1 1 240px; }
+.wl-app-hinweis .wl-btn { flex: none; }
+.wl-app-wege { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; }
+.wl-app-weg-block {
+  border: 1px solid var(--wl-line); border-radius: var(--wl-rad);
+  background: var(--wl-card); padding: 1rem 1.1rem;
+}
+.wl-app-weg-block h3 { margin: 0 0 .5rem; font-size: .95rem; letter-spacing: -.01em; }
+.wl-app-weg-block h3 span { font-weight: 600; font-size: .78rem; color: var(--wl-mut); }
+.wl-app-schritte { margin: 0; padding-left: 1.2rem; font-size: .87rem; line-height: 1.6; color: var(--wl-mut); }
+.wl-app-schritte li + li { margin-top: .35rem; }
+.wl-app-step {
+  display: inline-flex; align-items: center; gap: .45em; font-weight: 600; white-space: nowrap;
+  background: var(--wl-paper); border: 1px solid var(--wl-line);
+  border-radius: 99px; padding: .12em .65em; font-size: .92em;
+}
+.wl-app-step svg { width: 1.05em; height: 1.05em; }
+
+/* KEINE Farbpunkte im zugeklappten „Kategorie"-Feld (wl-drop-dots): zu albern, zu breit, und
+   sie brechen die Leiste um. Das Feld bleibt das nackte Wort „Kategorie". */
+
+/* Die Handschrift-Zeile in der Fußzeile: das Herz in Koralle, beim Zeigen schlägt es kurz –
+   dieselbe Geste wie im App-Fuß und beim Pat:innenprogramm. */
+.wl-foot-herz { display: inline-block; width: .95em; height: .95em; vertical-align: -.12em; color: var(--wl-acc); }
+.wl-foot-herz svg { display: block; width: 100%; height: 100%; }
+@media (prefers-reduced-motion: no-preference) {
+  .wl-foot-boj:hover .wl-foot-herz { animation: wl-herz-schlag 1s ease-in-out infinite; }
+}
+@keyframes wl-herz-schlag {
+  0%, 100% { transform: scale(1); }
+  30%      { transform: scale(1.25); }
+  55%      { transform: scale(1.05); }
+}
+
+/* Haarlinie zwischen Terminen und Kursen auf der Startseite – subtil: nur die Linie,
+   etwas mehr Luft darüber, damit sie als Kapitelwechsel liest und nicht als Kastenrand. */
+.wl-sect-kurse { margin-top: 2rem; padding-top: 1.9rem; border-top: 1px solid var(--wl-line); }
+
+/* Wieder-Besuch in derselben Sitzung, gemeint ist der MARKEN-EINZUG oben:
+   body.wl-wieder (ueber.php setzt die Klasse per sessionStorage) lässt den
+   kompletten Hero-Auftritt entfallen – Badge, Marke, Lead und Pfeil stehen sofort da,
+   wie nach einer Rückwärts-Cache-Wiederkehr in Safari. Die Grundzustände sind sichtbar
+   (gleiche Liste wie im „Ruhe bewahren"-Block). Herzchen und die AStA-Logo-Verwandlung
+   laufen normal weiter – die Logo-Schleife läuft schlicht immer von vorn, ein Merker
+   dafür wäre Unsinn. */
+body.wl-wieder .wl-uh-badge,
+body.wl-wieder .wl-uh-marke .wl-mark-was,
+body.wl-wieder .wl-uh-marke .wl-mark-dot,
+body.wl-wieder .wl-uh-marke .wl-mark-w,
+body.wl-wieder .wl-uh-lead,
+body.wl-wieder .wl-uh-weiter,
+body.wl-wieder .wl-uh-weiter svg { animation: none; }
+
+/* Event-Separation: Die KACHEL trennt nur die Luft. An ihr selbst NICHTS anbauen – weder
+   Schluss-Linien (im Raster versetzt, am Handy unnötig) noch Rand noch Schatten. Einzige
+   Ergänzung ist der 1px-Ring auf dem BILD, siehe .wl-card-img::after oben. */
+
+/* -----------------------------------------------------------------------------------------
+   Beitrag melden – der Weg, auf dem Leute etwas beanstanden können.
+   Bewusst leise am Fuß der Detailseite: auffindbar, aber keine Einladung. Ein <details>
+   statt eines Dialogs, damit es ohne JavaScript und unter der strengen CSP funktioniert.
+   ----------------------------------------------------------------------------------------- */
+.wl-melden { max-width: 780px; margin: 2.4rem auto 0; padding: 0 1.1rem; }
+.wl-melden > details > summary { cursor: pointer; font-size: .82rem; color: var(--wl-mut);
+  padding: .4rem 0; list-style: none; }
+.wl-melden > details > summary::-webkit-details-marker { display: none; }
+.wl-melden > details > summary::before { content: "⚑"; margin-right: .4rem; opacity: .7; }
+.wl-melden > details > summary:hover { color: var(--wl-fg); }
+.wl-melden-f { display: flex; flex-direction: column; gap: .3rem; margin: .5rem 0 0;
+  padding: .9rem 1rem 1rem; border: 1px solid var(--wl-line); border-radius: 12px; }
+.wl-melden-f label { font-size: .78rem; font-weight: 600; margin-top: .5rem; }
+.wl-melden-f label span { font-weight: 400; color: var(--wl-mut); }
+.wl-melden-f select, .wl-melden-f input, .wl-melden-f textarea { font: inherit; font-size: .88rem;
+  padding: .5rem .6rem; border: 1px solid var(--wl-line); border-radius: 9px;
+  background: var(--wl-bg); color: var(--wl-fg); }
+.wl-melden-f textarea { resize: vertical; }
+.wl-melden-f button { align-self: flex-start; margin-top: .8rem; }
+
+/* Englische Kurzfassung (optional): der Zweizeiler steht als eigener Absatz beim Text, die
+   deutsche Überschrift rutscht klein darunter, wenn das Gerät Englisch verlangt. */
+.wl-det-zweit { font-size: .86rem; color: var(--wl-mut); margin: -.5rem 0 1rem; }
+.wl-text-en { border-left: 2px solid var(--wl-line); padding-left: .8rem; }
+.wl-opt { font-weight: 400; color: var(--wl-mut); }
+
+/* Sprachumschalter: EIN Knopf mit Flagge, unten in der Mitte der Abschlusszeile.
+   Er zeigt das ZIEL (britische Flagge = Klick führt nach Englisch), nicht den Zustand – so
+   sagt er schon durch sein Aussehen, was passiert. Rahmen, Hintergrund und Hover-Wechsel sind
+   das Wesentliche: Eine nackte Flagge sieht nach Verzierung aus, nicht nach Knopf. */
+.wl-lang-knopf {
+  display: inline-flex; align-items: center; gap: .45rem;
+  padding: .28rem .6rem .28rem .42rem; border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .22); background: rgba(255, 255, 255, .06);
+  color: #d8d2c8; font-size: .76rem; font-weight: 700; letter-spacing: .04em;
+  text-decoration: none; line-height: 1; transition: background .15s, border-color .15s, color .15s;
+}
+.wl-lang-knopf:hover, .wl-lang-knopf:focus-visible { background: rgba(255, 255, 255, .14); border-color: rgba(255, 255, 255, .5); color: #fff; }
+.wl-lang-flagge { display: block; width: 21px; height: 14px; border-radius: 2px; overflow: hidden; flex: none;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .25); }
+.wl-lang-flagge svg { display: block; width: 100%; height: 100%; }
+/* Am Handy bricht die Abschlusszeile um – dort steht der Knopf allein und mittig statt links. */
+@media (max-width: 760px) { .wl-foot-end { justify-content: center; text-align: center; } }
+.wl-foot-hint-inline { display: inline-block; max-width: 30rem; }
+.wl-foot-hint { font-size: .74rem; color: var(--wl-mut); margin: .5rem 0 0; max-width: 22rem; }

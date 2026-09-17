@@ -1,0 +1,18 @@
+# Öffentlicher Terminplaner.
+# Hier liegen bewusst nur die Seiten, die Außenstehende sehen sollen.
+
+# Keine Verzeichnisauflistung
+Options -Indexes
+
+# Bibliothek und Ansichts-Bausteine sind keine Einstiegspunkte. Sie geben von sich aus
+# nichts aus (und prüfen das auch selbst), werden aber trotzdem gar nicht erst ausgeliefert –
+# zwei Endpunkte weniger, über die man nachdenken muss.
+<FilesMatch "^(termin-lib|_ansicht)\.php$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>

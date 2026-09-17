@@ -1,0 +1,773 @@
+/* ===========================================================================
+   Pat:innenprogramm – Ergänzungen für den ÖFFENTLICHEN Bereich (pat/).
+   Läuft ZUSÄTZLICH zu style.css: Karten, Buttons, Eingabefelder, Typografie und
+   Farben kommen von dort, damit es keine zweite Designsprache gibt. Hier stehen
+   nur die Eigenheiten der öffentlichen Seiten (schlanke Kopfzeile ohne App-Navigation,
+   Schrittanzeige, Rollenauswahl).
+
+   WICHTIG: ausschließlich die CSS-Variablen aus style.css verwenden – dann sitzt
+   Dunkelmodus automatisch, ohne eigene Dark-Regeln.
+   Ebenfalls wichtig: die öffentlichen Seiten haben eine strenge Content-Security-Policy
+   ohne 'unsafe-inline'. Es darf dort also KEIN style="…"-Attribut geben – alles hierher.
+   =========================================================================== */
+
+/* `hidden` muss gewinnen. Die Regeln hier setzen display auf flex oder grid, und eine
+   Klassenregel schlägt das display:none aus dem Browser-Standard – ein hidden-Element stünde
+   sonst sichtbar da. */
+[hidden] { display: none !important; }
+
+/* ---- Kopfzeile (Glasleiste wie die App, aber ohne Navigation) ---- */
+.pat-top {
+  position: sticky; top: 0; z-index: 50;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(28px) saturate(2.1);
+  backdrop-filter: blur(28px) saturate(2.1);
+}
+/* KEINE Trennlinie unter der Leiste: sie saß als heller Strich auf dem Petrol-Hero.
+   Die Leiste trennt sich durch Milchglas und Sättigung ausreichend vom Inhalt. */
+.pat-top-in {
+  max-width: 680px; margin: 0 auto;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  /* Polster in ganzen Pixeln (nicht rem): 9 + 38 (Logohöhe) + 9 = genau 56 px.
+     Krumme Höhen sind der zweite Weg, auf dem die Kante zwischen zwei Bildschirmpixeln landet. */
+  padding: calc(9px + env(safe-area-inset-top, 0px)) 1.2rem 9px;
+}
+.pat-logo { height: 38px; width: auto; display: block; }
+
+/* Logo + Schriftzug: die Studis sollen sofort sehen, von wem das Angebot kommt */
+.pat-brand { display: flex; align-items: center; gap: .7rem; min-width: 0; }
+.pat-brand-x { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+.pat-brand-x strong { font-size: .98rem; color: var(--petrol-dark); white-space: nowrap; }
+.pat-brand-x small { font-size: .76rem; font-weight: 600; color: var(--petrol); white-space: nowrap; }
+
+/* ---- Hell/Dunkel/System (drei Zustände, eigener Merker – nicht der App-Skin) ---- */
+.pat-theme {
+  display: inline-flex; align-items: center;
+  background: var(--white); border: 1px solid var(--line);
+  border-radius: 999px; overflow: hidden;
+}
+.pat-theme button {
+  appearance: none; border: 0; background: none; cursor: pointer;
+  color: var(--muted); font: inherit; line-height: 1;
+  padding: .4rem .55rem; display: inline-flex; align-items: center;
+}
+.pat-theme button + button { border-left: 1px solid var(--line); }
+.pat-theme button:hover { color: var(--ink); }
+.pat-theme button[aria-pressed="true"] { background: var(--petrol-soft); color: var(--petrol); }
+.pat-theme .ti { font-size: 1.05rem; }
+/* Nur für Screenreader (die Icons allein sagen sehenden Nutzer:innen genug) */
+.pat-sr {
+  position: absolute; width: 1px; height: 1px; margin: -1px;
+  padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ---- Inhaltsbereich: schmaler als die App (Formular, kein Dashboard) ---- */
+.pat-main { max-width: 680px; margin: 0 auto; padding: 1.6rem 1.2rem 3rem; }
+.pat-main h1 { font-size: 1.55rem; margin: 0 0 .3rem; }
+.pat-kicker {
+  margin: 0 0 .15rem; color: var(--petrol);
+  font-size: .82rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+}
+.pat-lead { color: var(--muted); margin: 0 0 1.3rem; }
+.pat-prose p { margin: 0 0 .8rem; }
+.pat-prose p:last-child { margin-bottom: 0; }
+.pat-lead-h { font-size: 1.1rem; margin: 1.5rem 0 .8rem; color: var(--petrol-dark); }
+.pat-back { margin: 1.2rem 0 0; font-size: .9rem; }
+.pat-back a { display: inline-flex; align-items: center; gap: .35rem; }
+
+/* ---- Schrittanzeige ---- */
+.pat-steps {
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  margin: 0 0 1.3rem; padding: 0; list-style: none;
+  font-size: .84rem; color: var(--muted);
+}
+.pat-steps li { display: inline-flex; align-items: center; gap: .4rem; }
+.pat-steps li + li::before {
+  content: ""; width: 18px; height: 1px; background: var(--line); display: inline-block;
+}
+.pat-steps .pat-step-n {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.45rem; height: 1.45rem; border-radius: 50%;
+  background: var(--white); border: 1px solid var(--line);
+  font-size: .76rem; font-weight: 700;
+}
+.pat-steps li[aria-current="step"] { color: var(--petrol); font-weight: 600; }
+.pat-steps li[aria-current="step"] .pat-step-n {
+  background: var(--petrol); border-color: var(--petrol); color: #fff;
+}
+.pat-steps li.done .pat-step-n { background: var(--green-bg); border-color: var(--green); color: var(--green); }
+/* Variante auf dem Petrol-Hero */
+.pat-steps.dark { color: rgba(255, 255, 255, .72); margin: 1.3rem 0 0; }
+.pat-steps.dark li + li::before { background: rgba(255, 255, 255, .28); }
+.pat-steps.dark .pat-step-n { background: rgba(255, 255, 255, .13); border-color: rgba(255, 255, 255, .32); color: #fff; }
+.pat-steps.dark li[aria-current="step"] { color: #fff; }
+.pat-steps.dark li[aria-current="step"] .pat-step-n { background: #fff; border-color: #fff; color: var(--petrol); }
+.pat-steps.dark li.done { color: rgba(255, 255, 255, .85); }
+.pat-steps.dark li.done .pat-step-n { background: rgba(84, 201, 138, .22); border-color: rgba(84, 201, 138, .65); color: #7de8ab; }
+
+/* ===========================================================================
+   Einstiegsseite: Hero + zwei große Kacheln. Ziel ist, dass beim Öffnen des
+   Links ohne Scrollen klar ist, worum es geht und was man anklicken soll.
+   =========================================================================== */
+
+/* ---- „cinema": die Einstiegsseite nutzt die ganze Fensterbreite ----
+   Die Klasse sitzt am <body>. Der Inhaltsbereich verliert dafür seine Spaltenbreite und sein
+   Seitenpolster komplett – beides übernehmen die inneren Container (.pat-in). Nur so kann der
+   Hero randlos über die volle Breite laufen, während Text trotzdem lesbar begrenzt bleibt. */
+.pat-body.cinema .pat-main { max-width: none; padding: 0 0 3.5rem; }
+.pat-body.cinema .pat-top-in,
+.pat-body.cinema .pat-foot { max-width: 1440px; }
+
+/* Innerer Container: begrenzt die Lesebreite innerhalb randloser Bänder */
+.pat-in { max-width: 1440px; margin: 0 auto; padding: 0 clamp(1.2rem, 4vw, 2.6rem); }
+
+/* Randloses Band über die ganze Fensterbreite, hoch genug um zu wirken.
+   Das zusätzliche Polster unten trägt die Kacheln, die von unten hineinragen.
+
+   Verzierung: --rptu trägt einen background-image-Wert aus den Einstellungen
+   (pat_hero_deko) und liegt als oberste Ebene über dem Verlauf. Gedacht für ein
+   dezentes Muster oder Lettern der eigenen Hochschule – sparsam, luftig verteilt
+   und in Farben, die zum Verlauf passen: Der Grund ist links fast schwarz und
+   rechts am hellsten, also brauchen die linken Formen helle Farbe und die rechten
+   dunkle, sonst sind sie nicht gleich stark zu sehen.
+
+   Als Variable, damit die Dunkel-Fassung dieselben Ebenen wiederverwenden kann.
+   Ohne Eintrag steht dort „none" und das Band bleibt schlicht. */
+.pat-hero {
+  /* Schmuck im Band: ein background-image-Wert aus den Einstellungen (pat_hero_deko),
+     den pat-lib.php in den Seitenkopf schreibt. Bewusst NICHT hier: Was hier stünde,
+     ginge bei einer Weitergabe der App mit – und Verzierung gehört dem, der sie
+     einsetzt. Ohne Eintrag bleibt das Band schlicht. */
+  --rptu: none;
+  position: relative; overflow: hidden;
+  display: flex; align-items: center;
+  min-height: clamp(300px, 44vh, 520px);
+  padding: clamp(2.6rem, 7vh, 4.5rem) 0 clamp(5rem, 11vh, 7rem);
+  margin: 0 0 1.6rem;
+  color: #fff;
+  background:
+    var(--rptu),
+    radial-gradient(70% 90% at 82% 8%, rgba(174, 203, 244, .34), transparent 62%),
+    radial-gradient(55% 75% at 12% 100%, rgba(0, 0, 0, .3), transparent 60%),
+    linear-gradient(102deg, #072e39 0%, #0a4757 38%, #0e5c73 70%, #14788f 100%);
+}
+.pat-hero > .pat-in { position: relative; z-index: 1; width: 100%; }
+.pat-hero-chip {
+  display: inline-flex; align-items: center; gap: .45rem;
+  background: rgba(255, 255, 255, .14); border: 1px solid rgba(255, 255, 255, .24);
+  border-radius: 999px; padding: .34rem .9rem;
+  font-size: .84rem; font-weight: 700; letter-spacing: .02em;
+  margin: 0 0 1.1rem;
+}
+/* Absender-Zeile: kleine Großbuchstaben-Zeile über der großen Überschrift */
+.pat-hero-kicker {
+  margin: 0 0 .45rem;
+  font-size: .88rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+  color: rgba(255, 255, 255, .72);
+}
+.pat-hero h1 {
+  margin: 0 0 .8rem; color: #fff; max-width: 22ch;
+  font-size: clamp(2.1rem, 6.4vw, 4.2rem); line-height: 1.04; letter-spacing: -.02em;
+  text-wrap: balance;
+}
+.pat-hero-lead {
+  margin: 0; max-width: 54ch;
+  font-size: clamp(1.02rem, 1.5vw, 1.3rem); line-height: 1.55;
+  color: rgba(255, 255, 255, .88);
+}
+/* Termin-Leiste: Anmeldezeitraum und Einteilungstermin. Im Hero steht sie auf dem dunklen
+   Verlauf, auf der Danke-Seite auf hellem Grund – deshalb erbt sie die Farbe (currentColor)
+   statt sie selbst zu setzen. */
+.pat-sched {
+  list-style: none; margin: 1.4rem 0 0; padding: 0;
+  display: flex; flex-wrap: wrap; gap: .5rem .7rem;
+}
+.pat-sched li {
+  display: inline-flex; align-items: center; gap: .45rem;
+  padding: .42rem .8rem; border-radius: 999px;
+  font-size: .92rem; line-height: 1.2;
+  background: rgba(255, 255, 255, .14);
+  border: 1px solid rgba(255, 255, 255, .22);
+  color: #fff;
+}
+.pat-sched .pat-sched-l { opacity: .85; }
+.pat-sched i { font-size: 1.05rem; opacity: .9; }
+/* Auf hellem Grund (Danke-Seite) */
+.pat-sched.center { justify-content: center; margin-top: 1.1rem; }
+.pat-sched.center li {
+  background: var(--petrol-soft); border-color: var(--line); color: var(--ink);
+}
+
+/* Kompakter Hero der Folgeschritte: gleiche Sprache, weniger Höhe, kein Hineinragen */
+.pat-hero.sub { min-height: 0; padding: clamp(2rem, 5vh, 3rem) 0 clamp(1.9rem, 4.5vh, 2.7rem); }
+.pat-hero.sub h1 { font-size: clamp(1.65rem, 3.6vw, 2.6rem); margin-bottom: 0; }
+.pat-hero.sub .pat-hero-chip { margin-bottom: .8rem; }
+
+html[data-theme="dark"] .pat-hero {
+  background:
+    var(--rptu),
+    radial-gradient(120% 130% at 88% -10%, rgba(90, 140, 180, .3), transparent 60%),
+    radial-gradient(90% 120% at 5% 110%, rgba(0, 0, 0, .4), transparent 55%),
+    linear-gradient(105deg, #07313c 0%, #0a4757 55%, #0d5b70 100%);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, .5);
+}
+
+/* ---- Die zwei großen Kacheln ----
+   Sie ragen von unten in den Hero hinein (negativer Abstand) – das verzahnt die beiden
+   Bänder und nimmt der Seite das Untereinander-Gestapelte. */
+.pat-duo {
+  position: relative; z-index: 2;
+  display: grid; grid-template-columns: 1fr 1fr; gap: clamp(1rem, 2vw, 1.8rem);
+  margin: clamp(-5.5rem, -8vh, -3rem) 0 1.4rem;
+}
+.pat-tile {
+  --acc: var(--petrol); --acc-bg: var(--sky-light);
+  position: relative; display: flex; flex-direction: column;
+  min-height: clamp(360px, 42vh, 480px);
+  padding: clamp(1.5rem, 2.4vw, 2.4rem) clamp(1.4rem, 2.2vw, 2.2rem) clamp(1.4rem, 2vw, 2rem);
+  background: var(--white); border: 1px solid var(--line); border-radius: 20px;
+  /* Die farbige Oberkante IST der Rahmen (kein aufgelegtes Pseudo-Element): so schließt sie
+     in jedem Zustand bündig mit den runden Ecken ab – ein Overlay kann den 1-px-Rahmen nie
+     exakt treffen, weil overflow:hidden erst am Innenrand des Rahmens beschneidet. */
+  border-top: 5px solid var(--acc);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .07), 0 22px 50px rgba(0, 0, 0, .1);
+  color: var(--ink); text-decoration: none;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.pat-tile.pate { --acc: var(--green); --acc-bg: var(--green-bg); }
+a.pat-tile:hover, a.pat-tile:focus-visible {
+  transform: translateY(-4px); border-color: var(--acc);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, .1), 0 20px 44px rgba(0, 0, 0, .12);
+}
+.pat-tile-ico {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: clamp(3.2rem, 4.6vw, 4.4rem); height: clamp(3.2rem, 4.6vw, 4.4rem);
+  border-radius: 50%; margin-bottom: clamp(.9rem, 1.6vw, 1.4rem);
+  background: var(--acc-bg); color: var(--acc); font-size: clamp(1.7rem, 2.4vw, 2.3rem);
+}
+.pat-tile-t {
+  font-size: clamp(1.25rem, 2.1vw, 1.85rem); font-weight: 800; line-height: 1.15;
+  color: var(--petrol-dark); margin-bottom: .5rem; letter-spacing: -.01em;
+}
+.pat-tile-lead {
+  color: var(--muted); line-height: 1.5; margin-bottom: 1.1rem;
+  font-size: clamp(.98rem, 1.1vw, 1.08rem);
+}
+.pat-tile-list { list-style: none; margin: 0 0 1.4rem; padding: 0; display: grid; gap: .6rem; }
+.pat-tile-list li {
+  display: flex; gap: .6rem; align-items: flex-start;
+  font-size: clamp(.94rem, 1vw, 1.02rem); line-height: 1.45;
+}
+.pat-tile-list .ti { color: var(--acc); font-size: 1.15rem; flex: none; margin-top: .1rem; }
+.pat-tile-cta {
+  margin-top: auto; align-self: flex-start;
+  display: inline-flex; align-items: center; gap: .5rem;
+  background: var(--acc); color: #fff; border-radius: 12px;
+  padding: .8rem 1.5rem; font-weight: 700; font-size: clamp(.95rem, 1.1vw, 1.05rem);
+}
+a.pat-tile:hover .pat-tile-cta { filter: brightness(1.08); }
+.pat-tile-cta .ti { transition: transform .15s ease; }
+a.pat-tile:hover .pat-tile-cta .ti { transform: translateX(3px); }
+/* Vorschau (Entwurf): gleiche Optik, aber sichtbar nicht anklickbar */
+.pat-tile.is-preview { opacity: .72; }
+.pat-tile.is-preview .pat-tile-cta { background: var(--muted); }
+
+/* ---- Anmelde-Schritte (anmeldung.php) ---- */
+.pat-wiz { padding-top: clamp(1.5rem, 3.5vh, 2.4rem); }
+.pat-q {
+  margin: 0 0 1.1rem;
+  font-size: clamp(1.25rem, 2vw, 1.6rem); color: var(--petrol-dark); letter-spacing: -.01em;
+}
+.pat-q-tag {
+  display: inline-block; vertical-align: .18em; margin-left: .4rem;
+  background: var(--petrol-soft); color: var(--petrol);
+  border-radius: 999px; padding: .16rem .7rem;
+  font-size: .68em; font-weight: 700; letter-spacing: 0;
+}
+/* Kacheln in den Folgeschritten: kein Hineinragen, weniger Mindesthöhe */
+.pat-duo.flat { margin-top: 0; }
+.pat-duo.flat .pat-tile { min-height: clamp(210px, 26vh, 280px); }
+.pat-tile.master { --acc: var(--violet); --acc-bg: var(--violet-bg); }
+
+/* Studiengangs-Raster: viele gleichrangige Antworten als klickbare Karten */
+.pat-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: .8rem; margin: 0 0 .6rem;
+}
+a.pat-pick {
+  display: flex; align-items: center; justify-content: space-between; gap: .6rem;
+  background: var(--white); border: 1px solid var(--line); border-radius: 14px;
+  padding: 1rem 1.15rem; box-shadow: var(--shadow);
+  color: var(--ink); text-decoration: none; font-weight: 600; line-height: 1.35;
+  transition: transform .13s ease, border-color .13s ease, color .13s ease, box-shadow .13s ease;
+}
+a.pat-pick .ti { color: var(--petrol); flex: none; transition: transform .13s ease; }
+a.pat-pick:hover, a.pat-pick:focus-visible {
+  transform: translateY(-2px); border-color: var(--petrol); color: var(--petrol);
+  box-shadow: 0 6px 16px rgba(14, 92, 115, .14);
+}
+a.pat-pick:hover .ti { transform: translateX(3px); }
+
+/* Weitere Fächer (nur Pat:innen): dasselbe Raster wie die Studiengangs-Auswahl, aber zum
+   Ankreuzen. Das Kästchen sitzt links, die ganze Karte ist Beschriftung – hier steckt kein
+   Link drin, deshalb ist das umschließende label unproblematisch. */
+.pat-extra-lead { margin: -.5rem 0 1.1rem; color: var(--muted); font-size: .95rem; line-height: 1.55; }
+.pat-extra-lead p { margin: 0 0 .5rem; }
+.pat-extra-lead p:last-child { margin-bottom: 0; }
+.pat-checks {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: .8rem; margin: 0 0 1.4rem;
+}
+.pat-check {
+  display: flex; align-items: center; gap: .7rem;
+  background: var(--white); border: 1px solid var(--line); border-radius: 14px;
+  padding: 1rem 1.15rem; box-shadow: var(--shadow);
+  color: var(--ink); font-weight: 600; line-height: 1.35; cursor: pointer;
+  transition: transform .13s ease, border-color .13s ease, color .13s ease, box-shadow .13s ease;
+}
+.pat-check input[type="checkbox"] { flex: none; width: 1.15rem; height: 1.15rem; accent-color: var(--petrol); cursor: pointer; }
+.pat-check:hover, .pat-check:focus-within {
+  transform: translateY(-2px); border-color: var(--petrol); color: var(--petrol);
+  box-shadow: 0 6px 16px rgba(14, 92, 115, .14);
+}
+.pat-check:has(input:checked) { border-color: var(--petrol); color: var(--petrol); background: var(--petrol-soft); }
+
+/* „Mein Studiengang ist nicht dabei": Freitext, wird später von Hand zugeordnet */
+.pat-other {
+  margin-top: 1.6rem;
+  border: 1.5px dashed var(--line); border-radius: 16px;
+  padding: 1.15rem 1.25rem;
+}
+.pat-other-t { margin: 0 0 .25rem; font-size: 1.05rem; color: var(--petrol-dark); }
+.pat-other-d { margin: 0 0 .7rem; color: var(--muted); font-size: .92rem; line-height: 1.5; }
+.pat-other-form { display: flex; gap: .6rem; flex-wrap: wrap; }
+.pat-other-in { flex: 1 1 220px; min-width: 0; }
+
+/* Zusammenfassung der bisherigen Auswahl */
+.pat-recap { margin: 0 0 1rem; }
+.pat-recap-l {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-wrap: wrap; gap: .6rem;
+}
+.pat-recap-l li {
+  display: inline-flex; align-items: center; gap: .45rem;
+  background: var(--white); border: 1px solid var(--line); border-radius: 999px;
+  padding: .5rem 1rem; font-weight: 600; box-shadow: var(--shadow);
+}
+.pat-recap-l .ti { color: var(--petrol); }
+.pat-recap-tag {
+  display: inline-block; margin-left: .35rem;
+  background: var(--amber-bg); color: var(--amber);
+  border-radius: 999px; padding: .1rem .55rem;
+  font-size: .72rem; font-weight: 700;
+}
+
+/* ===========================================================================
+   Schritt 3: Angaben-Formular. Eigene, mittige Spalte – die breiten Auswahl-
+   Raster der Schritte davor passen hier nicht, ein Formular braucht Fokus.
+   =========================================================================== */
+.pat-col { max-width: 680px; margin: 0 auto; }
+.pat-col .pat-q { text-align: center; }
+.pat-col .pat-recap-l { justify-content: center; }
+.pat-col .pat-back { text-align: center; }
+
+.pat-form {
+  background: var(--white); border: 1px solid var(--line); border-radius: 20px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .07), 0 22px 50px rgba(0, 0, 0, .09);
+  padding: clamp(1.5rem, 3vw, 2.4rem);
+}
+/* Gleicher Abstand zwischen ALLEN Blöcken des Formulars – `.pat-field + .pat-field` allein
+   genügt nicht: Auf das Mailfeld nach der Namens-Zeile trifft es nicht zu, weil davor
+   .pat-form-row steht. */
+.pat-form > * + * { margin-top: 1.3rem; }
+.pat-form > input[type="hidden"] + *, .pat-form > .pat-hp + * { margin-top: 0; }
+.pat-field > label {
+  display: block; margin: 0 0 .3rem;
+  font-size: .95rem; font-weight: 700; color: var(--petrol-dark);
+}
+/* Großzügigere Felder als die App-Standardgröße – hier tippen fremde Leute
+   einmalig etwas ein, oft am Handy. */
+.pat-form input[type="text"],
+.pat-form input[type="email"],
+.pat-form textarea {
+  width: 100%; padding: .8rem .95rem;
+  border: 1.5px solid var(--line); border-radius: 12px;
+  font-size: 1rem; line-height: 1.4;
+}
+.pat-form textarea { min-height: 7rem; }
+.pat-form input:focus, .pat-form textarea:focus {
+  outline: 0; border-color: var(--petrol);
+  box-shadow: 0 0 0 4px rgba(14, 92, 115, .13);
+}
+.pat-form-row { display: flex; gap: 1rem; flex-wrap: wrap; }
+.pat-form-row > .pat-field { flex: 1 1 200px; min-width: 0; margin-top: 0; }
+.pat-form-note { margin: 0 0 .5rem; color: var(--muted); font-size: .88rem; line-height: 1.5; }
+.pat-opt {
+  margin-left: .4rem; vertical-align: .1em;
+  background: var(--petrol-soft); color: var(--muted);
+  border-radius: 999px; padding: .1rem .5rem;
+  font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+}
+
+/* Echter Absende-Knopf (NICHT .pat-tile-cta – dessen Farbe lebt in --acc,
+   das es nur innerhalb einer Kachel gibt; außerhalb bliebe er unsichtbar). */
+.pat-form > .pat-submit { margin-top: 1.8rem; }
+.pat-submit {
+  display: flex; align-items: center; justify-content: center; gap: .5rem;
+  width: 100%; margin-top: 1.8rem;
+  appearance: none; border: 0; cursor: pointer; font: inherit;
+  font-size: 1.05rem; font-weight: 700; line-height: 1;
+  padding: .95rem 1.5rem; border-radius: 12px;
+  background: var(--petrol); color: #fff;
+  box-shadow: 0 4px 12px rgba(10, 71, 87, .28);
+  transition: transform .13s ease, filter .13s ease, box-shadow .13s ease;
+}
+.pat-submit:hover, .pat-submit:focus-visible {
+  transform: translateY(-2px); filter: brightness(1.08);
+  box-shadow: 0 7px 18px rgba(10, 71, 87, .34);
+}
+.pat-submit:active { transform: translateY(0); }
+.pat-submit .ti { font-size: 1.15rem; transition: transform .13s ease; }
+.pat-submit:hover .ti { transform: translateX(3px); }
+
+/* Einwilligung: Pflicht-Häkchen über dem Absende-Knopf. Bewusst als abgesetzter Kasten – man
+   soll merken, dass hier etwas zu bestätigen ist, statt darüber hinwegzuscrollen. */
+.pat-consent {
+  display: flex; gap: .7rem; align-items: flex-start;
+  margin: 1.6rem 0 0; padding: .9rem 1rem;
+  background: var(--petrol-soft); border: 1px solid var(--line); border-radius: 12px;
+}
+.pat-consent input[type="checkbox"] {
+  flex: none; width: 1.15rem; height: 1.15rem; margin: .12rem 0 0;
+  accent-color: var(--petrol); cursor: pointer;
+}
+.pat-consent .pat-consent-t { margin: 0; font-size: .88rem; line-height: 1.55; font-weight: 400; }
+/* Der ganze Text kreuzt das Kästchen an – die Klasse setzt erst das Skript, damit ohne JS
+   kein Zeigefinger etwas verspricht, was dann nicht passiert. Der Link behält seinen Cursor. */
+.pat-consent .pat-consent-t.is-toggle { cursor: pointer; }
+.pat-consent .pat-consent-t.is-toggle a { cursor: pointer; }
+/* --petrol ist in JEDEM Theme die Akzent-/Linkfarbe (hell im Dunkelmodus, dunkel im Hellmodus) –
+   deshalb hier KEINE Sonderregel für dunkel. Und NICHT sky-light als Schriftfarbe: Das ist im
+   Dunkelmodus eine FLÄCHENfarbe (#181d22), der Link wäre unsichtbar auf dem Kasten. */
+.pat-consent a { color: var(--petrol); text-decoration: underline; }
+/* Nach dem Häkchen folgt direkt der Knopf – der braucht dann weniger Luft nach oben.
+   Drei Klassen, damit die Regel gegen `.pat-form > .pat-submit` (1.8rem) sicher gewinnt. */
+.pat-form > .pat-consent + .pat-submit { margin-top: 1rem; }
+
+.pat-privacy {
+  display: flex; gap: .45rem; align-items: flex-start;
+  margin: 1rem 0 0; color: var(--muted); font-size: .84rem; line-height: 1.5;
+}
+.pat-privacy .ti { flex: none; margin-top: .1rem; }
+
+/* Honigtopf: für Menschen (und Screenreader) unsichtbar, Bots füllen ihn trotzdem */
+.pat-hp { position: absolute; left: -9999px; top: -9999px; height: 1px; width: 1px; overflow: hidden; }
+/* Fehlermeldung am Formular */
+.pat-note.err { border-left-color: var(--red); margin-bottom: 1.1rem; }
+.pat-note.err .ti { color: var(--red); }
+
+/* ---- Danke-Seite ---- */
+.pat-done { max-width: 560px; margin: clamp(1rem, 4vh, 2.5rem) auto 0; text-align: center; }
+.pat-done-ico {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 4.4rem; height: 4.4rem; border-radius: 50%; margin-bottom: 1rem;
+  background: var(--green-bg); color: var(--green); font-size: 2.6rem;
+}
+.pat-done-t { margin: 0 0 .6rem; font-size: clamp(1.5rem, 3vw, 2rem); color: var(--petrol-dark); }
+.pat-done-b { color: var(--muted); line-height: 1.6; }
+.pat-done-b p { margin: 0 0 .7rem; }
+
+/* Beruhigender Hinweis unter den Kacheln */
+.pat-duo-note {
+  text-align: center; color: var(--muted); font-size: .92rem; margin: 0 0 2.4rem;
+  display: flex; align-items: center; justify-content: center; gap: .45rem; flex-wrap: wrap;
+}
+.pat-duo-note .ti { color: var(--green); }
+
+/* Info-Abschnitt unter den Kacheln: kein App-Kasten, sondern ein randloses, zart getöntes
+   Band – dieselbe Sprache wie Hero und Kacheln. Text bleibt auf Lesebreite und mittig. */
+.pat-band {
+  background:
+    radial-gradient(60% 100% at 85% 0%, rgba(14, 92, 115, .05), transparent 60%),
+    var(--petrol-soft);
+  border-top: 1px solid var(--line);
+  padding: clamp(2.2rem, 5vh, 3.4rem) 0 clamp(2.6rem, 6vh, 3.8rem);
+  /* unten: das Polster des Inhaltsbereichs schlucken, damit das Band bündig am Fuß sitzt */
+  margin: clamp(1.6rem, 4vh, 2.8rem) 0 -3.5rem;
+}
+.pat-band-h {
+  margin: 0 0 1.1rem;
+  font-size: clamp(1.3rem, 2vw, 1.7rem); color: var(--petrol-dark); letter-spacing: -.01em;
+}
+/* So breit wie die beiden Kacheln darüber (gleicher .pat-in-Container), dabei EINSPALTIG und
+   KEIN Zeitungssatz (columns: 2): Der verteilt ganze Absätze auf die Spalten, sodass ein
+   einzelner Absatz komplett links klebt und die rechte Hälfte leer bleibt – je nach Textlänge
+   unvorhersehbar. */
+.pat-more p {
+  font-size: clamp(1rem, 1.15vw, 1.12rem); line-height: 1.7;
+  max-width: none; text-wrap: pretty;
+}
+/* Vorschau-Banner über dem randlosen Hero braucht eigenen Abstand nach oben */
+.pat-in-top { padding-top: 1.2rem; }
+
+/* ---- Hinweiskasten (geschlossen / noch nicht geöffnet / Fehler) ---- */
+.pat-note {
+  display: flex; gap: .75rem; align-items: flex-start;
+  background: var(--white); border: 1px solid var(--line); border-left: 3px solid var(--petrol);
+  border-radius: var(--radius); box-shadow: var(--shadow); padding: 1rem 1.1rem;
+}
+.pat-note .ti { color: var(--petrol); font-size: 1.3rem; flex: none; margin-top: .1rem; }
+.pat-note-b { margin: 0; }
+.pat-note-b strong { display: block; margin-bottom: .2rem; color: var(--petrol-dark); }
+.pat-note.warn { border-left-color: var(--amber); }
+.pat-note.warn .ti { color: var(--amber); }
+
+/* ---- Hilfe-Dialog (öffnet der Knopf, wenn JavaScript da ist) ----
+   Er zeigt dasselbe Formular wie hilfe.php. Der Sinn ist ausschließlich, dass eine halb
+   ausgefüllte Anmeldung stehen bleibt, während jemand eine Frage stellt. */
+.pat-dialog {
+  width: min(560px, calc(100vw - 2rem));
+  max-height: min(88vh, 800px);
+  padding: 0; border: 1px solid var(--line); border-radius: 20px;
+  background: var(--white); color: var(--ink);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .28);
+  overflow: auto; overscroll-behavior: contain;
+}
+.pat-dialog::backdrop { background: rgba(7, 46, 57, .55); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+.pat-dialog-in { position: relative; padding: clamp(1.4rem, 3vw, 2.1rem); }
+.pat-dialog-t { margin: 0 2rem .4rem 0; font-size: 1.35rem; color: var(--petrol-dark); letter-spacing: -.01em; }
+.pat-dialog .pat-lead { margin-bottom: 1.1rem; }
+/* Das Formular steckt schon in einem Kasten – im Dialog wäre ein zweiter Rahmen einer zu viel */
+.pat-dialog .pat-form { background: none; border: 0; box-shadow: none; padding: 0; }
+.pat-dialog-x {
+  position: absolute; top: .8rem; right: .8rem; z-index: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2.1rem; height: 2.1rem; border-radius: 50%;
+  border: 1px solid var(--line); background: var(--white); color: var(--muted);
+  cursor: pointer; font-size: 1.1rem; line-height: 1;
+}
+.pat-dialog-x:hover { color: var(--ink); border-color: var(--petrol); }
+.pat-dialog-fehler { margin-bottom: 1rem; }
+.pat-dialog-fertig { margin: 0; }
+.pat-dialog-fertig .pat-done-t { font-size: 1.25rem; }
+/* Läuft gerade: der Knopf soll sich nicht ein zweites Mal drücken lassen */
+.pat-submit:disabled { opacity: .6; cursor: default; transform: none; }
+
+/* ---- Fuß ---- */
+.pat-foot {
+  max-width: 680px; margin: 0 auto;
+  padding: 1.2rem 1.2rem calc(1.6rem + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--line);
+  color: var(--muted); font-size: .82rem; text-align: center;
+}
+.pat-foot a { color: var(--muted); }
+.pat-foot a:hover { color: var(--petrol); }
+.pat-foot-line { display: block; margin-top: .35rem; }
+
+/* ---- Mitschwebender Hilfe-Knopf ----
+   Er muss unten rechts sitzen, damit die Hilfe von jeder Stelle aus mit einem Griff da ist –
+   das ist der Punkt an ihm. Damit er trotzdem nicht wie ein Verkaufs-Chat aussieht, macht er
+   das Gegenteil von einem: kein flächiges Markenbunt, kein farbiger Schlagschatten, keine
+   fette Versalienschrift. Stattdessen dieselbe Milchglasleiste wie die Kopfzeile, normale
+   Textfarbe, dünner Rahmen – ein angehefteter Zettel statt eines Widgets. Farbe hat nur das
+   Herz, und das ist dasselbe wie unten im Fuß. */
+.pat-help {
+  position: fixed; z-index: 60;
+  right: clamp(.9rem, 2vw, 1.6rem);
+  bottom: calc(clamp(.9rem, 2vw, 1.6rem) + env(safe-area-inset-bottom, 0px));
+  display: inline-flex; align-items: center; gap: .45rem;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(24px) saturate(1.9);
+  backdrop-filter: blur(24px) saturate(1.9);
+  border: 1px solid var(--line); border-radius: 999px;
+  color: var(--ink); text-decoration: none;
+  font-weight: 600; font-size: .9rem;
+  padding: .55rem 1rem;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .1);
+  transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease,
+              opacity .3s ease, visibility .3s;
+}
+.pat-help .ti { color: #e64980; font-size: 1.1rem; }
+.pat-help:hover, .pat-help:focus-visible {
+  transform: translateY(-2px); border-color: var(--petrol);
+  box-shadow: 0 7px 20px rgba(0, 0, 0, .14);
+}
+
+/* Herz wie im App-Fuß – als Klasse statt style="…", wegen der strengen CSP */
+.pat-heart { color: #e64980; vertical-align: -.1em; display: inline-block; }
+
+/* ===========================================================================
+   Verspielte Kleinigkeiten. Bewusst SPARSAM und nur dort, wo sich jemand freuen
+   darf oder etwas anfasst – nie im Hero und nie neben einem Knopf, den man erst
+   noch drücken soll. Alles, was von selbst läuft, läuft genau einmal.
+   Reine CSS-Animationen: die öffentlichen Seiten haben eine CSP ohne 'unsafe-inline',
+   und ein Extra-Skript wäre für ein bisschen Freude nun wirklich zu viel.
+   =========================================================================== */
+
+/* Der Haken auf der Danke-Seite springt ins Bild … */
+@keyframes pat-plopp {
+  0%   { transform: scale(.35); opacity: 0; }
+  55%  { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.pat-done-ico { position: relative; animation: pat-plopp .55s cubic-bezier(.2, .9, .3, 1.5) both; }
+
+/* … und es knallt. Zehn Schnipsel fliegen radial heraus: jeder Schnipsel wird um seinen
+   eigenen Winkel gedreht, DANN nach „oben" geschoben – so zeigt „oben" für jeden woanders
+   hin. Der Ort ist mit Absicht gewählt: hier ist die Anmeldung schon abgeschickt, das
+   Konfetti bejubelt eine Entscheidung, statt für eine zu werben. */
+@keyframes pat-flieg {
+  0%   { transform: rotate(var(--ab)) translateY(0) rotate(0deg); opacity: 0; }
+  10%  { opacity: 1; }
+  72%  { opacity: 1; }
+  100% { transform: rotate(var(--ab)) translateY(calc(var(--weit) * -1)) rotate(var(--dreh)); opacity: 0; }
+}
+.pat-konfetti { position: absolute; top: 50%; left: 50%; width: 0; height: 0; }
+.pat-konfetti i {
+  position: absolute; top: 0; left: 0;
+  width: 7px; height: 11px; margin: -5px 0 0 -3px;
+  border-radius: 2px; opacity: 0;
+  animation: pat-flieg 1.15s cubic-bezier(.15, .7, .35, 1) both;
+}
+.pat-konfetti i:nth-child(3n) { width: 7px; height: 7px; border-radius: 50%; margin-top: -3px; }
+.pat-konfetti i:nth-child(1)  { --ab:   8deg; --weit: 78px; --dreh:  220deg; background: var(--green);  animation-delay: 0s;    }
+.pat-konfetti i:nth-child(2)  { --ab:  46deg; --weit: 62px; --dreh: -180deg; background: var(--amber);  animation-delay: .04s; }
+.pat-konfetti i:nth-child(3)  { --ab:  82deg; --weit: 88px; --dreh:  300deg; background: var(--violet); animation-delay: .02s; }
+.pat-konfetti i:nth-child(4)  { --ab: 124deg; --weit: 68px; --dreh: -240deg; background: var(--petrol); animation-delay: .07s; }
+.pat-konfetti i:nth-child(5)  { --ab: 158deg; --weit: 92px; --dreh:  190deg; background: #e64980;       animation-delay: .01s; }
+.pat-konfetti i:nth-child(6)  { --ab: 196deg; --weit: 72px; --dreh: -300deg; background: var(--green);  animation-delay: .06s; }
+.pat-konfetti i:nth-child(7)  { --ab: 232deg; --weit: 84px; --dreh:  260deg; background: var(--amber);  animation-delay: .03s; }
+.pat-konfetti i:nth-child(8)  { --ab: 268deg; --weit: 64px; --dreh: -200deg; background: var(--violet); animation-delay: .08s; }
+.pat-konfetti i:nth-child(9)  { --ab: 302deg; --weit: 90px; --dreh:  230deg; background: #e64980;       animation-delay: .05s; }
+.pat-konfetti i:nth-child(10) { --ab: 338deg; --weit: 74px; --dreh: -260deg; background: var(--petrol); animation-delay: .02s; }
+
+/* Das Herzchen hinter der Absender-Zeile wird beim Öffnen der Seite aufgepustet: erst nichts,
+   dann ein Puster, der es über die Zielgröße hinausschiebt, danach wippt es zweimal aus.
+   Breite und Höhe laufen dabei gegeneinander (breit-flach, schmal-hoch) – das ist der Unter-
+   schied zwischen „wächst" und „wird aufgeblasen".
+   Die Verzögerung ist Absicht: erst steht die Seite, dann passiert das hier. */
+@keyframes pat-aufpusten {
+  0%   { transform: scale(0, 0);       opacity: 0; }
+  20%  { transform: scale(.45, .45);   opacity: 1; }
+  45%  { transform: scale(1.22, 1.04); opacity: 1; }
+  62%  { transform: scale(.9, 1.1);    opacity: 1; }
+  80%  { transform: scale(1.09, .96);  opacity: 1; }
+  100% { transform: scale(1, 1);       opacity: 1; }
+}
+.pat-herz {
+  position: relative;
+  display: inline-block; margin-left: .45em; vertical-align: -.06em;
+  /* Auf dem dunklen Petrol wäre das Pink des App-Fußes zu satt – eine Spur heller sitzt es
+     neben der gedämpften Absender-Zeile, ohne ihr die Schau zu stehlen. */
+  color: #ff8fb1; font-size: 1.05em; letter-spacing: normal;
+  animation: pat-aufpusten .85s cubic-bezier(.34, .8, .4, 1) .45s both;
+}
+
+/* Danach lässt das Herz ab und zu ein kleines nach links oben und eines nach rechts oben
+   davonfliegen. Der Trick für „ab und zu" ohne Skript: der Flug füllt nur die ersten rund
+   20 % des Durchlaufs, den Rest der Zeit sitzt das Herzchen unsichtbar auf null. Die beiden
+   Durchläufe sind unterschiedlich lang (8 s und 11,5 s) und teilerfremd genug, dass sie nie
+   in einen Gleichtakt fallen – mal fliegt eins allein, mal beide kurz nacheinander.
+   Beide starten erst, wenn das Aufpusten durch ist. */
+@keyframes pat-herz-weg-links {
+  0%   { transform: translate(0, 0)         scale(.35) rotate(0deg);   opacity: 0; }
+  3%   { transform: translate(-2px, -3px)   scale(.7)  rotate(-4deg);  opacity: .95; }
+  9%   { transform: translate(-9px, -14px)  scale(.9)  rotate(-11deg); opacity: .9; }
+  22%  { transform: translate(-25px, -35px) scale(.72) rotate(-24deg); opacity: 0; }
+  100% { transform: translate(-25px, -35px) scale(.72) rotate(-24deg); opacity: 0; }
+}
+@keyframes pat-herz-weg-rechts {
+  0%   { transform: translate(0, 0)        scale(.35) rotate(0deg);  opacity: 0; }
+  3%   { transform: translate(2px, -3px)   scale(.65) rotate(5deg);  opacity: .95; }
+  8%   { transform: translate(8px, -13px)  scale(.85) rotate(13deg); opacity: .9; }
+  18%  { transform: translate(22px, -33px) scale(.68) rotate(28deg); opacity: 0; }
+  100% { transform: translate(22px, -33px) scale(.68) rotate(28deg); opacity: 0; }
+}
+.pat-herz-links,
+.pat-herz-rechts {
+  position: absolute; left: 50%; top: 50%;
+  margin: -.5em 0 0 -.5em;          /* halbe eigene Kantenlänge – die Symbole sind 1em im Quadrat */
+  font-size: .62em; line-height: 1;
+  opacity: 0; pointer-events: none;
+}
+.pat-herz-links  { animation: pat-herz-weg-links  8s   ease-out 2.2s infinite; }
+.pat-herz-rechts { animation: pat-herz-weg-rechts 11.5s ease-out 4.6s infinite; }
+
+/* Erledigte Schritte in der Schrittanzeige ploppen nacheinander auf – kleine Belohnung
+   dafür, dass man eine Frage weiter ist. */
+@keyframes pat-haken {
+  0%   { transform: scale(.4); }
+  55%  { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+.pat-steps li.done .pat-step-n { animation: pat-haken .5s cubic-bezier(.2, .9, .3, 1.5) both; }
+.pat-steps li.done:nth-child(2) .pat-step-n { animation-delay: .09s; }
+.pat-steps li.done:nth-child(3) .pat-step-n { animation-delay: .18s; }
+.pat-steps li.done:nth-child(4) .pat-step-n { animation-delay: .27s; }
+
+/* Das Symbol in der Rollen-Kachel wackelt, wenn man die Kachel anfasst. */
+@keyframes pat-wackel {
+  0%, 100% { transform: rotate(0); }
+  22% { transform: rotate(-9deg) scale(1.06); }
+  55% { transform: rotate(7deg) scale(1.06); }
+  80% { transform: rotate(-3deg); }
+}
+a.pat-tile:hover .pat-tile-ico,
+a.pat-tile:focus-visible .pat-tile-ico { animation: pat-wackel .55s ease; }
+
+/* Herzen schlagen, wenn man mit der Maus hineinfährt: auf dem Hilfe-Knopf, in der Hilfe-Zeile
+   und im Abspann. Findet nur, wer hinschaut – so soll es sein. */
+@keyframes pat-puls {
+  0%, 100% { transform: scale(1); }
+  22% { transform: scale(1.32); }
+  40% { transform: scale(1.02); }
+  60% { transform: scale(1.2); }
+}
+.pat-help:hover .ti,
+.pat-foot-line:hover .pat-heart { animation: pat-puls 1s ease-in-out infinite; }
+
+/* Wer Bewegung abbestellt hat, bekommt alles davon still – inklusive Konfetti. */
+@media (prefers-reduced-motion: reduce) {
+  .pat-done-ico,
+  .pat-herz,
+  .pat-steps li.done .pat-step-n,
+  a.pat-tile:hover .pat-tile-ico,
+  a.pat-tile:focus-visible .pat-tile-ico,
+  .pat-help:hover .ti,
+  .pat-foot-line:hover .pat-heart { animation: none; }
+  /* Konfetti und die davonfliegenden Herzchen sind reine Bewegung – ohne sie bleibt nichts
+     zu sehen übrig, also ganz weg statt still stehen. */
+  .pat-konfetti,
+  .pat-herz-links,
+  .pat-herz-rechts { display: none; }
+}
+
+/* ---- Tablet: die Kacheln untereinander, sobald sie nebeneinander eng würden.
+       Dann auch kein Hineinragen mehr in den Hero (das wirkt gestapelt nur unruhig). ---- */
+@media (max-width: 860px) {
+  .pat-duo { grid-template-columns: 1fr; gap: 1rem; margin-top: -3rem; }
+  .pat-tile { min-height: 0; }
+  .pat-hero { min-height: 0; padding-bottom: clamp(4rem, 8vh, 5rem); }
+}
+
+/* ---- Handy ---- */
+@media (max-width: 560px) {
+  .pat-main > h1 { font-size: 1.35rem; }
+  /* Schriftzug einzeilig neben dem Logo wird eng – nur „Pat:innenprogramm" behalten,
+     der volle Name steht im Hero-Kicker und im Fuß */
+  .pat-brand-x strong { display: none; }
+  .pat-brand-x small { font-size: .85rem; }
+  .pat-hero { padding: 2rem 0 3.6rem; margin-bottom: 1.1rem; }
+  .pat-hero h1 { max-width: none; }
+  .pat-hero-kicker { font-size: .78rem; letter-spacing: .09em; }
+  .pat-duo { margin-top: -2.2rem; }
+  .pat-tile { border-radius: 16px; }
+  .pat-tile-cta { align-self: stretch; justify-content: center; }
+  .pat-form { padding: 1.2rem 1.1rem 1.4rem; border-radius: 16px; }
+  .pat-form-row { gap: 0; }
+  .pat-form-row > .pat-field + .pat-field { margin-top: 1.3rem; }
+  .pat-duo-note { text-align: left; justify-content: flex-start; }
+  /* Am Handy soll der Knopf möglichst wenig vom Inhalt verdecken – Beschriftung bleibt aber
+     dran, sonst wäre er genau die runde Sprechblase, die wir nicht sein wollen. */
+  .pat-help { padding: .5rem .9rem; font-size: .85rem; }
+}

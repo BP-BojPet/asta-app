@@ -1,0 +1,17 @@
+# Öffentlicher Bereich des Pat:innenprogramms.
+# Hier liegen bewusst nur die Seiten, die Studierende sehen sollen.
+
+# Keine Verzeichnisauflistung
+Options -Indexes
+
+# Die Bibliothek ist kein Einstiegspunkt (sie gibt allein nichts aus, wird aber trotzdem
+# nicht direkt ausgeliefert – ein Endpunkt weniger, über den man nachdenken muss).
+<Files "pat-lib.php">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</Files>

@@ -1,0 +1,2085 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Redeliste</title>
+  <link rel="manifest" href="manifest.php">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="icon" type="image/png" href="brand.php?b=logo-header">
+  <link rel="stylesheet" href="assets/tabler/tabler-icons.min.css">
+  <!-- Display-Font vorladen wie in der App: sonst poppt die Headline nach dem ersten Paint um -->
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="assets/fonts/outfit-latin.woff2">
+  <style>
+    /* Display-Font „Outfit" – identisch zur AStA-App (self-hosted, font-display:optional:
+       kommt die Schrift nicht rechtzeitig zum ersten Paint, bleibt der System-Font stehen). */
+    @font-face{
+      font-family:'Outfit'; font-style:normal; font-weight:500 800; font-display:optional;
+      src:url('assets/fonts/outfit-latin.woff2') format('woff2');
+      unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    }
+    @font-face{
+      font-family:'Outfit'; font-style:normal; font-weight:500 800; font-display:optional;
+      src:url('assets/fonts/outfit-latin-ext.woff2') format('woff2');
+      unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+    }
+    :root{
+      /* AStA-App-Palette: Petrol-Primär, warme Neutraltöne, weiche Schatten */
+      --bg:#f4f7f8; --card:#ffffff; --muted:#5f7178; --border:#d9e2e5; --accent:#0E5C73;
+      --text:#1c2b30; --surface:#ffffff; --surface-2:#eef3f4; --surface-3:#e3eef1;
+      --hover:#eef4f5; --avatar:#e3eef1; --form-bg:#f8fbfb;
+      --primary:#0E5C73; --primary-dark:#0A4757; --primary-text:#ffffff; --accent2:#2563eb;
+      --badge-flinta:#fde7e7; --badge-offen:#e7eefb; --badge-pron:#eef3f4;
+      --badge-asta:#e3f5ea; --badge-stupa:#fdf2dc; --badge-gast:#f1e7f8;
+      --st-asta:#2e9e5b; --st-stupa:#c2410c; --st-gast:#be185d;
+      --radius:12px; --shadow:0 1px 3px rgba(14,92,115,.08), 0 6px 18px rgba(14,92,115,.06);
+      --glass:linear-gradient(180deg, rgba(255,255,255,.6), rgba(255,255,255,.38));
+      --glass-edge:rgba(255,255,255,.45);
+    }
+    body.dark{
+      --bg:#0f1417; --card:#161d22; --muted:#9fb1b7; --border:#2a343a; --accent:#4bb6d1;
+      --text:#e7eef0; --surface:#1b242a; --surface-2:#212c33; --surface-3:#28343b;
+      --hover:#222e35; --avatar:#33414a; --form-bg:#141b20;
+      --primary:#2f93b0; --primary-dark:#287e98; --primary-text:#042029; --accent2:#5b9bff;
+      --badge-flinta:#6b2030; --badge-offen:#2b3a6b; --badge-pron:#33414a;
+      --badge-asta:#1f5132; --badge-stupa:#6b4e16; --badge-gast:#4a2e6b;
+      --st-asta:#4ade80; --st-stupa:#fdba74; --st-gast:#f9a8d4;
+      --shadow:0 1px 3px rgba(0,0,0,.4), 0 8px 22px rgba(0,0,0,.35);
+      --glass:linear-gradient(180deg, rgba(24,29,33,.62), rgba(13,17,20,.5));
+      --glass-edge:rgba(255,255,255,.07);
+    }
+    *{box-sizing:border-box}
+    body{margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--text); line-height:1.5}
+    /* Sticky Glas-Leiste wie in der App (blur + Sättigung + feine Glanzkante oben);
+       nur der Haupt-Header – der kleine header in der Sidebar bleibt unauffällig. */
+    header{position:sticky; top:0; z-index:10}
+    body > header{background:var(--glass); -webkit-backdrop-filter:blur(18px) saturate(1.9); backdrop-filter:blur(18px) saturate(1.9);
+      border-bottom:1px solid var(--border); box-shadow:inset 0 1px 0 var(--glass-edge), 0 6px 24px rgba(14,92,115,.10)}
+    body.dark > header{box-shadow:inset 0 1px 0 var(--glass-edge), 0 6px 24px rgba(0,0,0,.35)}
+    header .wrap{display:flex; align-items:center; gap:12px; padding:10px 16px}
+    /* Headlines/Blickfänge in der Display-Font „Outfit" – wie in der App */
+    .brand-title, h2, h3, .now-speaking .who, .mini-who, .mini-next, .mini-top, .topbar-current, .nosession-text{
+      font-family:'Outfit',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif; letter-spacing:.012em}
+    .brand{display:flex; align-items:center; gap:10px; font-weight:700; color:var(--accent); letter-spacing:.2px}
+    .brand img{height:34px; width:auto; display:block}
+    .brand .brand-title{font-size:1.12rem}
+    .btn{border:1px solid var(--border); background:var(--surface); color:var(--text); padding:8px 14px; border-radius:10px; cursor:pointer; font-weight:600; font-size:.92rem; display:inline-flex; align-items:center; gap:.4rem; transition:background .15s, border-color .15s, color .15s, transform .05s}
+    .btn .ti{font-size:1.05em; line-height:1}
+    .btn:hover{background:var(--surface-2); border-color:var(--accent)}
+    .btn:active{transform:translateY(1px)}
+    .btn.primary{background:var(--primary); color:var(--primary-text); border-color:var(--primary); box-shadow:var(--shadow)}
+    .btn.primary:hover{background:var(--primary-dark); border-color:var(--primary-dark); color:var(--primary-text)}
+    .btn.blue{background:var(--accent2); color:#fff; border-color:var(--accent2)}
+    .btn.blue:hover{filter:brightness(.94); border-color:var(--accent2)}
+    .btn.ghost{background:transparent}
+    .wrap .spacer{flex:1}
+
+    /* Teilnehmenden-Sidebar spannt die volle Höhe (linke Spalte); die TO-Leiste sitzt nur über der rechten Spalte.
+       So nutzt die Teilnehmendenliste die komplette Höhe, wenn vertikal wenig Platz ist. */
+    .layout{display:grid; grid-template-columns:300px 1fr; grid-template-areas:"side top" "side main"; gap:16px; padding:16px;}
+    #topbar{grid-area:top}
+    .sidebar{grid-area:side}
+    .main{grid-area:main}
+    @media (max-width: 900px){ .layout{grid-template-columns:1fr; grid-template-areas:"top" "side" "main";} }
+
+    /* Vollhöhen-Layout (Desktop): die Seite selbst scrollt nicht. Nur die Teilnehmendenliste
+       scrollt intern; "Teilnehmer hinzufügen" bleibt unten immer sichtbar. Mini-/Ruhebildschirm
+       sind ausgenommen, damit deren Ansichten unverändert bleiben. */
+    @media (min-width: 901px){
+      html, body{ height:100%; }
+      body:not(.mini):not(.ended){ display:flex; flex-direction:column; overflow:hidden; }
+      body:not(.mini):not(.ended) .layout{ flex:1 1 auto; min-height:0; grid-template-rows:auto minmax(0,1fr); }
+      body:not(.mini):not(.ended) .sidebar{ display:flex; flex-direction:column; min-height:0; }
+      body:not(.mini):not(.ended) .sidebar .list{ flex:1 1 auto; min-height:0; max-height:none; }
+      body:not(.mini):not(.ended) .main{ min-height:0; overflow:auto; }
+    }
+
+    /* Sidebar: Teilnehmende */
+    .sidebar{background:var(--card); border:1px solid var(--border); border-radius:14px; overflow:hidden; box-shadow:var(--shadow)}
+    .sidebar header{position:initial; border:0}
+    .sidebar .list{max-height:calc(100vh - 260px); overflow:auto; padding:8px}
+    .person{display:flex; align-items:flex-start; gap:10px; padding:10px; border:1px solid var(--border); border-radius:12px; background:var(--surface); margin:8px; cursor:pointer;
+      transition:background .15s, border-color .15s, box-shadow .15s}
+    .person:hover{background:var(--hover); border-color:var(--accent); box-shadow:var(--shadow)}
+    .person:active{transform:translateY(1px)}
+    .avatar{width:30px; height:30px; border-radius:50%; background:var(--avatar); display:grid; place-items:center; font-size:12px}
+    .avatar.pos{font-weight:700; font-variant-numeric:tabular-nums}
+    .meta{flex:1; min-width:0}
+    .name{font-weight:600; white-space:nowrap; text-overflow:ellipsis; overflow:hidden}
+    .sub{font-size:12px; color:var(--muted)}
+    .badge{font-size:12px; padding:2px 6px; border-radius:999px; border:1px solid var(--border);}    
+    .badge.flinta{background:var(--badge-flinta)}
+    .badge.offen{background:var(--badge-offen)}
+    .badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+    .badge.pron{background:var(--badge-pron)}
+    .badge.asta{background:var(--badge-asta)}
+    .badge.stupa{background:var(--badge-stupa)}
+    .badge.gast{background:var(--badge-gast)}
+
+    .crown{color:#c79a3a; font-size:.92em; vertical-align:baseline; opacity:.9}
+    body.dark .crown{color:#e3c068}
+    .count{font-variant-numeric:tabular-nums; font-weight:700}
+    .tiny{font-size:11px; color:var(--muted)}
+    .mini{padding:4px 6px; font-size:12px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); cursor:pointer; display:inline-flex; align-items:center; gap:.25rem}
+    .mini:active{transform:translateY(1px)}
+    .mini.remove-person{color:#9ca3af; border-color:transparent; background:transparent; padding:4px 5px}
+    .mini.remove-person:hover{color:#ef4444; background:var(--badge-flinta); border-color:#fca5a5}
+
+    /* Name + Button oben in einer Zeile */
+    .rowtop{display:flex; align-items:center; gap:8px}
+    .rowtop .spacer{flex:1}
+    .rowtop .mini{flex:0 0 auto}
+
+    /* Main */
+    .main{display:flex; flex-direction:column; gap:16px}
+
+    .now-speaking{background:var(--card); border:1px solid var(--border); border-radius:16px; padding:16px; box-shadow:var(--shadow)}
+    .now-speaking .who{color:var(--accent)}
+    .now-speaking .now-head{display:flex; align-items:center; gap:8px; margin-bottom:6px}
+    .now-head .spacer{flex:1}
+    .now-head h2{display:inline-flex; align-items:center; gap:.45rem}
+    .now-head h2 .ti{color:var(--accent); font-size:.9em}
+    .next-up .now-head h2 .ti{color:var(--accent2)}
+
+    /* "Als nächstes": bewusst dezenter als "Jetzt spricht" */
+    .next-up{padding:10px 16px; border-left:4px solid var(--accent2); background:rgba(37,99,235,.06)}
+    .next-up h2{font-size:13px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.04em}
+    .next-up .who{font-size:17px; font-weight:700}
+    .next-up .muted{font-size:13px; color:var(--muted)}
+    .now-speaking .who{font-size:22px; font-weight:800}
+    .now-speaking .muted{color:var(--muted)}
+
+    .controls{display:flex; gap:10px; flex-wrap:wrap}
+
+    .columns{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+    @media (max-width: 900px){ .columns{grid-template-columns:1fr} }
+
+    .queue{background:var(--card); border:1px solid var(--border); border-radius:16px; padding:12px; box-shadow:var(--shadow)}
+    .queue h3{margin:0 0 10px; display:inline-flex; align-items:center; gap:.4rem}
+    .queue h3 .ti{color:var(--accent)}
+    .qitem{display:flex; align-items:center; gap:8px; border:1px solid var(--border); background:var(--surface); padding:8px; border-radius:10px; margin-bottom:8px}
+    .qitem .remove{margin-left:auto}
+    .qitem .remove button{border:none; background:var(--surface-3); color:var(--text); padding:4px 8px; border-radius:8px; cursor:pointer}
+    .qitem .remove{margin-left:auto; display:flex; gap:6px}
+    /* Sonder-Meldungen: GO-Anträge (rot) & Direkte Nachfragen (orange) */
+    .qitem.q-go{border-left:4px solid #d24b4b}
+    .qitem.q-nachfrage{border-left:4px solid #d9971a}
+    .qtag{display:inline-flex; align-items:center; gap:.25rem; font-size:.72rem; font-weight:700; padding:.05rem .4rem; border-radius:6px}
+    .qtag.go{background:rgba(210,75,75,.15); color:#d24b4b}
+    .qtag.nf{background:rgba(217,151,26,.16); color:#b9791a}
+    .sonder-box{border-color:#d24b4b}
+    .sonder-box h3 .ti{color:#d24b4b}
+    /* Icon-Buttons fürs Melden von Nachfrage/GO */
+    .mm-ico{border:1px solid var(--border); background:var(--surface); color:var(--muted); width:42px; height:42px; border-radius:10px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; font-size:1.2rem}
+    .mm-ico:hover{border-color:currentColor}
+    .mm-nf{color:#b9791a} .mm-go{color:#d24b4b}
+    .mm-nf.on{background:#d9971a; color:#fff; border-color:#d9971a}
+    .mm-go.on{background:#d24b4b; color:#fff; border-color:#d24b4b}
+    .mm-ico:disabled{opacity:.4; cursor:default}
+    .mini-meld{display:flex; gap:8px; margin-top:14px; align-items:stretch}
+    .mini-meld .mm-main{flex:1; padding:12px; font-size:16px}
+    .mini-meld .mm-ico{width:52px; height:auto}
+    .mini-list.mini-go{background:rgba(210,75,75,.15); color:#d24b4b; font-weight:700; padding:.05rem .35rem; border-radius:6px}
+    .mini-list.mini-nf{background:rgba(217,151,26,.16); color:#b9791a; font-weight:700; padding:.05rem .35rem; border-radius:6px}
+    .mini-row.row-go{border-left:4px solid #d24b4b}
+    .mini-row.row-nf{border-left:4px solid #d9971a}
+    .qitem .remove button.take{background:var(--primary); color:var(--primary-text)}
+
+
+    .hint{font-size:12px; color:var(--muted)}
+    .now-speaking .hint{display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-top:6px}
+
+    /* Eigener Dialog (statt confirm) */
+    .modal-overlay{position:fixed; inset:0; background:rgba(0,0,0,.45); display:grid; place-items:center; z-index:100}
+    .modal{background:var(--card); color:var(--text); border:1px solid var(--border); border-radius:16px; padding:20px; max-width:420px; width:calc(100% - 40px); box-shadow:0 10px 40px rgba(0,0,0,.25)}
+    .modal h3{margin:0 0 8px}
+    .modal p{margin:0 0 16px; color:var(--muted)}
+    .modal .actions{display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap}
+    /* Hinzufügen-/Gast-Dialog */
+    .modal input[type=text], .modal select{width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); font-size:14px}
+    .add-member-list{display:flex; flex-direction:column; gap:6px; max-height:44vh; overflow:auto; margin:6px 0 4px}
+    .rep-order-row{display:flex; align-items:center; gap:10px; padding:6px 8px; border:1px solid var(--border); border-radius:10px; background:var(--surface)}
+    .rep-order-pos{flex:0 0 auto; min-width:24px; height:24px; display:grid; place-items:center; border-radius:50%; background:var(--primary); color:var(--primary-text); font-size:12px; font-weight:700}
+    .rep-order-name{flex:1; min-width:0; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+    .rep-order-btns{flex:0 0 auto; display:flex; gap:4px}
+    .rep-order-btns .rep-move{padding:4px 8px}
+    .rep-order-btns .rep-move:disabled{opacity:.35; cursor:default}
+    .add-member-row{display:flex; align-items:center; gap:8px; padding:7px 10px; border:1px solid var(--border); border-radius:10px; background:var(--surface)}
+    .add-member-name{flex:1; min-width:0; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+    .add-member-row .btn{padding:5px 10px; font-size:.85rem; flex:0 0 auto}
+    .ext-form{display:flex; flex-direction:column; gap:6px}
+    .ext-row{display:flex; gap:8px; align-items:center}
+    .modal .ext-row select{width:auto; flex:1}
+    .ext-row .btn{white-space:nowrap; flex:0 0 auto}
+    /* How-To-Fenster */
+    .modal h4{margin:14px 0 4px; font-size:14px}
+    .modal ul{margin:0 0 4px; padding-left:18px}
+    .modal li{font-size:13px; margin:3px 0; color:var(--text)}
+    .modal code{background:var(--surface-3); padding:1px 4px; border-radius:4px; font-size:12px}
+    .top-insert{align-self:center; width:28px; height:18px; display:grid; place-items:center; font-weight:700; font-size:13px; line-height:1; color:var(--muted); border:1px dashed var(--border); border-radius:8px; cursor:pointer}
+    .top-insert:hover{color:var(--accent2); border-color:var(--accent2); background:rgba(37,99,235,.08)}
+
+    /* Tagesordnungs-Leiste (Carousel) */
+    .topbar{position:relative; display:flex; align-items:center; gap:16px; padding:10px 16px; border-radius:14px; background:var(--card); border:1px solid var(--border); box-shadow:var(--shadow)}
+    .topbar-side{flex:1; min-width:0; color:var(--muted); font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+    .topbar-side.right{text-align:right}
+    .topbar-current{flex:0 0 auto; max-width:55%; text-align:center; font-weight:800; font-size:18px; padding:6px 16px; border-radius:12px; border:1px solid var(--accent); background:var(--surface-3)}
+    .topbar-current .tiny{font-weight:600}
+    .tiny.exhausted{color:#16a34a; font-weight:700}
+    body.dark .tiny.exhausted{color:#4ade80}
+    .top-intern{background:var(--badge-stupa)}
+    .topbar-side.top-intern{background:transparent; color:#d97706}
+    body.leader .topbar-current{cursor:pointer}
+    /* Offene Meldungen: grüne Markierung links und rechts (wie der Akzent bei "Als nächstes") */
+    body.leader .topbar-current.open{border-left:4px solid #16a34a; border-right:4px solid #16a34a; background:rgba(34,197,94,.10)}
+    @keyframes topslide{from{transform:translateX(48px); opacity:0} to{transform:none; opacity:1}}
+    .topbar-current.slide{animation:topslide .35s ease}
+    .part-label{font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.05em}
+    .topbar-side .part-note{display:block; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#d97706}
+    .top-timer{display:block; font-size:12px; font-weight:600; color:var(--muted); font-variant-numeric:tabular-nums}
+    .top-timer.over{color:#dc2626; font-weight:700}
+    #topTimer{position:absolute; right:16px; bottom:2px; font-size:11px}
+
+    /* Mini-Ansicht (?mini): schmale vertikale Beamer-Ansicht */
+    a.btn{text-decoration:none; display:inline-block}
+    body.mini header, body.mini .topbar, body.mini .layout{display:none}
+    /* Mini-Modus: Body zentriert seinen Inhalt (horizontal + vertikal), damit die schmale
+       Beamer-Box mittig auf der Fläche sitzt statt links/unten zu kleben. */
+    body.mini{display:flex; flex-direction:column; align-items:center; justify-content:flex-start; min-height:100vh; box-sizing:border-box}
+    .miniview{padding:14px; width:100%; max-width:420px; margin:0 auto; display:flex; flex-direction:column; gap:6px}
+    /* Kopf-Blöcke (Jetzt spricht / Als nächstes) zentriert – Blickfang auf dem Beamer.
+       Die nummerierte „Gemeldet"-Liste bleibt bewusst linksbündig (Positions-Spalte). */
+    .mini-label, .mini-who, .mini-next, .mini-meta{text-align:center}
+    .mini-top{font-weight:800; font-size:20px; text-align:center; padding:8px 10px; border:1px solid var(--border); border-radius:12px; background:var(--surface); margin-bottom:6px}
+    .mini-top.top-intern{background:var(--badge-stupa)}
+    .mini-top.clickable{cursor:pointer}
+    .mini-top.clickable:active{transform:translateY(1px)}
+    .mini-top-hint{font-size:11px; font-weight:600; color:var(--muted); margin-top:4px; opacity:.85; display:flex; align-items:center; gap:4px; justify-content:center}
+    .mini-label{font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-top:10px}
+    .mini-who{font-size:30px; font-weight:800; line-height:1.15}
+    .mini-next{font-size:20px; font-weight:700}
+    .mini-meta{font-size:13px; color:var(--muted)}
+    .mini-row{display:flex; align-items:baseline; gap:8px; padding:6px 8px; border:1px solid var(--border); border-radius:10px; background:var(--surface)}
+    .mini-pos{font-variant-numeric:tabular-nums; font-weight:700; color:var(--muted); min-width:18px}
+    .mini-name{font-weight:700; font-size:17px; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+    .mini-name.st-asta{color:var(--st-asta)}
+    .mini-name.st-stupa{color:var(--st-stupa)}
+    .mini-name.st-gast{color:var(--st-gast)}
+    .mini-list{font-size:11px; color:var(--muted)}
+    .mini-empty{color:#16a34a; font-weight:600}
+    body.dark .mini-empty{color:#4ade80}
+    .mini-back{display:block; text-align:center; margin-top:12px; font-size:13px; color:var(--muted); text-decoration:underline}
+
+    /* Ruhebildschirm: keine laufende Sitzung */
+    body.ended .layout, body.ended .topbar, body.ended .miniview{display:none !important}
+    body.ended #resetCounts, body.ended #nextBtn, body.ended #newSession, body.ended #meldenBtn, body.ended #nfBtn, body.ended #goBtn, body.ended #meName, body.ended #meClear, body.ended #miniLink{display:none !important}
+    .nosession{display:flex; flex-direction:column; align-items:center; gap:16px; padding:70px 16px; text-align:center}
+    .nosession-text{font-size:22px; font-weight:700; color:var(--muted)}
+
+    /* Info-Ecke unten rechts */
+    .info-corner{position:fixed; right:14px; bottom:14px; z-index:90; display:flex; flex-direction:column; align-items:flex-end; gap:8px}
+    .info-btn{width:26px; height:26px; border-radius:50%; border:1px solid var(--border); background:var(--card); color:var(--muted); display:grid; place-items:center; font-size:14px; font-family:Georgia,'Times New Roman',serif; font-style:italic; user-select:none}
+    .info-pop{display:none; background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px 14px; box-shadow:0 6px 24px rgba(0,0,0,.18); font-size:13px; text-align:center}
+    .info-pop .btn{display:inline-block; margin-top:8px; font-size:13px; padding:6px 10px}
+    .info-corner:hover .info-pop{display:block}
+
+    /* Nur-Ansicht-Modus (?ansicht): keine Bedienelemente, keine Klicks */
+    body.viewer .add-guest{display:none}
+    body.viewer #resetCounts, body.viewer #nextBtn, body.viewer #removeCurrentBtn, body.viewer #endTopicBtn{display:none}
+    body.viewer .sidebar .list .person{pointer-events:none}
+    body.viewer .qitem .remove{display:none}
+    body.viewer .person{cursor:default}
+
+    /* Teilnehmen-Modus (Standard-URL bzw. ?melden): nur "Das bin ich" + Melden */
+    body.participant .add-guest{display:none}
+    body.participant #resetCounts, body.participant #nextBtn, body.participant #removeCurrentBtn, body.participant #endTopicBtn{display:none}
+    body.participant .qitem .remove{display:none}
+    body.participant .person .mini{display:none}
+    body.participant .person.me{border-color:var(--accent2); box-shadow:inset 0 0 0 1px var(--accent2)}
+    body.participant .topbar-current{cursor:pointer}
+
+      /* Add guest form */
+.add-guest{padding:8px 12px; border-top:1px solid var(--border); background:var(--form-bg)}
+.add-guest form{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+.add-guest .row{
+  grid-column: 1 / -1;   /* NEU: Reihe über beide Grid-Spalten */
+  display:flex;
+  gap:8px;
+}
+.add-guest .row select{
+  flex:1;                /* NEU: beide Dropdowns gleich breit */
+  min-width:0;           /* NEU: sauberes Shrinking in Flex-Row */
+}
+.add-guest .row button{
+  flex:0 0 auto;         /* NEU: Button schrumpft nicht */
+}
+.add-guest input, .add-guest select{
+  padding:8px;
+  border:1px solid var(--border);
+  border-radius:8px;
+  width:100%;
+  background:var(--surface);
+  color:var(--text);
+}
+
+/* Protokollpause: Vollbild-Overlay (alle außer Leitungs-Vollansicht) + dezenter Banner (Leitung) */
+.pp-overlay{position:fixed; inset:0; z-index:200; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px;
+  text-align:center; padding:24px; color:#fff; background:rgba(15,23,32,.94); -webkit-backdrop-filter:blur(5px); backdrop-filter:blur(5px)}
+.pp-overlay .pp-icon{font-size:72px; line-height:1; color:#fbbf24}
+.pp-overlay .pp-title{font-size:clamp(28px,6vw,44px); font-weight:800; letter-spacing:.5px}
+.pp-overlay .pp-sub{font-size:clamp(15px,2.4vw,20px); opacity:.9; line-height:1.5; max-width:36rem}
+.pp-overlay .btn{font-size:1.05rem; padding:12px 20px}
+.pp-banner{position:fixed; top:0; left:0; right:0; z-index:150; display:flex; gap:12px; align-items:center; justify-content:center;
+  padding:9px 14px; background:#b45309; color:#fff; font-weight:700; box-shadow:0 2px 10px rgba(0,0,0,.25)}
+.pp-banner .btn{background:rgba(255,255,255,.16); border-color:rgba(255,255,255,.35); color:#fff}
+body.leader.pp-on{padding-top:0} /* Banner ist fixed – kein Layout-Shift nötig, aber Klasse als Haken */
+
+  </style>
+</head>
+<body>
+  <!-- Top controls -->
+  <header>
+    <div class="wrap">
+      <span class="brand"><img src="brand.php?b=logo-header" alt="" width="48" height="34" decoding="async"><span class="brand-title">Redeliste</span></span>
+      <span id="sessionTitle" class="tiny"></span>
+      <button id="protocolBtn" class="btn" style="display:none" title="Protokollant:in für diese Sitzung festlegen"><i class="ti ti-notebook"></i> <span id="protocolBtnLabel">Protokoll</span></button>
+      <button id="newSession" class="btn" style="display:none" title="Sitzung beenden: Redelisten, Redezähler und Gäste werden gelöscht"><i class="ti ti-player-stop"></i> Sitzung beenden</button>
+      <div class="spacer"></div>
+      <a id="appLink" class="btn" style="display:none" href="dashboard.php" title="Zurück zur AStA-App"><i class="ti ti-arrow-back-up"></i> Zur App</a>
+      <a id="miniLink" class="btn" style="display:none" href="?mini" title="Schmale Beamer-Ansicht öffnen"><i class="ti ti-device-tv"></i> Mini-Ansicht</a>
+      <button id="darkToggle" class="btn" title="Dark Mode umschalten"><i class="ti ti-moon"></i></button>
+      <button id="resetCounts" class="btn blue"><i class="ti ti-rotate-2"></i> Quotierung zurücksetzen</button>
+      <button id="nextBtn" class="btn primary"><i class="ti ti-player-track-next"></i> Nächste Person aufrufen</button>
+      <span id="meName" class="tiny" style="display:none"></span>
+      <button id="meClear" class="mini remove-person" style="display:none" title="Zuordnung aufheben – dieses Gerät ist dann niemandem mehr zugeordnet"><i class="ti ti-x"></i></button>
+      <button id="meldenBtn" class="btn primary" style="display:none">Melden</button>
+      <button id="nfBtn" class="mm-ico mm-nf" style="display:none" title="Direkte Nachfrage (orange)"><i class="ti ti-message-circle-question"></i></button>
+      <button id="goBtn" class="mm-ico mm-go" style="display:none" title="GO-Antrag (rot)"><i class="ti ti-alert-octagon"></i></button>
+      <button id="protocolPauseBtn" class="btn" style="display:none" title="Protokollpause ausrufen – unterbricht die Redeliste"><i class="ti ti-player-pause"></i> Protokollpause</button>
+    </div>
+  </header>
+
+  <!-- Mini-Ansicht (nur im ?mini-Modus sichtbar) -->
+  <div id="miniView" class="miniview" style="display:none"></div>
+
+  <!-- Ruhebildschirm, wenn keine Sitzung läuft -->
+  <div id="noSession" class="nosession" style="display:none">
+    <div id="noSessionTitle" class="nosession-text">Aktuell keine AStA-Sitzung</div>
+    <div id="noSessionSub" class="nosession-sub" style="display:none;margin-top:8px;font-size:1rem;opacity:.8;max-width:32rem;text-align:center;line-height:1.5"></div>
+    <button id="startSessionBtn" class="btn primary" style="display:none"><i class="ti ti-player-play"></i> Neue Sitzung</button>
+    <!-- In der installierten Web-App: zurück zur AStA-App auch auf dem Warte-/Beendet-Screen -->
+    <a id="appLinkRest" class="btn" style="display:none" href="dashboard.php"><i class="ti ti-arrow-back-up"></i> Zur AStA-App</a>
+  </div>
+
+  <!-- Info-Ecke -->
+  <div class="info-corner">
+    <div class="info-pop">
+      Mit ♥ von Boj Petersen
+      <div style="display:flex; flex-direction:column; gap:6px; margin-top:8px">
+        <div style="display:flex; gap:6px; justify-content:center">
+          <button id="howtoTeil" class="btn"><i class="ti ti-help-circle"></i> How-To: Teilnehmen</button>
+          <button id="howtoLeit" class="btn"><i class="ti ti-help-circle"></i> How-To: Leitung</button>
+        </div>
+        <a class="btn" href="redeliste-kontakt.php">Feedback senden</a>
+      </div>
+    </div>
+    <div class="info-btn">i</div>
+  </div>
+
+  <div class="layout">
+    <!-- Tagesordnungs-Leiste (Position per grid-area: Desktop oben über beide Spalten, klein: unter den Teilnehmenden) -->
+    <div id="topbar" class="topbar" style="display:none">
+      <div id="topPrev" class="topbar-side"></div>
+      <div id="topCurrent" class="topbar-current"></div>
+      <div id="topNext" class="topbar-side right"></div>
+      <div id="topTimer" class="top-timer"></div>
+    </div>
+    <!-- Sidebar: Teilnehmende anklicken zum Melden -->
+    <aside class="sidebar">
+      <header class="wrap" style="padding:10px 12px">
+        <div>
+          <div style="font-weight:700">Teilnehmende</div>
+          <div id="peopleHint" class="tiny">Linksklick: Meldung · Rechtsklick: Liste wechseln · Mausradklick: Entfernen</div>
+          <div class="tiny" style="margin-top:2px"><i class="ti ti-crown crown"></i> = online über eigenes Gerät dabei, meldet sich selbst</div>
+        </div>
+        <div class="spacer"></div>
+      </header>
+
+      <div id="people" class="list"></div>
+
+      <!-- Teilnehmende hinzufügen: ein großer Button (Leitung) öffnet den Hinzufügen-Dialog. -->
+      <div class="add-guest">
+        <button id="addParticipantBtn" type="button" class="btn primary" style="width:100%; justify-content:center; padding:12px; font-size:1rem"><i class="ti ti-user-plus"></i> Teilnehmende hinzufügen</button>
+      </div>
+    </aside>
+
+    <!-- Main area: Now speaking + Queues -->
+    <main class="main">
+      <section class="now-speaking">
+        <div class="now-head">
+          <h2 style="margin:0"><i class="ti ti-microphone"></i> Jetzt spricht</h2>
+          <button id="removeCurrentBtn" class="btn" title="Aktuelle Person aus 'Jetzt spricht' entfernen"><i class="ti ti-user-x"></i> Entfernen</button>
+          <div class="spacer"></div>
+          <button id="endTopicBtn" class="btn blue" title="Beide Redelisten leeren und Quotierung zurücksetzen"><i class="ti ti-circle-check"></i> Top beenden</button>
+        </div>
+        <div id="nowWho" class="who">–</div>
+        <div id="nowMeta" class="muted"></div>
+        <div class="hint"><span>Reihenfolge: abwechselnd FLINTA* ⇄ Offen (Start: FLINTA*) • Anzeige & Auswahl sind quotiert</span><span>Top beenden: leert beide Redelisten und setzt die Quotierung zurück</span></div>
+      </section>
+
+      <section class="now-speaking next-up">
+        <div class="now-head">
+          <h2 style="margin:0"><i class="ti ti-chevrons-right"></i> Als nächstes</h2>
+        </div>
+        <div id="nextWho" class="who">–</div>
+        <div id="nextMeta" class="muted"></div>
+      </section>
+
+      <div class="controls">
+        <span class="tiny">Tipp: In der Teilnehmendenliste auf <em>✎ Pronomen</em> klicken, um Pronomen direkt zu ändern. · <em>Leertaste</em>: nächste Person aufrufen</span>
+      </div>
+
+      <section class="queue sonder-box" id="qSonderBox" style="display:none; margin-bottom:16px">
+        <h3><i class="ti ti-urgent"></i> Sonder-Meldungen <span class="tiny" style="font-weight:400">– GO-Anträge (rot) zuerst, dann Direkte Nachfragen (orange)</span></h3>
+        <div id="qSonder"></div>
+      </section>
+
+      <section class="columns">
+        <div class="queue" id="qFlintaBox">
+          <h3><i class="ti ti-list-numbers"></i> FLINTA*</h3>
+          <div id="qFlinta"></div>
+        </div>
+        <div class="queue" id="qOffenBox">
+          <h3><i class="ti ti-list-numbers"></i> Offen</h3>
+          <div id="qOffen"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    // ======= Teilnehmende =======
+    // Die Stammliste kommt aus der AStA-App (Seeding beim Sitzungsstart) bzw. über die
+    // persönlichen Beitritts-Links. Daher hier keine fest eingetragene Liste mehr.
+    const initialParticipants = [];
+
+
+    // ======= Zustand =======
+    let participants = [...initialParticipants];
+    let queue = { flinta: [], offen: [], go: [], nachfrage: [] }; // enthält IDs in Anmeldereihenfolge
+    let nextList = 'flinta'; // Alternierung beginnt bei FLINTA*
+    let nowSpeaking = null;  // {id, list} oder null
+    // ======= Standard-Tagesordnung =======
+    // Vorlage beim Anlegen einer neuen Sitzung; jeder TOP bleibt frei änder-, lösch- und verschiebbar.
+    const standardTops = [
+      { label:'1',   title:'Begrüßung und Formalia' },
+      { label:'2',   title:'Beschluss der noch abzustimmenden Protokolle' },
+      { label:'3',   title:'Berichte und Termine' },
+      { label:'3.1', title:'Berichte der AStA-Referent*innen' },
+      { label:'3.2', title:'Sonstige Berichte' },
+      { label:'4',   title:'Anfragen an den AStA' },
+      { label:'5',   title:'' },
+      { label:'6',   title:'Sonstiges' },
+      { label:'7',   title:'Interner Teil', intern:true },
+    ];
+
+    let tops = [];           // Tagesordnung: [{label, title, minutes, intern}]
+    let currentTop = 0;      // Index des aktuellen TOPs
+    let topStartedAt = null; // Startzeitpunkt des aktuellen TOPs (für den Timer)
+    let topHadMeldungen = false; // gab es im aktuellen TOP schon Meldungen? (für "Redeliste erschöpft")
+    let sessionTitle = '';   // z. B. "12. ordentliche Sitzung"
+    let sessionActive = true; // false = Ruhebildschirm "Aktuell keine Sitzung"
+    let protocolTaker = null; // {id:'m123', name} – in der App/Redeliste gewählte:r Protokollant:in (nur Raum-Sitzungen)
+    let protocolPause = null; // {by, name, at} – laufende Protokollpause (unterbricht die Liste), sonst null
+
+    // ======= Hilfsfunktionen =======
+    function el(tag, opts={}){ const e=document.createElement(tag); Object.assign(e, opts); return e; }
+
+    /* Pronomen: feste Auswahl statt Freitext – dieselben Optionen wie im App-Profil
+       (lib.php: pronoun_first_options/pronoun_second_options; der Selbsttest vergleicht die
+       beiden Listen, damit sie nicht auseinanderlaufen). Bewusst KEIN „keine": Niemand soll
+       hier eintragen müssen, gar keine Pronomen zu haben. */
+    const PRON_FIRST  = ['sie','er','they','dey'];
+    const PRON_SECOND = ['ihr','ihm','them','dem','dey'];
+    /* Zwei Dropdowns als HTML. $leer = Text der leeren Option (Vorauswahl). */
+    function pronSelects(idA, idB, wert, leer){
+      const teile = String(wert || '').split('/');
+      const bau = (liste, gewaehlt, id) => '<select id="' + id + '" style="flex:1">'
+        + '<option value="">' + leer + '</option>'
+        + liste.map(o => '<option value="' + o + '"' + (o === gewaehlt ? ' selected' : '') + '>' + o + '</option>').join('')
+        + '</select>';
+      return '<div class="ext-row" style="display:flex;gap:8px">'
+        + bau(PRON_FIRST, teile[0] || '', idA) + bau(PRON_SECOND, teile[1] || '', idB) + '</div>';
+    }
+    /* Gewählte Pronomen als „erstes/zweites" – leer, solange nicht beide Teile gewählt sind. */
+    function pronValue(box, idA, idB){
+      const a = box.querySelector('#' + idA).value, b = box.querySelector('#' + idB).value;
+      return (a && b) ? a + '/' + b : '';
+    }
+    /* Beide Dropdowns rot umranden, bis eine Wahl getroffen ist. */
+    function pronMarkieren(box, idA, idB){
+      [idA, idB].forEach(id => {
+        const sel = box.querySelector('#' + id);
+        sel.style.borderColor = sel.value ? '' : '#ef4444';
+      });
+      box.querySelector('#' + (box.querySelector('#' + idA).value ? idB : idA)).focus();
+    }
+    function fmtBadge(list){ return `<span class="badge ${list}">${list==='flinta'?'FLINTA*':'Offen'}</span>`; }
+    function getPerson(id){ return participants.find(p => p.id === id); }
+    // In welcher Liste steht die Person? 'go' | 'nachfrage' | 'flinta' | 'offen' | null
+    function meldeKindOf(id){
+      if((queue.go||[]).includes(id)) return 'go';
+      if((queue.nachfrage||[]).includes(id)) return 'nachfrage';
+      if(queue.flinta.includes(id)) return 'flinta';
+      if(queue.offen.includes(id)) return 'offen';
+      return null;
+    }
+    function isQueued(id){ return meldeKindOf(id) !== null; }
+    function listLabel(l){ return l === 'flinta' ? 'FLINTA*' : l === 'go' ? 'GO-Antrag' : l === 'nachfrage' ? 'Direkte Nachfrage' : 'Offen'; }
+    let addDialogRender = null; // gesetzt, solange der Hinzufügen-Dialog offen ist (Live-Update der Mitgliederliste)
+    function renderAll(){ renderPeople(); renderQueues(); renderNow(); syncLeaderControls(); if(addDialogRender) addDialogRender(); }
+	function removePerson(personId){
+	const p = getPerson(personId); if(!p) return;
+	if(!confirm(`${p.name} wirklich aus der Session entfernen?`)) return;
+
+	// Aus Teilnehmenden entfernen
+	participants = participants.filter(p => p.id !== personId);
+
+	// Aus beiden Queues entfernen
+	['flinta','offen'].forEach(k=>{
+		queue[k] = queue[k].filter(id => id !== personId);
+	});
+
+  // Falls gerade sprechend: leeren
+  if(nowSpeaking && nowSpeaking.id === personId){
+    nowSpeaking = null;
+  }
+
+  renderAll();
+  sendOp('remove_person', { id: personId });
+}
+
+
+    // Sidebar rendern
+    function renderPeople(){
+  const wrap = document.getElementById('people');
+  wrap.innerHTML='';
+  participants.forEach(p => {
+    // Wer schon in einer Redeliste steht, wird ausgeblendet (Doppelmeldung ohnehin nicht möglich)
+    if(queue.flinta.includes(p.id) || queue.offen.includes(p.id)) return;
+    // Mitglieder, die noch NICHT beigetreten sind (present:false), erscheinen nicht in der Leiste –
+    // sie stehen nur im „Hinzufügen"-Dialog der Leitung. Alt-Stände ohne Feld bleiben sichtbar.
+    if(p.present === false) return;
+    const item = el('div', { className:'person', title:'Links-Klick: melden · Rechts-Klick: Liste wechseln' });
+    if(myId && p.id === myId){ item.classList.add('me'); } // eigene Zeile (Teilnehmen & Leitung)
+
+    // Kein Mitglieder-Avatar in der Leiste: keine Avatar-Farben, kein Schmuck, kein Schein – nichts
+    // aus dem Belohnungs-Locker. Auch wenn ein alter Raum-Stand solche Felder noch mitliefert, werden
+    // sie hier nicht gezeichnet. In der Sitzung zählt, wer dran ist.
+    const meta = el('div', { className:'meta' });
+
+    // Obere Zeile: Name/Zähler links, Pronomen-Button rechts
+    const row = el('div', { className:'rowtop' });
+    const name = el('div', { className:'name' });
+    // 👑 dezent vor dem Namen: Person ist online über ihr eigenes Gerät dabei und meldet sich selbst.
+    const crown = p.online ? '<i class="ti ti-crown crown" title="Online über eigenes Gerät dabei – meldet sich selbst"></i> ' : '';
+    name.innerHTML = `${crown}${escapeHtml(p.name)} <span class="count" title="Anzahl Redebeiträge">${p.count}</span>`;
+
+    const spacer = el('div', { className:'spacer' });
+
+    const editBtn = el('button', { className:'mini', type:'button', title:'Pronomen ändern', innerText:'✎ Pronomen' });
+    editBtn.addEventListener('click', (ev)=>{ ev.stopPropagation(); editPronouns(p.id); });
+
+    const removeBtn = el('button', { className:'mini remove-person', type:'button', title:'Person aus der Session entfernen', innerText:'×' });
+    removeBtn.addEventListener('click', (ev)=>{ ev.stopPropagation(); removePerson(p.id); });
+
+    row.appendChild(name);
+    row.appendChild(spacer);
+    // Bearbeiten/Entfernen nur für die Sitzungsleitung (in der Not); Mitglieder sehen die Liste nur lesend
+    if(isLeader){ row.appendChild(editBtn); row.appendChild(removeBtn); }
+
+    // Badges-Zeile unter dem Namen
+    const badges = el('div', { className:'badges' });
+    const pron = (p.pronouns || '').trim();
+    if(pron && pron !== '—'){
+      badges.appendChild(el('span', { className:'badge pron', innerText: pron }));
+    }
+    const statusRaw = (p.status || 'Gast').trim();
+    const s = statusRaw.toLowerCase();
+    const statusClass = s === 'asta' ? 'asta' : (s === 'stupa' ? 'stupa' : 'gast');
+    badges.appendChild(el('span', { className:'badge ' + statusClass, innerText: statusRaw }));
+    badges.appendChild(el('span', { className:'badge ' + p.list, innerText: (p.list === 'flinta' ? 'FLINTA*' : 'Offen') }));
+
+    const sub = el('div', { className:'sub' });
+    sub.appendChild(badges);
+
+    meta.appendChild(row);
+    meta.appendChild(sub);
+
+    item.appendChild(meta);
+
+    item.addEventListener('click', () => {
+      // Teilnehmende/Gäste melden sich über den großen Button (eigene Identität), nicht durch
+      // Anklicken fremder Namen. Nur die Leitung meldet per Klick für andere.
+      if(document.body.classList.contains('participant')) return;
+      meldung(p.id);
+    });
+    item.addEventListener('contextmenu', (e)=>{ e.preventDefault(); if(document.body.classList.contains('participant')) return; toggleList(p.id); });
+	
+	// Mittelklick: Person entfernen + Autoscroll verhindern
+	item.addEventListener('mousedown', (e)=>{ 
+	if(e.button === 1){ e.preventDefault(); } // blockt das Browser-Autoscroll-Rad
+	});
+	item.addEventListener('auxclick', (e)=>{
+	if(e.button === 1){
+    e.preventDefault();
+    if(document.body.classList.contains('participant')) return;
+    removePerson(p.id);
+  }
+});
+
+
+    wrap.appendChild(item);
+  });
+}
+
+    function editPronouns(personId){
+      const p = getPerson(personId); if(!p) return;
+      // Eigener Dialog mit derselben Auswahl wie überall sonst – kein prompt(), kein Freitext.
+      const ov = el('div', { className:'modal-overlay' });
+      const box = el('div', { className:'modal' });
+      box.innerHTML = '<h3>Pronomen von ' + escapeHtml(p.name) + '</h3>'
+        + '<p>Auswahl wie im App-Profil.</p>'
+        + pronSelects('epA', 'epB', p.pronouns || '', '— noch offen —')
+        + '<div class="actions" style="margin-top:16px">'
+        + '<button id="epCancel" class="btn">Abbrechen</button>'
+        + '<button id="epOk" class="btn primary">Übernehmen</button></div>';
+      ov.appendChild(box); document.body.appendChild(ov);
+      const close = ()=> ov.remove();
+      box.querySelector('#epCancel').addEventListener('click', close);
+      ov.addEventListener('click', (e)=>{ if(e.target === ov) close(); });
+      box.querySelector('#epOk').addEventListener('click', ()=>{
+        p.pronouns = pronValue(box, 'epA', 'epB');   // leer = wieder offen lassen
+        close();
+        renderPeople();
+        renderQueues(); // aktualisiere Anzeige in den Queue-Items
+        renderNow();
+        sendOp('join', { id: personId, name: p.name, pronouns: p.pronouns, list: p.list });
+      });
+    }
+
+    function escapeHtml(s){
+      return String(s||'').replace(/[&<>\"]/g, c=>({"&":"&amp;","<":"&lt;",
+        ">":"&gt;","\"":"&quot;","/":"&#47;"}[c]));
+    }
+
+    // Meldung hinzufügen
+    function meldung(personId){
+      const p = getPerson(personId); if(!p) return;
+      const listKey = p.list;
+      // doppelte Meldung verhindern (Person darf nur 1x gleichzeitig in ihrer Liste stehen)
+      if(queue[listKey].includes(personId)) return;
+      queue[listKey].push(personId);
+      renderQueues();
+      renderPeople(); // Person aus der Sidebar ausblenden
+      sendOp('raise', { id: personId });
+    }
+
+    // Liste umschalten (FLINTA*/Offen)
+    function toggleList(personId){
+      const p = getPerson(personId); if(!p) return;
+      p.list = (p.list === 'flinta') ? 'offen' : 'flinta';
+      // Falls Person in alter Liste angemeldet war, entfernen
+      ['flinta','offen'].forEach(k=>{
+        const i = queue[k].indexOf(personId);
+        if(i>-1){ queue[k].splice(i,1); }
+      });
+      renderAll();
+      sendOp('set_list', { id: personId, list: p.list });
+    }
+
+    // === Stable sort helper for queues (quotiert nach count, stabil nach Anmeldereihenfolge) ===
+    function sortedByQuota(arr){
+      // arr enthält IDs in Anmeldereihenfolge; wir erzeugen eine stabile Sortierung nach count
+      const original = arr.slice();
+      return arr.slice().sort((a,b)=>{
+        const pa = getPerson(a), pb = getPerson(b);
+        if(pa.count !== pb.count) return pa.count - pb.count; // weniger Beiträge zuerst
+        return original.indexOf(a) - original.indexOf(b);      // Stabilität
+      });
+    }
+
+    // Tatsächliche Aufrufreihenfolge über BEIDE Listen simulieren
+    // (Alternierung ab nextList + Quotierung, inkl. der sich ändernden Zähler)
+    function predictOrder(){
+      const counts = {};
+      participants.forEach(p => { counts[p.id] = p.count; });
+      const q = { flinta: queue.flinta.slice(), offen: queue.offen.slice() };
+      const pos = {};
+      let n = 1;
+      // Sonder-Meldungen zuerst, flach (FIFO): GO-Anträge ganz oben, dann Direkte Nachfragen
+      (queue.go || []).forEach(id => { pos[id] = n++; });
+      (queue.nachfrage || []).forEach(id => { pos[id] = n++; });
+      let list = nextList;
+      while(q.flinta.length || q.offen.length){
+        let chosen = list;
+        if(q[chosen].length === 0) chosen = (chosen === 'flinta') ? 'offen' : 'flinta';
+        // Person mit dem niedrigsten Zähler, bei Gleichstand frühere Anmeldung
+        let best = 0;
+        for(let i = 1; i < q[chosen].length; i++){
+          if((counts[q[chosen][i]] ?? 0) < (counts[q[chosen][best]] ?? 0)) best = i;
+        }
+        const id = q[chosen].splice(best, 1)[0];
+        pos[id] = n++;
+        counts[id] = (counts[id] ?? 0) + 1;
+        list = (chosen === 'flinta') ? 'offen' : 'flinta';
+      }
+      return pos;
+    }
+
+    // Queues rendern (quotiert in der ANZEIGE)
+    function renderQueues(){
+      const qF = document.getElementById('qFlinta');
+      const qO = document.getElementById('qOffen');
+      qF.innerHTML=''; qO.innerHTML='';
+
+      // Wichtig: Wir ändern NICHT die interne Reihenfolge in queue.*, sondern nur die Anzeige
+      // So bleibt die Stabilität/Anmeldung für Gleichstände erhalten
+      const pos = predictOrder();
+      // Sonder-Meldungen (GO rot, Nachfrage orange) – flach in Anmeldereihenfolge, GO zuerst
+      const qS = document.getElementById('qSonder');
+      const qSBox = document.getElementById('qSonderBox');
+      if(qS){
+        qS.innerHTML = '';
+        (queue.go || []).forEach(id => qS.appendChild(renderQItem(id, 'go', pos[id])));
+        (queue.nachfrage || []).forEach(id => qS.appendChild(renderQItem(id, 'nachfrage', pos[id])));
+        if(qSBox) qSBox.style.display = ((queue.go||[]).length || (queue.nachfrage||[]).length) ? '' : 'none';
+      }
+      sortedByQuota(queue.flinta).forEach(id => qF.appendChild(renderQItem(id,'flinta', pos[id])));
+      sortedByQuota(queue.offen).forEach(id => qO.appendChild(renderQItem(id,'offen', pos[id])));
+      renderNext(pos);
+      updateMeldenBtn();
+      if(queue.flinta.length || queue.offen.length || (queue.go||[]).length || (queue.nachfrage||[]).length) topHadMeldungen = true; // für "Redeliste erschöpft"
+      const stEl = document.getElementById('sessionTitle');
+      if(stEl) stEl.textContent = sessionTitle;
+      renderSessionState();
+      renderTops();
+      if(document.body.classList.contains('mini')) renderMini(pos);
+    }
+
+    // "Als nächstes": Vorschau auf die Person, die beim nächsten Aufruf dran ist
+    function renderNext(pos){
+      const who = document.getElementById('nextWho');
+      const meta = document.getElementById('nextMeta');
+      const id = Object.keys(pos).find(k => pos[k] === 1);
+      const p = id ? getPerson(id) : null;
+      if(!p){
+        who.textContent = '–';
+        meta.textContent = '';
+      } else {
+        who.textContent = p.name;
+        meta.textContent = `${p.pronouns||''} · ${p.status} · ${p.list === 'flinta' ? 'FLINTA*' : 'Offen'}`;
+      }
+    }
+
+    
+    function renderQItem(id, list, pos){
+      const p = getPerson(id);
+      const special = (list === 'go' || list === 'nachfrage');
+      const div = el('div', { className:'qitem' + (special ? ' q-' + list : '') });
+      const av = el('div', { className:'avatar pos', innerText: pos, title:'Position in der Warteschlange' });
+      const beitraege = p.count === 0 ? 'noch kein Beitrag' : (p.count === 1 ? '1 Beitrag' : p.count + ' Beiträge');
+      const tag = list === 'go' ? '<span class="qtag go"><i class="ti ti-alert-octagon"></i> GO-Antrag</span> '
+                : list === 'nachfrage' ? '<span class="qtag nf"><i class="ti ti-message-circle-question"></i> Direkte Nachfrage</span> ' : '';
+      const main = el('div', { innerHTML: `${tag}<strong>${escapeHtml(p.name)}</strong> <span class="sub">(${escapeHtml(p.pronouns||'')}) · ${escapeHtml(p.status)} · ${beitraege}</span>` });
+      const remove = el('div', { className:'remove' });
+
+      // Neuer Button: sofort drannehmen
+      const take = el('button', { innerText:'drannehmen', className:'take', title:'Diese Person jetzt drannehmen' });
+      take.addEventListener('click', ()=>{ takeNow(id, list); });
+
+      // Bestehender Button: aus Liste entfernen
+      const btn = el('button', { innerText:'entfernen', title:'Aus der Redeliste entfernen' });
+      btn.addEventListener('click', ()=>{
+        const i = queue[list].indexOf(id);
+        if(i>-1){ queue[list].splice(i,1); renderQueues(); renderPeople(); sendOp('remove', { id }); }
+      });
+
+      remove.appendChild(take);
+      remove.appendChild(btn);
+      div.appendChild(av); 
+      div.appendChild(main); 
+      div.appendChild(remove);
+      return div;
+    }
+
+
+    
+    // ======= Tagesordnung (TOPs) =======
+    let lastRenderedTop = -1;
+    function topText(t, i){ return 'TOP ' + (t.label || (i + 1)) + (t.title ? ' – ' + t.title : ''); }
+    // TOPs mit noList stehen in der TO, sind aber kein Rede-TOP: Navigation überspringt sie.
+    // Ein BEREITS GESTARTETER Berichte-TOP (reportsStarted) ist nur noch Überschrift über seinen
+    // Bericht-Untertops → in der Navigation ebenfalls überspringen.
+    function isListTop(i){ const t = tops[i]; return !!(t && !t.noList && !(t.report && t.reportsStarted)); }
+    // Ist der aktuelle TOP ein Berichte-TOP, der noch Meldungen sammelt (noch nicht gestartet)?
+    function reportCollecting(){ const t = tops[currentTop]; return !!(t && t.report && !t.reportsStarted); }
+    // Beschriftung des Melde-Buttons je nach Kontext (Berichte-TOP vs. normaler Rede-TOP).
+    function meldeVerb(active){
+      if(reportCollecting()) return active ? 'Bericht zurückziehen' : 'Zum Berichten melden';
+      return active ? 'Meldung zurückziehen' : 'Melden';
+    }
+    function nextListTop(from){ for(let i = from + 1; i < tops.length; i++){ if(isListTop(i)) return i; } return -1; }
+    function prevListTop(from){ for(let i = from - 1; i >= 0; i--){ if(isListTop(i)) return i; } return -1; }
+
+    function renderTops(){
+      const bar = document.getElementById('topbar');
+      if(!tops.length || !tops[currentTop]){ bar.style.display = 'none'; lastRenderedTop = -1; return; }
+      bar.style.display = '';
+      const prevEl = document.getElementById('topPrev');
+      const curEl = document.getElementById('topCurrent');
+      const nextEl = document.getElementById('topNext');
+      const cur = tops[currentTop];
+      const prevI = prevListTop(currentTop), nextI = nextListTop(currentTop);
+      const prev = prevI >= 0 ? tops[prevI] : null, next = nextI >= 0 ? tops[nextI] : null;
+      const hasIntern = tops.some(t => t.intern);
+      // Gäste sehen interne TOP-Titel nicht – nur ein neutrales "Interner Teil"
+      const safeLabel = (t, i) => (restricted && t && t.intern) ? 'Interner Teil' : topText(t, i);
+      prevEl.textContent = prev ? '‹ ' + safeLabel(prev, prevI) : '';
+      prevEl.classList.toggle('top-intern', !!(prev && prev.intern));
+      if(next){
+        // Steht der erste interne TOP als nächstes an, das Ende des öffentlichen Teils ankündigen
+        const endNote = (!cur.intern && next.intern) ? '<div class="part-note">Ende des öffentlichen Teils</div>' : '';
+        nextEl.innerHTML = endNote + escapeHtml(safeLabel(next, nextI)) + ' ›';
+      } else {
+        nextEl.textContent = '';
+      }
+      nextEl.classList.toggle('top-intern', !!(next && next.intern));
+      const empty = queue.flinta.length === 0 && queue.offen.length === 0;
+      const exhausted = empty && topHadMeldungen; // erst zeigen, wenn die Liste in diesem TOP schon mal gefüllt war
+      curEl.classList.toggle('top-intern', !!cur.intern);
+      curEl.classList.toggle('done', exhausted);
+      curEl.classList.toggle('open', !empty);
+      curEl.innerHTML = (hasIntern ? `<div class="part-label">${cur.intern ? 'Interner Teil' : 'Öffentlicher Teil'}</div>` : '')
+        + escapeHtml(topText(cur, currentTop))
+        + (cur.noList ? '<div class="tiny">kein Rede-TOP</div>' : '')
+        + (cur.report && !cur.reportsStarted ? '<div class="tiny"><i class="ti ti-speakerphone"></i> Berichte-TOP – wer berichten will, meldet sich</div>' : '')
+        + (exhausted ? '<div class="tiny exhausted">Redeliste erschöpft</div>' : '');
+      if(currentTop !== lastRenderedTop){
+        curEl.classList.remove('slide');
+        void curEl.offsetWidth; // Animation neu starten
+        curEl.classList.add('slide');
+        lastRenderedTop = currentTop;
+      }
+      updateTopTimer();
+    }
+
+    // Unaufdringlicher TOP-Timer: zählt die geplante Zeit herunter, wird bei Überschreitung rot
+    function updateTopTimer(){
+      const els = [document.getElementById('topTimer'), document.getElementById('miniTopTimer')].filter(Boolean);
+      if(!els.length) return;
+      const cur = tops[currentTop];
+      let txt = '', over = false;
+      if(cur && cur.minutes && topStartedAt){
+        const remain = cur.minutes * 60000 - (Date.now() - topStartedAt);
+        over = remain < 0;
+        const s = Math.floor(Math.abs(remain) / 1000);
+        txt = (over ? '+' : '') + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+      }
+      els.forEach(e => { e.textContent = txt; e.classList.toggle('over', over); });
+    }
+    setInterval(updateTopTimer, 1000);
+
+    // Text des Ruhebildschirms je nach Lage setzen ('notstarted' | 'ended' | 'internal' | 'generic').
+    function setNoSessionMsg(mode){
+      const t = document.getElementById('noSessionTitle');
+      const s = document.getElementById('noSessionSub');
+      if(!t || !s) return;
+      if(mode === 'notstarted'){
+        t.textContent = 'Redeliste noch nicht gestartet';
+        s.textContent = (pStart ? 'Geplanter Beginn: ' + pStart + '. Es kann ein paar Minuten später losgehen. ' : '')
+          + 'Sobald die Sitzungsleitung die Redeliste startet, erscheint sie hier automatisch.';
+        s.style.display = '';
+      } else if(mode === 'ended'){
+        t.textContent = 'Sitzung beendet';
+        s.textContent = 'Die AStA-Sitzung ist vorbei. Danke fürs Mitmachen!';
+        s.style.display = '';
+      } else if(mode === 'internal'){
+        t.textContent = 'Interner Teil';
+        s.textContent = 'Dieser Teil der Sitzung ist nicht öffentlich. Die Redeliste wird wieder sichtbar, sobald der öffentliche Teil weitergeht.';
+        s.style.display = '';
+      } else {
+        t.textContent = 'Aktuell keine AStA-Sitzung';
+        s.style.display = 'none';
+      }
+    }
+
+    // Ruhebildschirm ein-/ausblenden
+    // Gäste sehen während des internen Teils einen eigenen Hinweis (interner Teil), bei beendeter Sitzung „vorbei".
+    function renderSessionState(){
+      const guestBlocked = restricted && sessionActive && tops[currentTop] && tops[currentTop].intern;
+      const ended = !sessionActive || guestBlocked;
+      document.body.classList.toggle('ended', ended);
+      document.getElementById('noSession').style.display = ended ? '' : 'none';
+      if(ended && !isLeader) setNoSessionMsg(guestBlocked ? 'internal' : 'ended');
+    }
+
+    // Schritt 1 beim Sitzungsstart: Anzahl der TOPs abfragen
+    function openTopSetup(){
+      const ov = el('div', { className:'modal-overlay' });
+      const box = el('div', { className:'modal' });
+      box.innerHTML = '<h3>Neue Sitzung anlegen</h3>';
+      // Sitzungstitel: "x. ordentliche/außerordentliche Sitzung"
+      const titleRow = el('div');
+      titleRow.style.cssText = 'display:flex; gap:8px; margin-bottom:12px';
+      const numSel = el('select');
+      numSel.style.cssText = 'flex:1; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text)';
+      for(let i = 1; i <= 99; i++) numSel.appendChild(el('option', { value:String(i), innerText: i + '.' }));
+      const typeSel = el('select');
+      typeSel.style.cssText = 'flex:2; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text)';
+      ['ordentliche', 'außerordentliche'].forEach(t => typeSel.appendChild(el('option', { value:t, innerText: t + ' Sitzung' })));
+      titleRow.appendChild(numSel);
+      titleRow.appendChild(typeSel);
+      box.appendChild(titleRow);
+      box.appendChild(el('p', { innerText:'Wähle die Tagesordnung – einzelne TOPs lassen sich danach frei anpassen, mit + dazwischen ergänzen und verschieben.' }));
+      function readTitle(){ sessionTitle = numSel.value + '. ' + typeSel.value + ' Sitzung'; }
+      function startWith(list){
+        ov.remove();
+        readTitle();
+        tops = list;
+        currentTop = 0;
+        topStartedAt = Date.now();
+        topHadMeldungen = false;
+        sessionActive = true;
+        renderQueues();
+        pushFull();                 // legt den Raum an bzw. setzt den vollen Startzustand
+        if(list.length) openTopEditor();
+      }
+      const actions = el('div', { className:'actions' });
+      const none = el('button', { className:'btn', innerText:'Ohne Tagesordnung' });
+      const blank = el('button', { className:'btn', innerText:'Leer starten' });
+      const std = el('button', { className:'btn primary', innerText:'Standard-Tagesordnung' });
+      none.addEventListener('click', ()=> startWith([]));
+      blank.addEventListener('click', ()=> startWith([{ label:'', title:'', minutes:null, intern:false }]));
+      std.addEventListener('click', ()=> startWith(standardTops.map(t => ({ label:t.label, title:t.title, minutes:t.minutes || null, intern:!!t.intern }))));
+      actions.appendChild(none);
+      actions.appendChild(blank);
+      actions.appendChild(std);
+      box.appendChild(actions);
+      ov.appendChild(box);
+      document.body.appendChild(ov);
+    }
+
+    // Schritt 2 / jederzeit per Klick auf den aktuellen TOP: bearbeiten, interner Teil, springen
+    function openTopEditor(){
+      const ov = el('div', { className:'modal-overlay' });
+      const box = el('div', { className:'modal' });
+      box.style.maxWidth = '560px';
+      box.innerHTML = '<h3>Tagesordnung bearbeiten</h3><p>Nummer, Titel und geplante Minuten sind frei anpassbar · ▶ springt zu einem TOP (ohne die Redelisten zu leeren)</p>';
+      const work = tops.map(t => ({ label: t.label, title: t.title, minutes: t.minutes || '', noList: !!t.noList, report: !!t.report, reportChild: !!t.reportChild, reportsStarted: !!t.reportsStarted }));
+      const internStart = tops.findIndex(t => t.intern);
+
+      const listWrap = el('div');
+      listWrap.style.cssText = 'max-height:50vh; overflow:auto; display:flex; flex-direction:column; gap:6px; margin-bottom:12px';
+
+      const internRow = el('div');
+      internRow.style.cssText = 'display:flex; gap:8px; align-items:center; margin-bottom:12px';
+      internRow.appendChild(el('span', { className:'tiny', innerText:'Interner Teil:' }));
+      const sel = el('select');
+      sel.style.cssText = 'flex:1; padding:6px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text)';
+      internRow.appendChild(sel);
+
+      function rebuildInternSelect(){
+        const old = sel.value;
+        sel.innerHTML = '';
+        sel.appendChild(el('option', { value:'-1', innerText:'kein interner Teil' }));
+        work.forEach((t, i)=> sel.appendChild(el('option', { value:String(i), innerText:'ab TOP ' + (t.label || (i + 1)) })));
+        const want = old !== '' ? old : String(internStart);
+        sel.value = (Number(want) >= -1 && Number(want) < work.length) ? want : '-1';
+        if(sel.value === '') sel.value = '-1';
+      }
+
+      function save(){
+        const start = parseInt(sel.value, 10);
+        tops = work.map((t, i) => {
+          const m = parseInt(t.minutes, 10);
+          return { label: t.label || String(i + 1), title: t.title || '', minutes: m > 0 ? m : null, intern: start >= 0 && i >= start, noList: !!t.noList, report: !!t.report, reportChild: !!t.reportChild, reportsStarted: !!t.reportsStarted };
+        });
+        if(currentTop >= tops.length) currentTop = Math.max(0, tops.length - 1);
+        renderQueues();
+      }
+
+      function rebuild(){
+        listWrap.innerHTML = '';
+        work.forEach((t, i)=>{
+          const row = el('div');
+          row.style.cssText = 'display:flex; gap:6px; align-items:center';
+          const jump = el('button', { className:'mini', innerText:'▶', title:'Zu diesem TOP springen' });
+          jump.addEventListener('click', ()=>{ save(); currentTop = Math.min(i, Math.max(0, tops.length - 1)); topStartedAt = Date.now(); topHadMeldungen = false; ov.remove(); renderQueues(); sendOp('agenda', { tops, currentTop, topStartedAt, topHadMeldungen: false }); });
+          const lab = el('input', { value: t.label, placeholder:'Nr.' });
+          lab.style.cssText = 'width:64px; padding:6px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text)';
+          lab.addEventListener('input', ()=>{ t.label = lab.value.trim(); rebuildInternSelect(); });
+          const tit = el('input', { value: t.title, placeholder:'Titel (optional)' });
+          tit.style.cssText = 'flex:1; padding:6px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text)';
+          tit.addEventListener('input', ()=>{ t.title = tit.value.trim(); });
+          const min = el('input', { value: t.minutes, placeholder:'Min.', type:'number', min:1, title:'Geplante Zeit in Minuten (optional)' });
+          min.style.cssText = 'width:70px; padding:6px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text)';
+          min.addEventListener('input', ()=>{ t.minutes = min.value; });
+          const cur = el('span', { className:'tiny', innerText: i === currentTop ? 'aktuell' : '' });
+          cur.style.minWidth = '42px';
+          const del = el('button', { className:'mini', innerText:'✕', title:'TOP entfernen' });
+          del.addEventListener('click', ()=>{ work.splice(i, 1); rebuild(); });
+          if(t.noList){ row.style.opacity = '.6'; row.title = 'Kein Rede-TOP (in der App gesetzt)'; }
+          row.append(jump, lab, tit, min, cur, del);
+          listWrap.appendChild(row);
+          // "+" zum Einschieben zwischen diesem und dem nächsten TOP
+          if(i < work.length - 1){
+            const gap = el('div', { className:'top-insert', title:'TOP hier einfügen', innerText:'+' });
+            gap.addEventListener('click', ()=>{ work.splice(i + 1, 0, { label:'', title:'', minutes:'' }); rebuild(); });
+            listWrap.appendChild(gap);
+          }
+        });
+        rebuildInternSelect();
+      }
+
+      const addBtn = el('button', { className:'mini', innerText:'+ TOP hinzufügen' });
+      addBtn.style.marginBottom = '12px';
+      addBtn.addEventListener('click', ()=>{ work.push({ label: String(work.length + 1), title: '', minutes: '' }); rebuild(); });
+
+      const actions = el('div', { className:'actions' });
+      const cancel = el('button', { className:'btn', innerText:'Abbrechen' });
+      const ok = el('button', { className:'btn primary', innerText:'Speichern' });
+      cancel.addEventListener('click', ()=>{ ov.remove(); });
+      ok.addEventListener('click', ()=>{ save(); ov.remove(); sendOp('agenda', { tops, currentTop }); });
+      actions.appendChild(cancel);
+      actions.appendChild(ok);
+
+      rebuild();
+      box.appendChild(listWrap);
+      box.appendChild(addBtn);
+      box.appendChild(internRow);
+      box.appendChild(actions);
+      ov.appendChild(box);
+      document.body.appendChild(ov);
+    }
+
+    // Tagesordnung nur anzeigen (für Teilnehmende, ohne Bearbeitung)
+    function showAgenda(){
+      if(!tops.length) return;
+      const ov = el('div', { className:'modal-overlay' });
+      const box = el('div', { className:'modal' });
+      box.innerHTML = '<h3>Tagesordnung</h3>';
+      const list = el('div');
+      list.style.cssText = 'max-height:60vh; overflow:auto; display:flex; flex-direction:column; gap:6px; margin-bottom:12px';
+      let hiddenIntern = false;
+      tops.forEach((t, i)=>{
+        if(restricted && t.intern){ hiddenIntern = true; return; } // interne TOPs für Gäste verbergen
+        const row = el('div');
+        row.style.cssText = 'padding:8px 10px; border:1px solid var(--border); border-radius:10px; display:flex; align-items:center; gap:8px;'
+          + ' background:' + (t.intern ? 'var(--badge-stupa)' : 'var(--surface)') + ';'
+          + (i === currentTop ? ' border-color:var(--accent2); box-shadow:inset 0 0 0 1px var(--accent2);' : '');
+        if(t.noList) row.style.opacity = '.55';
+        const txt = el('div', { innerText: topText(t, i) });
+        txt.style.flex = '1';
+        row.appendChild(txt);
+        if(t.minutes) row.appendChild(el('span', { className:'tiny', innerText: t.minutes + ' Min.' }));
+        if(i === currentTop) row.appendChild(el('span', { className:'tiny', innerText:'aktuell' }));
+        if(t.noList) row.appendChild(el('span', { className:'tiny', innerText:'keine Redeliste' }));
+        if(t.report) row.appendChild(el('span', { className:'tiny', innerText:'Berichte-TOP' }));
+        if(t.intern) row.appendChild(el('span', { className:'tiny', innerText:'intern' }));
+        list.appendChild(row);
+      });
+      if(hiddenIntern){
+        const note = el('div', { className:'tiny', innerText:'Interner Teil – nicht öffentlich' });
+        note.style.cssText = 'padding:8px 10px; color:var(--muted)';
+        list.appendChild(note);
+      }
+      const actions = el('div', { className:'actions' });
+      const close = el('button', { className:'btn primary', innerText:'Schließen' });
+      close.addEventListener('click', ()=> ov.remove());
+      actions.appendChild(close);
+      box.appendChild(list);
+      box.appendChild(actions);
+      ov.addEventListener('click', (e)=>{ if(e.target === ov) ov.remove(); });
+      ov.appendChild(box);
+      document.body.appendChild(ov);
+    }
+
+    // Mini-Ansicht: TOP, Jetzt spricht, Als nächstes, gemeldete Personen in echter Reihenfolge
+    function renderMini(pos){
+      const v = document.getElementById('miniView');
+      let html = '';
+
+      const cur = tops[currentTop];
+      if(cur){
+        const hasIntern = tops.some(t => t.intern);
+        const partLabel = hasIntern ? `<div class="part-label">${cur.intern ? 'Interner Teil' : 'Öffentlicher Teil'}</div>` : '';
+        // Im Nicht-Beamer-Mini: Tippen/Klicken auf den TOP öffnet die ganze Tagesordnung.
+        const topClickable = !isViewer && tops.length;
+        const hint = topClickable ? '<div class="mini-top-hint"><i class="ti ti-list-details"></i> Tippen für ganze TO</div>' : '';
+        html += `<div class="mini-top${cur.intern ? ' top-intern' : ''}${topClickable ? ' clickable' : ''}"${topClickable ? ' title="Ganze Tagesordnung ansehen"' : ''}>${partLabel}${escapeHtml(topText(cur, currentTop))}${hint}</div>`;
+        if(cur.minutes && topStartedAt) html += '<div id="miniTopTimer" class="top-timer" style="text-align:right"></div>';
+      }
+
+      const miniMeta = (p, list) => [p.pronouns, p.status, listLabel(list)].filter(Boolean).join(' · ');
+
+      const sp = nowSpeaking ? getPerson(nowSpeaking.id) : null;
+      html += `<div class="mini-label">Jetzt spricht</div><div class="mini-who">${sp ? escapeHtml(sp.name) : '–'}</div>`;
+      if(sp) html += `<div class="mini-meta">${escapeHtml(miniMeta(sp, nowSpeaking.list))}</div>`;
+
+      const nid = Object.keys(pos).find(k => pos[k] === 1);
+      const np = nid ? getPerson(nid) : null;
+      html += `<div class="mini-label">Als nächstes</div><div class="mini-next">${np ? escapeHtml(np.name) : '–'}</div>`;
+      if(np) html += `<div class="mini-meta">${escapeHtml(miniMeta(np, np.list))}</div>`;
+
+      html += `<div class="mini-label">Gemeldet</div>`;
+      const ordered = Object.keys(pos).sort((a, b) => pos[a] - pos[b]);
+      if(!ordered.length && topHadMeldungen){
+        html += `<div class="mini-empty">Redeliste erschöpft</div>`;
+      }
+      ordered.forEach(id => {
+        const p = getPerson(id); if(!p) return;
+        const s = (p.status || '').toLowerCase();
+        const cls = s === 'asta' ? 'st-asta' : (s === 'stupa' ? 'st-stupa' : 'st-gast');
+        const k = meldeKindOf(id);
+        const listLbl = k === 'go' ? '<span class="mini-list mini-go">GO-Antrag</span>'
+          : k === 'nachfrage' ? '<span class="mini-list mini-nf">Nachfrage</span>'
+          : `<span class="mini-list">${p.list === 'flinta' ? 'FLINTA*' : 'Offen'}</span>`;
+        html += `<div class="mini-row${k==='go'?' row-go':(k==='nachfrage'?' row-nf':'')}"><span class="mini-pos">${pos[id]}</span><span class="mini-name ${cls}">${escapeHtml(p.name)}</span>${listLbl}</div>`;
+      });
+
+      // Melden-Buttons, wenn dieses Gerät eine eigene Zuordnung hat – NIE im Beamer (rein lesend)
+      const me = (myId && !isViewer) ? getPerson(myId) : null;
+      if(me){
+        const myK = meldeKindOf(myId);
+        html += `<div class="mini-meld">
+          <button id="miniMeldenBtn" class="btn primary mm-main">${meldeVerb(myK==='flinta'||myK==='offen')}</button>
+          <button id="miniNfBtn" class="mm-ico mm-nf${myK==='nachfrage'?' on':''}" title="Direkte Nachfrage (orange)"><i class="ti ti-message-circle-question"></i></button>
+          <button id="miniGoBtn" class="mm-ico mm-go${myK==='go'?' on':''}" title="GO-Antrag (rot)"><i class="ti ti-alert-octagon"></i></button>
+        </div>`;
+        html += `<div class="mini-meta" style="text-align:center">Du bist: ${escapeHtml(me.name)}</div>`;
+      }
+
+      // Protokollpause: Start-Knopf nur für die:den Protokollant:in (auch in der Mini-Ansicht; andere sehen ihn nie).
+      if(isProtocolTaker() && !protocolPause && sessionActive){
+        html += `<button id="miniPauseBtn" class="btn mm-main" style="width:100%; margin-top:8px; justify-content:center"><i class="ti ti-player-pause"></i> Protokollpause</button>`;
+      }
+
+      // Zurück zur Hauptansicht – ebenfalls die Session (und übrige Parameter) erhalten,
+      // nur den ?mini-Schalter entfernen.
+      // „Hauptansicht": mini raus, voll erzwingen (sonst bliebe man auf dem Handy automatisch in mini).
+      const _bp = new URLSearchParams(location.search); _bp.delete('mini'); _bp.set('voll', '');
+      const _bq = _bp.toString();
+      html += `<a class="mini-back" href="${location.pathname}${_bq ? '?' + _bq : ''}">Vollansicht</a>`;
+      // Nur im installierten Web-App-Modus: Weg zurück zur AStA-App (kein Browser-Zurück vorhanden).
+      if(isStandalone) html += `<a class="mini-back" href="dashboard.php">← Zur AStA-App</a>`;
+
+      v.innerHTML = html;
+      updateTopTimer();
+    }
+
+    // Gewählte Person sofort drannehmen (überspringt Quotierungsauswahl, hält aber Alternierung bei)
+    function takeNow(id, list){
+      const p = getPerson(id); if(!p) return;
+      const idx = queue[list].indexOf(id);
+      if(idx>-1) queue[list].splice(idx,1);
+      nowSpeaking = { id, list };
+      p.count++;
+      if(list === 'flinta' || list === 'offen') nextList = (list === 'flinta') ? 'offen' : 'flinta'; // Sonder-Meldungen ändern die Quotierung nicht
+      renderAll();
+      sendOp('call', { id, list, nextList });
+    }
+
+    // Jetzt sprechen / Alternierungslogik (quotierte AUSWAHL)
+    function nextSpeaker(){
+      // Sonder-Meldungen haben Vorrang: erst GO-Anträge, dann Direkte Nachfragen (flach, FIFO)
+      for(const sl of ['go','nachfrage']){
+        if((queue[sl]||[]).length){ takeNow(queue[sl][0], sl); return; }
+      }
+      // Versuche aus nextList zu nehmen, sonst aus der anderen
+      let chosenList = nextList;
+      if(queue[chosenList].length === 0){
+        const other = (chosenList === 'flinta') ? 'offen' : 'flinta';
+        if(queue[other].length === 0){ nowSpeaking = null; renderNow(); sendOp('done'); return; }
+        chosenList = other;
+      }
+
+      // wähle Person mit dem niedrigsten count (bei Gleichstand: frühere Anmeldung)
+      const sorted = sortedByQuota(queue[chosenList]);
+      const id = sorted[0];
+
+      // aus der Queue entfernen (aus der echten, nicht der sortierten Kopie)
+      const idx = queue[chosenList].indexOf(id);
+      if(idx>-1) queue[chosenList].splice(idx,1);
+
+      nowSpeaking = { id, list: chosenList };
+      const p = getPerson(id); if(p){ p.count++; }
+      // Liste für das nächste Mal umschalten
+      nextList = (chosenList === 'flinta') ? 'offen' : 'flinta';
+      renderAll();
+      sendOp('call', { id, list: chosenList, nextList });
+    }
+
+    // Aktuelle/n Sprecher*in entfernen (ohne nächste Person aufzurufen)
+    function removeCurrent(){
+      nowSpeaking = null; // Zähler bleiben unverändert, Person wird NICHT re-eingereiht
+      renderNow();
+      sendOp('done');
+    }
+
+    function renderNow(){
+      const who = document.getElementById('nowWho');
+      const meta = document.getElementById('nowMeta');
+      const btn = document.getElementById('removeCurrentBtn');
+      if(!nowSpeaking){
+        who.textContent = '–';
+        meta.textContent = '';
+        if(btn) btn.disabled = true;
+      } else {
+        const p = getPerson(nowSpeaking.id);
+        who.textContent = p ? `${p.name}` : '–';
+        meta.textContent = p ? `${p.pronouns||''} · ${p.status} · ${listLabel(nowSpeaking.list)}` : '';
+        if(btn) btn.disabled = false;
+      }
+    }
+
+    // Zähler zurücksetzen
+    function resetCounts(){
+      participants.forEach(p => p.count = 0);
+      renderPeople();
+      renderQueues();
+      renderNow();
+      sendOp('reset_counts');
+    }
+
+    // Berichte-TOP: aus den gesammelten Meldungen eigene Bericht-Untertops machen.
+    // Vorher zeigt ein Dialog die faire Reihenfolge als Vorschlag – die Leitung kann umsortieren.
+    function generateReports(){
+      if(!reportCollecting()) return;
+      const pos = predictOrder();
+      const ordered = Object.keys(pos).sort((a,b)=> pos[a] - pos[b]);
+      if(!ordered.length){ alert('Es hat sich noch niemand zum Berichten gemeldet.'); return; }
+      openReportOrderDialog(ordered);
+    }
+
+    // Sortier-Dialog vor dem Start der Berichte
+    function openReportOrderDialog(ordered){
+      const ids = ordered.slice();
+      const ov = el('div', { className:'modal-overlay' });
+      const box = el('div', { className:'modal' });
+      box.style.maxWidth = '480px'; box.style.maxHeight = '85vh'; box.style.overflow = 'auto';
+      box.innerHTML = '<h3><i class="ti ti-arrows-sort"></i> Reihenfolge der Berichte</h3>'
+        + '<p>' + ids.length + ' Meldung' + (ids.length > 1 ? 'en' : '') + ' – vorgeschlagen ist die faire Redereihenfolge. Mit den Pfeilen umsortieren. Danach steht die Reihenfolge fest, spätere Nachmeldungen sind nicht mehr möglich.</p>'
+        + '<div id="repOrderList" class="add-member-list"></div>'
+        + '<div class="actions" style="margin-top:16px">'
+        + '<button id="repOrderCancel" class="btn"><i class="ti ti-x"></i> Abbrechen</button>'
+        + '<button id="repOrderGo" class="btn primary"><i class="ti ti-speakerphone"></i> Berichte starten</button></div>';
+      ov.appendChild(box); document.body.appendChild(ov);
+      const listEl = box.querySelector('#repOrderList');
+      function move(i, d){ const j = i + d; if(j < 0 || j >= ids.length) return; const t = ids[i]; ids[i] = ids[j]; ids[j] = t; renderList(); }
+      function renderList(){
+        listEl.innerHTML = '';
+        ids.forEach((id, i)=>{
+          const p = getPerson(id);
+          const row = el('div', { className:'rep-order-row' });
+          row.innerHTML = '<span class="rep-order-pos">' + (i + 1) + '</span>'
+            + '<span class="rep-order-name">' + escapeHtml(p ? p.name : '—') + (p && p.pronouns ? ' <span class="tiny" style="opacity:.7">' + escapeHtml(p.pronouns) + '</span>' : '') + '</span>'
+            + '<span class="rep-order-btns">'
+            + '<button type="button" class="btn rep-move" title="Nach oben"' + (i === 0 ? ' disabled' : '') + '><i class="ti ti-chevron-up"></i></button>'
+            + '<button type="button" class="btn rep-move" title="Nach unten"' + (i === ids.length - 1 ? ' disabled' : '') + '><i class="ti ti-chevron-down"></i></button></span>';
+          const mv = row.querySelectorAll('.rep-move');
+          mv[0].addEventListener('click', ()=> move(i, -1));
+          mv[1].addEventListener('click', ()=> move(i, 1));
+          listEl.appendChild(row);
+        });
+      }
+      renderList();
+      const close = ()=> ov.remove();
+      box.querySelector('#repOrderCancel').addEventListener('click', close);
+      ov.addEventListener('click', (e)=>{ if(e.target === ov) close(); });
+      box.querySelector('#repOrderGo').addEventListener('click', ()=>{ close(); startReports(ids); });
+    }
+
+    // Legt die Bericht-Untertops in der gewählten Reihenfolge an und springt auf den ersten.
+    function startReports(ordered){
+      if(!reportCollecting()) return; // Zustand kann sich geändert haben, solange der Dialog offen war
+      // Solange der Dialog offen war, kann sich die Melde-Liste per Sync geändert haben:
+      // Zurückgezogene fliegen raus, Nachgemeldete kommen (in fairer Reihenfolge) ans Ende.
+      const signed = predictOrder();
+      ordered = ordered.filter(id => id in signed);
+      Object.keys(signed).sort((a,b)=> signed[a] - signed[b]).forEach(id => { if(ordered.indexOf(id) === -1) ordered.push(id); });
+      if(!ordered.length){ alert('Es hat sich niemand (mehr) zum Berichten gemeldet.'); return; }
+      const parent = tops[currentTop];
+      const base = parent.label || String(currentTop + 1);
+      const children = ordered.map((id, k)=>{
+        const p = getPerson(id);
+        return { label: base + '.' + (k + 1), title: 'Bericht von ' + (p ? p.name : '—'), minutes: null, intern: !!parent.intern, noList: false, reportChild: true };
+      });
+      parent.reportsStarted = true;
+      tops.splice(currentTop + 1, 0, ...children);
+      // Sammel-Liste leeren; Zähler der Berichtenden bleiben unverändert (Bericht ist kein Wortbeitrag)
+      queue = { flinta: [], offen: [], go: [], nachfrage: [] };
+      nowSpeaking = null;
+      nextList = 'flinta';
+      topHadMeldungen = false;
+      currentTop = currentTop + 1; // springe auf den ersten Bericht
+      topStartedAt = Date.now();
+      renderAll();
+      pushFull(); // ganzen Zustand (neue Tops + geleerte Liste) für alle setzen
+    }
+    // Hauptaktion der Leitung: auf einem sammelnden Berichte-TOP „Berichte starten", sonst nächste Person.
+    function leaderNext(){ if(reportCollecting()) generateReports(); else nextSpeaker(); }
+    // Beschriftung des großen Buttons je nach Kontext (Berichte-TOP vs. normaler Rede-TOP).
+    function syncLeaderControls(){
+      const btn = document.getElementById('nextBtn');
+      if(!btn || !document.body.classList.contains('leader')) return;
+      if(reportCollecting()){
+        const n = queue.flinta.length + queue.offen.length;
+        btn.innerHTML = '<i class="ti ti-speakerphone"></i> Berichte starten' + (n ? ' (' + n + ')' : '');
+      } else {
+        btn.innerHTML = '<i class="ti ti-player-track-next"></i> Nächste Person aufrufen';
+      }
+    }
+
+    // ===== Protokollant:in (nur Leitung, nur Raum-Sitzungen) =====
+    function renderProtocol(){
+      const btn = document.getElementById('protocolBtn');
+      if(!btn) return;
+      const isRoom = SYNC_SESSION.indexOf('room-') === 0;
+      if(!(isLeader && isRoom)){ btn.style.display = 'none'; return; }
+      btn.style.display = '';
+      const lbl = document.getElementById('protocolBtnLabel');
+      if(lbl) lbl.textContent = (protocolTaker && protocolTaker.name) ? ('Protokoll: ' + protocolTaker.name) : 'Protokoll festlegen';
+      btn.classList.toggle('primary', !protocolTaker); // solange niemand gewählt ist: hervorheben
+    }
+
+    async function setProtocol(pid){
+      try{
+        const url = 'redeliste-protocol.php?session=' + encodeURIComponent(SYNC_SESSION) + '&key=' + encodeURIComponent(syncKey || '');
+        const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: pid || '' }) });
+        if(r.ok){
+          const d = await r.json();
+          if(d && typeof d.v === 'number'){ applyVersion(d.v, d.state); }
+          else { protocolTaker = (d && d.taker) || null; renderProtocol(); }
+        }
+      }catch(e){}
+    }
+
+    function openProtocolDialog(){
+      const ov = el('div', { className:'modal-overlay' });
+      const box = el('div', { className:'modal' });
+      box.style.maxWidth = '480px'; box.style.maxHeight = '85vh'; box.style.overflow = 'auto';
+      const members = participants.filter(p => p.member);
+      let html = '<h3><i class="ti ti-notebook"></i> Protokollant:in festlegen</h3>'
+        + '<p>Wer schreibt das Protokoll dieser Sitzung? Die Person bekommt in der App die Aufgabe, es später hochzuladen.</p>'
+        + '<div class="add-member-list">';
+      if(!members.length) html += '<div class="tiny" style="color:var(--muted)">Noch keine Mitglieder im Raum.</div>';
+      members.forEach(p => {
+        const on = protocolTaker && protocolTaker.id === p.id;
+        html += '<button type="button" class="btn proto-pick' + (on ? ' primary' : '') + '" data-id="' + escapeHtml(p.id) + '" style="width:100%; justify-content:flex-start; margin:3px 0">'
+          + (on ? '<i class="ti ti-check"></i> ' : '<i class="ti ti-user"></i> ') + escapeHtml(p.name)
+          + (p.pronouns ? ' <span class="tiny" style="opacity:.7; margin-left:4px">' + escapeHtml(p.pronouns) + '</span>' : '')
+          + '</button>';
+      });
+      html += '</div><div class="actions" style="margin-top:16px">'
+        + (protocolTaker ? '<button id="protoClear" class="btn"><i class="ti ti-x"></i> Niemand</button>' : '')
+        + '<button id="protoClose" class="btn primary">Schließen</button></div>';
+      box.innerHTML = html;
+      ov.appendChild(box); document.body.appendChild(ov);
+      const close = ()=> ov.remove();
+      box.querySelector('#protoClose').addEventListener('click', close);
+      ov.addEventListener('click', (e)=>{ if(e.target === ov) close(); });
+      const clr = box.querySelector('#protoClear'); if(clr) clr.addEventListener('click', ()=>{ setProtocol(''); close(); });
+      box.querySelectorAll('.proto-pick').forEach(b => b.addEventListener('click', ()=>{ setProtocol(b.getAttribute('data-id')); close(); }));
+    }
+
+    // ===== Protokollpause: von der:dem Protokollant:in ausgerufen, von ihr:ihm oder der Leitung beendet =====
+    function myMemberId(){ return pMe || myId || ''; } // 'm123' aus persönlichem Link bzw. lokal zugeordnet
+    function isProtocolTaker(){ const me = myMemberId(); return !!(me && protocolTaker && protocolTaker.id === me); }
+    function startProtocolPause(){ if(!isProtocolTaker()) return; sendOp('protocol_pause', { id: myMemberId(), on: true }); }
+    function endProtocolPause(){ sendOp('protocol_pause', { id: myMemberId(), on: false }); }
+
+    function renderProtocolPauseBtn(){
+      const btn = document.getElementById('protocolPauseBtn');
+      if(!btn) return;
+      // Nur die:der Protokollant:in kann eine Pause STARTEN (Beenden läuft übers Overlay/den Banner).
+      const show = isProtocolTaker() && sessionActive && !protocolPause && SYNC_SESSION.indexOf('room-') === 0;
+      btn.style.display = show ? '' : 'none';
+    }
+
+    function renderProtocolPause(){
+      const active = !!protocolPause && sessionActive;
+      const mini = document.body.classList.contains('mini');
+      const dezent = isLeader && !mini; // Leitungs-Vollansicht: dezenter Banner statt Vollbild
+      document.body.classList.toggle('pp-on', active);
+      let ov = document.getElementById('ppOverlay');
+      let bn = document.getElementById('ppBanner');
+      const since = (active && protocolPause.at) ? new Date(protocolPause.at * 1000).toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'}) : '';
+      const who = (active && protocolPause.name) ? (' – ' + escapeHtml(protocolPause.name)) : '';
+      // Dezenter Banner (nur Leitungs-Vollansicht)
+      if(active && dezent){
+        if(!bn){ bn = document.createElement('div'); bn.id = 'ppBanner'; bn.className = 'pp-banner'; document.body.appendChild(bn); }
+        bn.innerHTML = '<i class="ti ti-player-pause"></i> Protokollpause' + who + (since ? ' · seit ' + since + ' Uhr' : '')
+          + ' <button id="ppEndBanner" class="btn"><i class="ti ti-player-play"></i> Pause beenden</button>';
+        const eb = bn.querySelector('#ppEndBanner'); if(eb) eb.addEventListener('click', endProtocolPause);
+      } else if(bn){ bn.remove(); }
+      // Vollbild-Overlay (alle anderen Ansichten inkl. Mini)
+      if(active && !dezent){
+        if(!ov){ ov = document.createElement('div'); ov.id = 'ppOverlay'; ov.className = 'pp-overlay'; document.body.appendChild(ov); }
+        let html = '<div class="pp-icon"><i class="ti ti-player-pause"></i></div>'
+          + '<div class="pp-title">Protokollpause</div>'
+          + '<div class="pp-sub">Die Redeliste ist kurz unterbrochen' + who + (since ? '<br>seit ' + since + ' Uhr' : '') + '</div>';
+        if(isProtocolTaker()) html += '<button id="ppEndOverlay" class="btn primary"><i class="ti ti-player-play"></i> Pause beenden</button>';
+        ov.innerHTML = html;
+        const eb = ov.querySelector('#ppEndOverlay'); if(eb) eb.addEventListener('click', endProtocolPause);
+      } else if(ov){ ov.remove(); }
+    }
+
+    // Buttons
+    document.getElementById('nextBtn').addEventListener('click', leaderNext);
+    document.getElementById('resetCounts').addEventListener('click', resetCounts);
+    document.getElementById('removeCurrentBtn').addEventListener('click', removeCurrent);
+
+    // Top beenden: Redelisten leeren, "Jetzt spricht" leeren, Quotierung zurücksetzen, nächster TOP
+    document.getElementById('endTopicBtn').addEventListener('click', ()=>{
+      const nextI = nextListTop(currentTop); // Nicht-Rede-TOPs überspringen
+      const hasNext = nextI >= 0;
+      const msg = 'Top beenden?\nBeide Redelisten werden geleert und die Quotierung zurückgesetzt' + (hasNext ? ' – weiter zum nächsten TOP.' : '.');
+      if(!confirm(msg)) return;
+      queue = { flinta: [], offen: [], go: [], nachfrage: [] };
+      nowSpeaking = null;
+      nextList = 'flinta';
+      participants.forEach(p => p.count = 0);
+      if(hasNext){ currentTop = nextI; topStartedAt = Date.now(); }
+      topHadMeldungen = false;
+      renderAll();
+      pushFull(); // harter Reset für den TOP (Listen + Quotierung) – ganzen Zustand setzen
+    });
+
+    // Leertaste: nächste Person aufrufen (nicht beim Tippen im Formular oder mit fokussiertem Button)
+    document.addEventListener('keydown', (e)=>{
+      if(e.code !== 'Space') return;
+      if(document.body.classList.contains('viewer')) return;
+      const t = e.target;
+      if(t && ['INPUT','SELECT','TEXTAREA','BUTTON'].includes(t.tagName)) return;
+      e.preventDefault(); // verhindert Scrollen der Seite
+      if(document.body.classList.contains('participant') || document.body.classList.contains('mini')){ meldenSelf(); }
+      else { leaderNext(); }
+    });
+
+    // Dark Mode (merkt sich die Wahl im Browser; ohne Wahl gilt die Systemeinstellung)
+    const darkToggle = document.getElementById('darkToggle');
+    function applyTheme(dark){
+      document.body.classList.toggle('dark', dark);
+      darkToggle.innerHTML = dark ? '<i class="ti ti-sun"></i>' : '<i class="ti ti-moon"></i>';
+    }
+    darkToggle.addEventListener('click', ()=>{
+      const dark = !document.body.classList.contains('dark');
+      applyTheme(dark);
+      try{ localStorage.setItem('redeliste-theme', dark ? 'dark' : 'light'); }catch(e){}
+    });
+    let savedTheme = null;
+    try{ savedTheme = localStorage.getItem('redeliste-theme'); }catch(e){}
+    applyTheme(savedTheme ? savedTheme === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches);
+
+    // ======= Sync über Server (optional, per URL aktiviert) =======
+    // Leitung:  ...html?key=GEHEIM   → schreibt den Stand auf den Server (Key wie in redeliste-sync.php)
+    // Ansicht:  ...html?ansicht      → liest nur, z. B. für Beamer oder Mitlesende
+    // Ohne Parameter läuft die Seite komplett lokal.
+    const SYNC_URL = 'redeliste-sync.php'; // relativer Pfad (liegt neben dieser Datei)
+    const urlParams = new URLSearchParams(location.search);
+    // Sitzung aus der URL (?session=room-XXXX) → jede Sitzung hat ihre eigene Redeliste; sonst „intern"
+    const SYNC_SESSION = (urlParams.get('session') || 'intern').replace(/[^a-zA-Z0-9_-]/g, '') || 'intern';
+    // Geheimnisse (Leitungs-Key / Mitglieds-Geheimnis) aus der URL übernehmen, im Tab merken
+    // und aus der Adresszeile entfernen, damit sie dort niemand mitliest. Sie überstehen so
+    // auch Reload und den Wechsel Haupt-/Mini-Ansicht (sessionStorage gilt pro Tab).
+    let syncKey = urlParams.get('key');
+    let mitglied = urlParams.get('mitglied');
+    // Persönliche Identität aus der App (eigener Beitritts-Link): vorausgewählter Name/Pronomen
+    let pMe = urlParams.get('me');
+    let pName = urlParams.get('name');
+    let pPron = urlParams.get('pron');
+    /* Geplanter Sitzungsbeginn für den Wartebildschirm. Neu kommt er als reine Ziffernfolge
+       JJJJMMTTHHMM – ein Klartext-Label brauchte %2C/%20/%3A in der Adresse, und daran ist die
+       Link-Erkennung in Mailprogrammen und Word hängen geblieben. Ältere Links tragen noch das
+       Klartext-Label; die werden unverändert übernommen. */
+    const pStart = (function(){
+      const roh = urlParams.get('start') || '';
+      const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})$/.exec(roh);
+      return m ? m[3] + '.' + m[2] + '.' + m[1] + ', ' + m[4] + ':' + m[5] + ' Uhr' : roh;
+    })();
+    let pMyList = '';
+    // Ein bewusster Beitritt bringt mindestens einen dieser Parameter mit:
+    //   Leitung → key ; Mitglied/Teilnahme → mitglied/me/name/pron.
+    const explicitJoin = urlParams.has('key') || urlParams.has('mitglied') || urlParams.has('me') || urlParams.has('name') || urlParams.has('pron');
+    try {
+      if(syncKey) sessionStorage.setItem('rl-intern-key', syncKey);
+      else if(explicitJoin) sessionStorage.removeItem('rl-intern-key'); // ohne Leitungs-Key beigetreten (z. B. „Selbst beitreten") → KEINEN früher gecachten Key erben
+      else syncKey = sessionStorage.getItem('rl-intern-key');           // nur Reload ohne Parameter: Leitung beibehalten
+      if(mitglied) sessionStorage.setItem('rl-intern-mitglied', mitglied); else mitglied = sessionStorage.getItem('rl-intern-mitglied');
+      if(pMe) sessionStorage.setItem('rl-me-' + (urlParams.get('session')||'intern'), pMe); else pMe = sessionStorage.getItem('rl-me-' + (urlParams.get('session')||'intern'));
+      if(pName) sessionStorage.setItem('rl-mename', pName); else pName = sessionStorage.getItem('rl-mename');
+      if(pPron) sessionStorage.setItem('rl-mepron', pPron); else pPron = sessionStorage.getItem('rl-mepron');
+    } catch(e){}
+    if(urlParams.has('key') || urlParams.has('mitglied') || urlParams.has('me') || urlParams.has('name') || urlParams.has('pron')){
+      urlParams.delete('key'); urlParams.delete('mitglied'); urlParams.delete('me'); urlParams.delete('name'); urlParams.delete('pron');
+      const qs = urlParams.toString();
+      try { history.replaceState(null, '', location.pathname + (qs ? '?' + qs : '') + location.hash); } catch(e){}
+    }
+    const isLeader = !!syncKey;
+    const isViewer = !isLeader && urlParams.has('ansicht');
+    const isLocal = !isLeader && !isViewer && urlParams.has('lokal'); // alter Offline-Modus als Notausgang
+    const isParticipant = !isLeader && !isViewer && !isLocal; // Standard-URL oder ?melden
+    // „Mini" ist eine ANZEIGE-Variante (schmal, fürs Handy/Beamer), KEINE eigene Rolle: Teilnehmende
+    // bekommen sie automatisch auf kleinen Bildschirmen (Handy) oder per ?mini und durchlaufen trotzdem
+    // die volle Beitritts-Logik inkl. Start-Pop-ups. ?voll erzwingt die volle Ansicht (Notausgang).
+    const isMobile = !!(window.matchMedia && window.matchMedia('(max-width: 700px)').matches);
+    // Mini-Layout greift bei: explizit ?mini · Teilnehmende auf kleinem Bildschirm (Handy) ·
+    // Beamer/Mitlesen (?ansicht) IMMER, denn der Beamer steht bei uns schmal neben dem Online-Call.
+    // ?voll erzwingt überall die große Ansicht (Notausgang).
+    const useMini = !urlParams.has('voll') && (
+      urlParams.has('mini')
+      || (isParticipant && isMobile)
+      || isViewer
+    );
+    // AStA-Mitglieder: eigener Link mit ?mitglied=GEHEIM (aus dem Mitglieder-Areal verlinken).
+    // Nur die Leitung und Träger des Mitglieds-Geheimnisses sehen den internen Teil –
+    // ein Beamer (?ansicht) zeigt ihn nur mit angehängtem &mitglied=GEHEIM.
+    const MEMBER_KEY = 'AStA-Mitglied'; // ⚠️ frei wählbares Geheimnis – im Mitglieder-Areal hinterlegen
+    const memberOk = mitglied === MEMBER_KEY;
+    const isMember = isParticipant && memberOk;
+    const canSeeInternal = isLeader || isLocal || memberOk;
+    const restricted = !canSeeInternal; // Gäste & öffentliche Anzeigen: ohne internen Teil
+    const ME_KEY = 'redeliste-me-' + SYNC_SESSION;
+    let myId = null;
+
+    // Aktueller Zustand als Objekt – für Voll-Ersatz-Ops (manueller Start, „Top/Sitzung beenden").
+    function currentState(){ return { participants, queue, nextList, nowSpeaking, tops, currentTop, topStartedAt, topHadMeldungen, sessionTitle, sessionActive, protocolTaker, protocolPause }; }
+    function applyState(s){
+      participants = s.participants || [];
+      queue = (s.queue && s.queue.flinta && s.queue.offen) ? s.queue : { flinta: [], offen: [], go: [], nachfrage: [] };
+      queue.go = queue.go || []; queue.nachfrage = queue.nachfrage || []; // ältere Sessions nachrüsten
+      nextList = s.nextList || 'flinta';
+      nowSpeaking = s.nowSpeaking || null;
+      tops = Array.isArray(s.tops) ? s.tops : [];
+      currentTop = Math.min(s.currentTop || 0, Math.max(0, tops.length - 1));
+      topStartedAt = s.topStartedAt || null;
+      topHadMeldungen = !!s.topHadMeldungen;
+      sessionTitle = s.sessionTitle || '';
+      sessionActive = s.sessionActive !== false;
+      protocolTaker = s.protocolTaker || null;
+      protocolPause = s.protocolPause || null;
+      renderAll();
+      renderProtocol();      // eigene Aufrufe (nicht in renderAll: das läuft schon vor der Leitungs-Erkennung)
+      renderProtocolPause();
+      renderProtocolPauseBtn();
+    }
+    // ===== Sync-Kern: server-autoritativ, Op-basiert, Versions-Cursor =====
+    const SYNC_BASE = SYNC_URL + '?session=' + SYNC_SESSION;
+    let ver = -1; // zuletzt angewandte Server-Version
+
+    function applyVersion(v, state){
+      if(typeof v !== 'number') return;
+      if(state == null){ // Raum (noch) nicht gestartet bzw. zurückgesetzt
+        ver = v || 0;
+        if(!isLeader){ setNoSessionMsg('notstarted'); document.body.classList.add('ended'); document.getElementById('noSession').style.display = ''; }
+        return;
+      }
+      if(v <= ver) return;          // nichts Neueres
+      ver = v;
+      document.body.classList.remove('ended');
+      applyState(state);
+    }
+
+    // Eine Operation senden (Teilnehmer ohne Key, Leitung mit Key). Die Antwort ist der
+    // autoritative {v,state} und wird sofort angewandt → ein RTT, kein Extra-Poll.
+    async function sendOp(op, payload){
+      try{
+        const url = SYNC_BASE + '&op=' + encodeURIComponent(op) + (syncKey ? '&key=' + encodeURIComponent(syncKey) : '');
+        const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload || {}) });
+        if(r.ok){ const d = await r.json(); if(d && typeof d.v === 'number'){ applyVersion(d.v, d.state); return d; } }
+      }catch(e){}
+      return null;
+    }
+    // Ganzen Zustand setzen/anlegen (manueller Start ohne App, „Top beenden", „Sitzung beenden").
+    function pushFull(){ return sendOp('seed', { state: currentState() }); }
+
+    // Einheitlicher Lese-Poll für ALLE Rollen (Cursor: nur Neues wird übertragen).
+    async function pollOnce(){
+      try{
+        const r = await fetch(SYNC_BASE + (ver >= 0 ? '&since=' + ver : ''));
+        if(r.status === 204 || !r.ok) return;
+        const d = await r.json();
+        if(d && typeof d.v === 'number') applyVersion(d.v, d.state);
+      }catch(e){}
+    }
+
+    // Die Teilnehmenden (Stammliste) kommen aus dem Sitzungs-Zustand selbst:
+    // Die AStA-App seedet TO + aktive Mitglieder beim Start in den Raum, Mitglieder
+    // treten über ihre persönlichen Links bei. Keine separate Roster-Datei mehr.
+
+    // ======= Teilnehmen-Modus: "Das bin ich" + selbst melden =======
+    function claimSelf(id){
+      const p = getPerson(id); if(!p) return;
+      if(!confirm(`Bist du ${p.name}?\nDieses Gerät meldet dann als ${p.name}.`)) return;
+      myId = id;
+      try{ localStorage.setItem(ME_KEY, id); }catch(e){}
+      renderPeople();
+      renderQueues();
+    }
+
+    // kind: undefined/'' = normale Wortmeldung, 'nachfrage' = Direkte Nachfrage (orange), 'go' = GO-Antrag (rot)
+    async function meldenSelf(kind){
+      if(isViewer) return; // Beamer/Mitlesen ist rein lesend – nie melden
+      const mini = document.body.classList.contains('mini');
+      if(!document.body.classList.contains('participant') && !mini) return;
+      if(!myId) return;
+      if(!pMe && !getPerson(myId)) return; // im persönlichen Modus ist man evtl. noch nicht lokal im Roster
+      const btn = document.getElementById(mini ? 'miniMeldenBtn' : 'meldenBtn');
+      const want = (kind === 'go' || kind === 'nachfrage') ? kind : 'normal';
+      const cur = meldeKindOf(myId);
+      const curKind = (cur === 'flinta' || cur === 'offen') ? 'normal' : cur; // null|'normal'|'go'|'nachfrage'
+      let d = true;
+      if(curKind === want){
+        d = await sendOp('lower', { id: myId });                 // gleiche Meldung erneut → zurückziehen
+      } else {
+        if(curKind) await sendOp('lower', { id: myId });         // andere Meldung steht schon → erst entfernen
+        d = await sendOp('raise', { id: myId, kind: want === 'normal' ? '' : want });
+      }
+      if(!d){ if(btn) btn.innerText = 'Fehler – nochmal versuchen'; setTimeout(updateMeldenBtn, 1500); }
+      else updateMeldenBtn(); // autoritativer Zustand ist schon angewandt → echter Button-Stand
+    }
+
+    function updateMeldenBtn(){
+      if(!document.body.classList.contains('participant')) return;
+      const btn = document.getElementById('meldenBtn');
+      const label = document.getElementById('meName');
+      const clearBtn = document.getElementById('meClear');
+      // Sonder-Melde-Buttons (Nachfrage/GO) Status spiegeln
+      const myK = myId ? meldeKindOf(myId) : null;
+      const nfb = document.getElementById('nfBtn'), gob = document.getElementById('goBtn');
+      const canMeld = !!myId && (!pMe || !!pMyList);
+      if(nfb){ nfb.classList.toggle('on', myK === 'nachfrage'); nfb.disabled = !canMeld; }
+      if(gob){ gob.classList.toggle('on', myK === 'go'); gob.disabled = !canMeld; }
+      if(pMe){
+        if(!pMyList){ btn.disabled = true; btn.innerText = 'Melden'; label.textContent = 'Bitte deine Liste wählen'; clearBtn.style.display = 'none'; return; }
+        btn.disabled = false;
+        btn.innerText = meldeVerb(queue.flinta.includes(myId) || queue.offen.includes(myId));
+        label.textContent = (pName || '') + ' · ' + (pMyList === 'flinta' ? 'FLINTA*' : 'Offen');
+        clearBtn.style.display = 'none';
+        return;
+      }
+      const me = myId ? getPerson(myId) : null;
+      if(!me){
+        btn.disabled = true;
+        btn.innerText = 'Melden';
+        label.textContent = 'Wähle links deinen Namen aus';
+        clearBtn.style.display = 'none';
+      } else {
+        btn.disabled = false;
+        btn.innerText = meldeVerb(queue.flinta.includes(myId) || queue.offen.includes(myId));
+        label.textContent = 'Du bist: ' + me.name;
+        clearBtn.style.display = 'none'; // „Das bin ich"-Claim entfällt – Identität kommt aus App-Link/Gast-Registrierung
+      }
+    }
+
+    if(isViewer) document.body.classList.add('viewer');
+
+    // „Zur App"-Knopf nur im installierten Web-App-Modus (Standalone) – im normalen Browser-Tab
+    // gibt es den Zurück-Button ohnehin. Erscheint im Header (volle Ansicht) und in der Mini-Ansicht.
+    const isStandalone = !!(window.matchMedia && (window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: minimal-ui)').matches)) || window.navigator.standalone === true;
+    if(isStandalone){
+      const _al = document.getElementById('appLink'); if(_al) _al.style.display = '';
+      const _ar = document.getElementById('appLinkRest'); if(_ar) _ar.style.display = ''; // auch auf Warte-/Beendet-Screen
+    }
+
+    if(useMini){
+      document.body.classList.add('mini');
+      try{ if(!myId && !isViewer) myId = localStorage.getItem(ME_KEY); }catch(e){} // ggf. frühere Zuordnung; Beamer (isViewer) bleibt rein lesend – nie eine Identität
+      const mv = document.getElementById('miniView');
+      mv.style.display = '';
+      // Button wird bei jedem Rendern neu erzeugt, daher Klick über den Container abfangen
+      mv.addEventListener('click', (e)=>{
+        if(e.target.closest && e.target.closest('#miniGoBtn')){ meldenSelf('go'); return; }
+        if(e.target.closest && e.target.closest('#miniNfBtn')){ meldenSelf('nachfrage'); return; }
+        if(e.target.closest && e.target.closest('#miniMeldenBtn')){ meldenSelf(); return; }
+        if(e.target.closest && e.target.closest('#miniPauseBtn')){ startProtocolPause(); return; }
+        if(!isViewer && e.target.closest && e.target.closest('.mini-top')) showAgenda(); // Tippen auf TOP → ganze TO
+      });
+      renderQueues(); // Mini-Ansicht initial aufbauen
+    }
+
+    if(isParticipant){
+      document.body.classList.add('participant');
+      document.getElementById('meName').style.display = '';
+      const mb = document.getElementById('meldenBtn');
+      mb.style.display = '';
+      mb.addEventListener('click', ()=>meldenSelf());
+      const nfb = document.getElementById('nfBtn'), gob = document.getElementById('goBtn');
+      if(nfb){ nfb.style.display = ''; nfb.addEventListener('click', ()=>meldenSelf('nachfrage')); }
+      if(gob){ gob.style.display = ''; gob.addEventListener('click', ()=>meldenSelf('go')); }
+      // Link zur Mini-Ansicht – WICHTIG: aktuelle Query-Parameter (v. a. ?session=room-XXX)
+      // erhalten, sonst fiele die Mini-Ansicht auf die Default-Session „intern" zurück und
+      // zeigte dauerhaft „Redeliste noch nicht gestartet".
+      const _mini = document.getElementById('miniLink');
+      const _mp = new URLSearchParams(location.search); _mp.set('mini', ''); _mp.delete('voll');
+      _mini.href = location.pathname + '?' + _mp.toString();
+      _mini.style.display = '';
+      document.getElementById('topCurrent').addEventListener('click', showAgenda); // Klick auf den TOP zeigt die ganze Tagesordnung
+
+      if(pMe){
+        // Persönlicher Beitritts-Link aus der App: automatisch zugeordnet, Liste einmalig per Pop-up.
+        // sessionStorage (nicht localStorage): ein frischer Beitritt fragt wieder, ein Reload im
+        // selben Tab nicht. Die Wahl gilt für die ganze Sitzung und ist nicht am Namen änderbar.
+        myId = pMe;
+        const hint = document.getElementById('peopleHint');
+        if(hint) hint.textContent = 'Du bist automatisch als ' + (pName || '') + ' zugeordnet.';
+        try{ pMyList = sessionStorage.getItem('rl-list-' + SYNC_SESSION) || ''; }catch(e){}
+        const sendBeitreten = function(){
+          try{ localStorage.setItem(ME_KEY, myId); }catch(e){} // für die Mini-Ansicht (Melden-Button)
+          // self:true → online (Krone) und überschreibt eine evtl. von der Leitung gewählte Liste.
+          sendOp('join', { id: myId, name: pName || '', pronouns: pPron || '', list: pMyList || 'offen', self: true, member: true });
+        };
+        // Pflicht-Pop-up beim Beitritt – ohne Auswahl nicht schließbar
+        const ov = document.createElement('div'); ov.className = 'modal-overlay'; ov.style.display = 'none';
+        ov.innerHTML = '<div class="modal"><h3>Willkommen' + (pName ? ', ' + escapeHtml(pName) : '') + '!</h3>'
+          + '<p>In welcher Liste möchtest du dich für diese Sitzung melden? Diese Wahl gilt für die ganze Sitzung.</p>'
+          + '<div class="actions"><button class="btn" type="button" data-list="flinta">FLINTA*-Liste</button><button class="btn primary" type="button" data-list="offen">Offene Liste</button></div></div>';
+        document.body.appendChild(ov);
+        const chooseList = function(val){
+          pMyList = val;
+          try{ sessionStorage.setItem('rl-list-' + SYNC_SESSION, val); }catch(e){}
+          sendBeitreten();
+          ov.style.display = 'none';
+          updateMeldenBtn();
+        };
+        ov.querySelectorAll('button[data-list]').forEach(function(b){ b.addEventListener('click', function(){ chooseList(b.getAttribute('data-list')); }); });
+        if(pMyList){ sendBeitreten(); updateMeldenBtn(); } else { ov.style.display = 'grid'; }
+      } else {
+        // GAST (Gast-Link, ohne persönlichen App-Link): trägt sich selbst ein – Name, Pronomen,
+        // Liste und Gast/StuPa. Kein „fremden Namen claimen" mehr. Identität bleibt im Gerät erhalten.
+        const GUEST_KEY = 'rl-guest-' + SYNC_SESSION;
+        const applyGuest = function(g){
+          myId = g.id;
+          try{ localStorage.setItem(GUEST_KEY, JSON.stringify(g)); localStorage.setItem(ME_KEY, g.id); }catch(e){}
+          if(!getPerson(g.id)){ // optimistisch lokal anlegen, Server bestätigt gleich
+            participants.push({ id:g.id, name:g.name, pronouns:g.pron||'', status:g.status, list:g.list, count:0, present:true, online:true, member:false });
+          }
+          renderAll();
+          sendOp('join', { id:g.id, name:g.name, pronouns:g.pron||'', list:g.list, status:g.status, self:true, member:false });
+          updateMeldenBtn();
+          const hint = document.getElementById('peopleHint');
+          if(hint) hint.textContent = 'Du nimmst als ' + g.name + ' teil.';
+        };
+        document.getElementById('meClear').style.display = 'none'; // Gast: Identität nicht abwählbar
+        let stored = null; try{ stored = JSON.parse(localStorage.getItem(GUEST_KEY) || 'null'); }catch(e){}
+        if(stored && stored.id && stored.name){ applyGuest(stored); }
+        else { openGuestRegistration(applyGuest); }
+      }
+      renderPeople();
+      renderQueues();
+    }
+
+    // (Lesen erfolgt für alle Rollen über den einheitlichen pollOnce-Loop am Ende.)
+
+    if(isLeader){
+      document.body.classList.add('leader');
+      // Klick auf den aktuellen TOP öffnet die Tagesordnungs-Bearbeitung
+      document.getElementById('topCurrent').addEventListener('click', ()=>{ tops.length ? openTopEditor() : openTopSetup(); });
+
+      // (Stammliste wird aus der App geseedet – keine eigene Roster-Bearbeitung in der Redeliste mehr.)
+
+      // Sitzung-beenden-Button: alles zurücksetzen und Ruhebildschirm zeigen
+      const newSessionBtn = document.getElementById('newSession');
+      newSessionBtn.style.display = '';
+      newSessionBtn.addEventListener('click', ()=>{
+        if(!confirm('Sitzung beenden?\nRedeliste, Redezähler und Gäste werden geleert und der Ruhebildschirm erscheint.\nZum erneuten Starten in der AStA-App „Redeliste starten" nutzen.')) return;
+        participants = initialParticipants.map(p => ({ ...p, count: 0 }));
+        queue = { flinta: [], offen: [], go: [], nachfrage: [] };
+        nextList = 'flinta';
+        nowSpeaking = null;
+        tops = [];
+        currentTop = 0;
+        topStartedAt = null;
+        topHadMeldungen = false;
+        sessionTitle = '';
+        sessionActive = false;
+        renderAll();
+        pushFull(); // Ruhebildschirm für alle: ganzen (zurückgesetzten) Zustand setzen
+      });
+
+      // "Neue Sitzung"-Button auf dem Ruhebildschirm
+      const startSessionBtn = document.getElementById('startSessionBtn');
+      startSessionBtn.style.display = '';
+      startSessionBtn.addEventListener('click', ()=>{
+        sessionActive = true;
+        renderAll();
+        openTopSetup();
+      });
+
+      // Wer leitet? Auch die Leitung wird als Person geführt (Liste & Pronomen).
+      // Sie hält den autoritativen Zustand, mutiert den Roster also direkt – kein
+      // "beitreten" über die Inbox. Pronomen kommen aus dem App-Profil (Seed),
+      // die Liste wählt sie einmalig per Pop-up.
+      function setupLeaderIdentity(){
+        if(!pMe) return;
+        myId = pMe;
+        let meP = getPerson(pMe);
+        if(!meP){ meP = { id: pMe, name: pName || 'Leitung', pronouns: pPron || '', status: 'AStA', list: 'offen', count: 0 }; participants.push(meP); }
+        else { if(pName) meP.name = pName; if(pPron) meP.pronouns = pPron; if(!meP.status) meP.status = 'AStA'; }
+        let chosen = ''; try{ chosen = sessionStorage.getItem('rl-leadlist-' + SYNC_SESSION) || ''; }catch(e){}
+        const ov = document.createElement('div'); ov.className = 'modal-overlay'; ov.style.display = 'none';
+        ov.innerHTML = '<div class="modal"><h3>Du leitest die Sitzung' + (pName ? ', ' + escapeHtml(pName) : '') + '</h3>'
+          + '<p>In welcher Liste sollst du selbst geführt werden, wenn du dich zu Wort meldest? Deine Pronomen: <strong>' + escapeHtml(pPron || '—') + '</strong> (im Profil änderbar).</p>'
+          + '<div class="actions"><button class="btn" type="button" data-list="flinta">FLINTA*-Liste</button><button class="btn primary" type="button" data-list="offen">Offene Liste</button></div></div>';
+        document.body.appendChild(ov);
+        const apply = function(val){ meP.list = val; meP.present = true; meP.online = true; meP.member = true; try{ sessionStorage.setItem('rl-leadlist-' + SYNC_SESSION, val); localStorage.setItem(ME_KEY, pMe); }catch(e){} renderPeople(); renderQueues(); sendOp('join', { id: pMe, name: pName || meP.name, pronouns: pPron || meP.pronouns, list: val, self: true, member: true }); };
+        ov.querySelectorAll('button[data-list]').forEach(function(b){ b.addEventListener('click', function(){ apply(b.getAttribute('data-list')); ov.style.display = 'none'; }); });
+        ov.addEventListener('click', function(e){ const cur = getPerson(pMe); if(e.target === ov && cur && cur.list) ov.style.display = 'none'; });
+        if(chosen){ apply(chosen); } else { ov.style.display = 'grid'; }
+      }
+
+      // Beim Öffnen den vorhandenen Stand vom Server holen: läuft die Sitzung (App-Seed
+      // oder fortgesetzt), erscheint sie direkt; gibt es noch keinen Raum (Redeliste ohne
+      // App geöffnet), die TO manuell abfragen. Danach die eigene Identität führen.
+      pollOnce().then(()=>{
+        if(ver < 1) openTopSetup();   // kein Raum/Stand → manuell anlegen (legt den Raum per seed an)
+        setupLeaderIdentity();
+      });
+    }
+
+    // ======= Hinzufügen-Dialog (nur Leitung) =======
+    // Teil 1: Mitglieder, die noch nicht beigetreten sind, per Klick nachtragen (schnelle Liste-Wahl).
+    // Teil 2: externe Gäste anlegen. Der Dialog bleibt offen → mehrere nacheinander.
+    // Live-Update: tritt jemand selbst bei, verschwindet er sofort aus der Mitgliederliste (renderAll).
+    function renderAddMembers(){
+      const box = document.getElementById('addMemberList');
+      if(!box) return;
+      box.innerHTML = '';
+      const cands = participants
+        .filter(p => p.member && p.present === false && !queue.flinta.includes(p.id) && !queue.offen.includes(p.id))
+        .sort((a,b)=> a.name.localeCompare(b.name, 'de'));
+      if(!cands.length){
+        box.innerHTML = '<div class="tiny" style="padding:6px 2px;color:var(--muted)">Alle Mitglieder sind bereits beigetreten.</div>';
+        return;
+      }
+      cands.forEach(p => {
+        const row = el('div', { className:'add-member-row' });
+        const nm = el('div', { className:'add-member-name' });
+        nm.innerHTML = escapeHtml(p.name) + (p.pronouns ? ' <span class="tiny" style="color:var(--muted)">' + escapeHtml(p.pronouns) + '</span>' : '');
+        const bF = el('button', { className:'btn glist', type:'button', innerText:'FLINTA*' });
+        const bO = el('button', { className:'btn glist', type:'button', innerText:'Offen' });
+        bF.addEventListener('click', ()=> addMemberToRoom(p.id, 'flinta'));
+        bO.addEventListener('click', ()=> addMemberToRoom(p.id, 'offen'));
+        row.appendChild(nm); row.appendChild(bF); row.appendChild(bO);
+        box.appendChild(row);
+      });
+    }
+    // Mitglied von der Leitung hinzufügen (kein Selbst-Beitritt → keine Krone). Tritt es später
+    // selbst bei, überschreibt seine Wahl diese hier ("self" gewinnt).
+    function addMemberToRoom(id, list){
+      const p = getPerson(id); if(!p) return;
+      p.present = true; p.list = list;                 // optimistisch
+      renderAll();
+      sendOp('join', { id, name:p.name, pronouns:p.pronouns||'', list, status:p.status||'AStA', member:true });
+    }
+
+    function openAddDialog(){
+      const ov = el('div', { className:'modal-overlay' });
+      const box = el('div', { className:'modal' });
+      box.style.maxWidth = '520px'; box.style.maxHeight = '85vh'; box.style.overflow = 'auto';
+      box.innerHTML =
+        '<h3>Teilnehmende hinzufügen</h3>'
+        + '<p>Mitglied antippen und Liste wählen. Wer selbst über die App beitritt, erscheint automatisch und bekommt eine 👑.</p>'
+        + '<div id="addMemberList" class="add-member-list"></div>'
+        + '<h4 style="margin-top:18px">Externe / Gäste anlegen</h4>'
+        + '<p class="tiny" style="margin:0 0 8px;color:var(--muted)"><i class="ti ti-info-circle"></i> Gäste können sich auch selbst über den Gast-Link eintragen – dann musst du sie hier nicht anlegen.</p>'
+        + '<form id="extForm" class="ext-form">'
+        + '  <input id="exName" type="text" placeholder="Name" required>'
+        + '  <label class="tiny" style="display:block;margin-top:6px">Pronomen</label>'
+        + pronSelects('exPronA', 'exPronB', '', '— noch offen —')
+        + '  <div class="ext-row">'
+        + '    <select id="exList"><option value="offen">Offen</option><option value="flinta">FLINTA*</option></select>'
+        + '    <select id="exStatus"><option value="Gast">Gast</option><option value="StuPa">StuPa</option></select>'
+        + '    <button type="submit" class="btn"><i class="ti ti-user-plus"></i> Anlegen</button>'
+        + '  </div>'
+        + '</form>'
+        + '<div class="actions" style="margin-top:16px"><button id="addClose" class="btn primary">Fertig</button></div>';
+      ov.appendChild(box); document.body.appendChild(ov);
+      addDialogRender = renderAddMembers; renderAddMembers();
+      const close = ()=>{ addDialogRender = null; ov.remove(); };
+      box.querySelector('#addClose').addEventListener('click', close);
+      ov.addEventListener('click', (e)=>{ if(e.target === ov) close(); });
+      box.querySelector('#extForm').addEventListener('submit', (e)=>{
+        e.preventDefault();
+        const name = box.querySelector('#exName').value.trim(); if(!name) return;
+        const pron = pronValue(box, 'exPronA', 'exPronB');
+        const list = box.querySelector('#exList').value;
+        const status = box.querySelector('#exStatus').value;
+        const id = 'g' + Math.random().toString(36).slice(2,8);
+        participants.push({ id, name, pronouns:pron, status, list, count:0, present:true, online:false, member:false });
+        renderAll();
+        sendOp('join', { id, name, pronouns:pron, list, status, member:false });
+        box.querySelector('#extForm').reset();
+        box.querySelector('#exName').focus();
+      });
+    }
+    if(isLeader){
+      const ab = document.getElementById('addParticipantBtn');
+      if(ab) ab.addEventListener('click', openAddDialog);
+      const pb = document.getElementById('protocolBtn');
+      if(pb) pb.addEventListener('click', openProtocolDialog);
+    }
+    // Protokollpause-Knopf gilt für die:den Protokollant:in (Teilnahme ODER Leitung) → immer verdrahten
+    const ppb = document.getElementById('protocolPauseBtn');
+    if(ppb) ppb.addEventListener('click', startProtocolPause);
+    renderProtocol();        // Button-Sichtbarkeit/Label initial setzen
+    renderProtocolPauseBtn();
+    renderProtocolPause();
+
+    // ======= Gast-Registrierung (Gast-Link): Pflicht-Dialog, trägt sich selbst ein =======
+    function openGuestRegistration(cb){
+      const ov = el('div', { className:'modal-overlay' });
+      const box = el('div', { className:'modal' });
+      box.innerHTML =
+        '<h3>Willkommen bei der Redeliste</h3>'
+        + '<p>Trag dich kurz ein, dann kannst du dich zu Wort melden.</p>'
+        + '<label class="tiny">Name</label>'
+        + '<input id="grName" type="text" placeholder="Dein Name">'
+        + '<label class="tiny" style="margin-top:8px;display:block">Pronomen</label>'
+        + pronSelects('grPronA', 'grPronB', '', '— bitte wählen —')
+        + '<label class="tiny" style="margin-top:10px;display:block">Auf welcher Liste meldest du dich?</label>'
+        + '<div class="ext-row" style="display:flex;gap:8px">'
+        + '  <button type="button" class="btn glist" data-list="flinta" style="flex:1">FLINTA*</button>'
+        + '  <button type="button" class="btn glist primary" data-list="offen" style="flex:1">Offen</button>'
+        + '</div>'
+        + '<p class="tiny" style="margin:6px 0 0;color:var(--muted)">FLINTA* = Frauen, Lesben, inter, nicht-binäre, trans und agender Personen. Wer sich davon nicht angesprochen fühlt, wählt „Offen".</p>'
+        + '<label class="tiny" style="margin-top:12px;display:block">Du bist…</label>'
+        + '<div class="ext-row" style="display:flex;gap:8px">'
+        + '  <button type="button" class="btn gstatus primary" data-status="Gast" style="flex:1">Gast</button>'
+        + '  <button type="button" class="btn gstatus" data-status="StuPa" style="flex:1">StuPa</button>'
+        + '</div>'
+        + '<div class="actions" style="margin-top:16px"><button id="grOk" class="btn primary">Beitreten</button></div>';
+      ov.appendChild(box); document.body.appendChild(ov);
+      let chosenList = 'offen', chosenStatus = 'Gast';
+      const setActive = (sel, btn)=>{ box.querySelectorAll(sel).forEach(b=> b.classList.remove('primary')); btn.classList.add('primary'); };
+      box.querySelectorAll('.glist').forEach(b=> b.addEventListener('click', ()=>{ chosenList = b.dataset.list; setActive('.glist', b); }));
+      box.querySelectorAll('.gstatus').forEach(b=> b.addEventListener('click', ()=>{ chosenStatus = b.dataset.status; setActive('.gstatus', b); }));
+      box.querySelector('#grOk').addEventListener('click', ()=>{
+        const inp = box.querySelector('#grName');
+        const name = inp.value.trim();
+        const pron = pronValue(box, 'grPronA', 'grPronB');
+        if(!name){ inp.focus(); inp.style.borderColor = '#ef4444'; return; }
+        if(!pron){ pronMarkieren(box, 'grPronA', 'grPronB'); return; } // beide Teile sind Pflicht
+        ov.remove();
+        cb({ id:'g' + Math.random().toString(36).slice(2,8), name, pron, list:chosenList, status:chosenStatus });
+      });
+    }
+
+
+    // ======= How-To-Fenster (getrennt für Teilnehmen & Leitung) =======
+    function howToModal(html){
+      const ov = el('div', { className:'modal-overlay' });
+      const box = el('div', { className:'modal' });
+      box.style.maxWidth = '600px';
+      box.style.maxHeight = '85vh';
+      box.style.overflow = 'auto';
+      box.innerHTML = html;
+      const actions = el('div', { className:'actions' });
+      const close = el('button', { className:'btn primary', innerText:'Schließen' });
+      close.addEventListener('click', ()=> ov.remove());
+      actions.appendChild(close);
+      box.appendChild(actions);
+      ov.addEventListener('click', (e)=>{ if(e.target === ov) ov.remove(); });
+      ov.appendChild(box);
+      document.body.appendChild(ov);
+    }
+
+    function showHowToTeilnehmen(){
+      howToModal(`
+        <h3>How-To: Teilnehmen</h3>
+        <p>So meldest du dich in der AStA-Redeliste zu Wort.</p>
+        <h4>Dich zuordnen &amp; melden</h4>
+        <ul>
+          <li><strong>Das bin ich</strong>: Tippe in der Teilnehmendenliste links auf deinen Namen, um dich diesem Gerät zuzuordnen (deine Karte wird blau umrandet).</li>
+          <li><strong>Melden</strong> (oben rechts) oder <strong>Leertaste</strong>: meldet dich zu Wort; nochmal drücken zieht die Meldung zurück.</li>
+          <li><strong>×</strong> neben „Du bist …": hebt die Zuordnung dieses Geräts wieder auf.</li>
+        </ul>
+        <h4>Reihenfolge verstehen</h4>
+        <ul>
+          <li>Es kommt immer die Person mit den <strong>wenigsten Redebeiträgen</strong> zuerst dran (bei Gleichstand die frühere Meldung).</li>
+          <li>Aufgerufen wird <strong>abwechselnd</strong> aus der FLINTA*- und der Offen-Liste.</li>
+          <li>Die Nummer an deiner Meldung zeigt deine echte Position · <strong>Als nächstes</strong> zeigt, wer gleich dran ist.</li>
+        </ul>
+        <h4>Tagesordnung &amp; Ansichten</h4>
+        <ul>
+          <li><strong>Klick auf den TOP</strong> oben: ganze Tagesordnung ansehen (mit geplanten Zeiten und internem Teil).</li>
+          <li><strong>Mini-Ansicht</strong>: schmale Anzeige fürs Mitlesen; zurück über „Hauptansicht".</li>
+          <li><strong><i class="ti ti-moon"></i></strong> oben rechts schaltet den Dark Mode um.</li>
+        </ul>
+      `);
+    }
+
+    function showHowToLeitung(){
+      howToModal(`
+        <h3>How-To: Leitung</h3>
+        <p>Steuerung der Redeliste (Leitungslink mit <code>?key=…</code>).</p>
+        <h4>Redeliste führen</h4>
+        <ul>
+          <li><strong>Nächste Person aufrufen</strong> (oder <strong>Leertaste</strong>): ruft die nächste Person gemäß Quotierung auf.</li>
+          <li><strong>drannehmen</strong> an einer Meldung: nimmt sie sofort außer der Reihe dran.</li>
+          <li><strong>entfernen</strong>: nimmt eine Meldung aus der Redeliste. Das <strong>×</strong> in der Teilnehmendenliste (oder Mausrad-Klick) entfernt die Person ganz.</li>
+          <li><strong>✎ Pronomen</strong>: Pronomen ändern · <strong>Rechtsklick</strong> auf eine Person wechselt zwischen FLINTA* und Offen.</li>
+          <li><strong>Top beenden</strong>: leert beide Listen, setzt die Quotierung zurück und springt zum nächsten TOP.</li>
+          <li><strong>Quotierung zurücksetzen</strong>: setzt nur die Redebeitrags-Zähler auf 0.</li>
+        </ul>
+        <h4>Teilnehmende &amp; Stammliste</h4>
+        <ul>
+          <li><strong>Teilnehmer hinzufügen</strong> (unten links): Gäste oder Personen ohne Gerät eintragen (mit Status AStA/StuPa/Gast).</li>
+          <li><strong>AStA-Mitglieder bearbeiten</strong>: Liste anpassen, dann nochmal klicken zum dauerhaften Speichern – sie wird beim nächsten Öffnen automatisch geladen.</li>
+        </ul>
+        <h4>Sitzung &amp; Tagesordnung</h4>
+        <ul>
+          <li><strong>Sitzung beenden</strong>: zeigt allen „Aktuell keine AStA-Sitzung"; mit <strong>Neue Sitzung</strong> startest du frisch.</li>
+          <li>Beim Start: <strong>Standard-Tagesordnung</strong>, leer oder ohne TO wählen, dazu der Sitzungstitel.</li>
+          <li><strong>Klick auf den TOP</strong> oben: Tagesordnung bearbeiten · mit <strong>+</strong> TOPs dazwischen einschieben.</li>
+          <li>Optional pro TOP eine <strong>geplante Zeit</strong> (Countdown, wird rot bei Überschreitung) und ab einem TOP der <strong>interne Teil</strong> (gelb).</li>
+          <li>Grüne Markierung = es liegen Meldungen vor · „Redeliste erschöpft" = alle abgearbeitet.</li>
+        </ul>
+        <h4>Ansichten</h4>
+        <ul>
+          <li>Leitung: <code>?key=…</code> · Teilnehmen: ohne Parameter · Beamer: <code>?ansicht</code> · schmal: <code>?mini</code></li>
+          <li><strong><i class="ti ti-moon"></i></strong> oben rechts schaltet den Dark Mode um.</li>
+        </ul>
+      `);
+    }
+
+    document.getElementById('howtoTeil').addEventListener('click', showHowToTeilnehmen);
+    document.getElementById('howtoLeit').addEventListener('click', showHowToLeitung);
+    // Je nach Rolle nur das passende How-To anzeigen
+    document.getElementById('howtoLeit').style.display = isLeader ? '' : 'none';
+    document.getElementById('howtoTeil').style.display = isLeader ? 'none' : '';
+
+    // Init
+    renderAll();
+
+    // ===== Einheitlicher Lese-Poll für ALLE Rollen (Cursor ~1 s) =====
+    // Server-autoritativ: Teilnehmer-Meldungen erscheinen hier auch dann, wenn der
+    // Leitungs-Tab gerade nicht aktiv ist – die Leitung ist nicht mehr im Schreibpfad.
+    pollOnce();
+    setInterval(pollOnce, 1000);
+    // Bei Tab-Rückkehr sofort nachziehen (Hintergrund-Throttling überbrücken)
+    document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) pollOnce(); });
+
+    // ======= Optionale Utilities =======
+    // window.addPerson({name:'Neue Person', pronouns:'sie', status:'Gast', list:'flinta'})
+    window.addPerson = function({name, pronouns='', status='Gast', list='offen'}){
+      const id = 'p' + Math.random().toString(36).slice(2,8);
+      participants.push({ id, name, pronouns, status, list, count: 0 });
+      renderPeople();
+      sendOp('join', { id, name, pronouns, list, status });
+      return id;
+    }
+  </script>
+</body>
+</html>

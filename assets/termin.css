@@ -1,0 +1,373 @@
+/* ===== Öffentlicher Terminplaner ======================================================
+   Baut auf style.css, pat.css und umfrage.css auf – hier stehen nur die Eigenheiten:
+   Terminzeilen, die Ja/Evtl./Nein-Auswahl, Ergebnisbalken und die Tabellenansicht.
+
+   ZWEI Regeln, die dieser Bereich mit pat/ und umfrage/ teilt:
+   1. Nur die CSS-Variablen aus style.css verwenden – dann sitzt der Dunkelmodus von selbst.
+   2. Es darf KEIN style="…"-Attribut geben. Die Content-Security-Policy der öffentlichen
+      Seiten kennt kein 'unsafe-inline'; ein Inline-Stil wird stillschweigend verworfen.
+      Deshalb stehen weiter unten auch die Balkenbreiten als Klassen. */
+
+/* ---- Kopfzeile ---- */
+a.tp-brand { text-decoration: none; color: inherit; }
+a.tp-brand:hover .pat-brand-x strong { color: var(--petrol); }
+
+/* ===========================================================================
+   Startseite
+   =========================================================================== */
+.tp-start { margin: -3.2rem 0 2.2rem; position: relative; z-index: 2; text-align: center; }
+.tp-cta {
+  font-size: 1.15rem; padding: 1rem 2.2rem; border-radius: 14px;
+  box-shadow: 0 8px 20px rgba(14, 92, 115, .22), 0 18px 44px rgba(0, 0, 0, .12);
+}
+.tp-cta-note { margin: .8rem 0 0; }
+.tp-start .card { text-align: left; }
+
+.tp-feats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem; margin: 0 0 2rem;
+}
+.tp-feat {
+  background: var(--white); border: 1px solid var(--line); border-radius: 16px;
+  padding: 1.3rem 1.3rem 1.4rem; box-shadow: var(--shadow);
+}
+.tp-feat-ico {
+  display: inline-grid; place-items: center; width: 2.9rem; height: 2.9rem;
+  border-radius: 50%; background: var(--petrol-soft); color: var(--petrol);
+  font-size: 1.5rem; margin-bottom: .8rem;
+}
+.tp-feat h2 { font-size: 1.08rem; margin: 0 0 .35rem; color: var(--petrol-dark); }
+.tp-feat p { margin: 0; color: var(--muted); line-height: 1.5; font-size: .95rem; }
+
+.tp-mine h2 { margin-top: 0; font-size: 1.1rem; }
+.tp-mine-h { font-size: .95rem; margin: 1rem 0 .4rem; color: var(--petrol-dark); }
+.tp-mine-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .35rem; }
+.tp-mine-list a { display: inline-flex; align-items: center; gap: .45rem; }
+
+.tp-how details { border-top: 1px solid var(--line); padding: .7rem 0 .2rem; }
+.tp-how details:first-of-type { border-top: 0; }
+.tp-how summary { cursor: pointer; font-weight: 600; }
+.tp-how details p { margin: .5rem 0 .4rem; color: var(--muted); line-height: 1.55; }
+
+.tp-privacy { margin: 1.6rem 0 0; }
+.tp-vergiss { margin-top: 1rem; }
+
+/* Liste der Namen, deren Eintrag man ändern darf */
+.tp-aendern h2 { margin-top: 0; font-size: 1.1rem; }
+.tp-namen { list-style: none; margin: .7rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: .4rem; }
+.tp-namen a {
+  display: inline-flex; align-items: center; gap: .3rem;
+  padding: .35rem .8rem; border: 1px solid var(--line); border-radius: 999px;
+  text-decoration: none; color: var(--ink); font-size: .92rem;
+}
+.tp-namen a:hover { border-color: var(--petrol); color: var(--petrol); }
+
+/* Rückmeldung im Fuß: sichtbar genug, dass man ihn findet, zurückhaltend genug, dass er nicht
+   mit dem Knopf konkurriert, um den es auf der Seite eigentlich geht. */
+.tp-fb { margin: 0 0 .5rem; }
+.tp-fb .btn { text-decoration: none; }
+.tp-fb-adr { margin: 0 0 .9rem; }
+
+/* ===========================================================================
+   Formulare
+   =========================================================================== */
+/* Feld, Beschriftung, Pflichtstern, Hilfstext. Bewusst eigene Klassen statt der `an-*` aus
+   anmeldung.css: Der Terminplaner soll nicht das Stylesheet der externen Events brauchen, nur
+   weil dort zufällig dieselben drei Regeln stehen. */
+.tp-feld { margin-bottom: 1rem; }
+.tp-feld > label { display: block; font-weight: 600; margin-bottom: .3rem; }
+.tp-feld input[type="text"], .tp-feld input[type="email"], .tp-feld textarea { width: 100%; }
+.tp-feld input[type="date"], .tp-feld input[type="time"], .tp-feld input[type="number"] { width: 100%; max-width: 12rem; }
+.tp-pflicht { color: var(--red); font-weight: 700; }
+.tp-hilfe { margin: .1rem 0 .4rem; }
+
+/* Der Datums-Wähler versteckt das eigentliche Feld und setzt ein Textfeld davor („Mi, 12.08.2026").
+   Das erbt die Maße des Datumsfelds nicht – ohne diese Zeile liefe die Frist über die volle Breite. */
+.tp-feld input.form-control { width: 100%; max-width: 14rem; }
+
+.tp-h { display: flex; align-items: baseline; gap: .5rem; margin-top: 0; font-size: 1.12rem; }
+.tp-h .ti { color: var(--petrol); }
+.tp-two { display: grid; grid-template-columns: 1fr; gap: 0 1rem; }
+@media (min-width: 560px) { .tp-two { grid-template-columns: 1fr 1fr; } }
+
+/* Eine Zeile je Terminvorschlag. Auf dem Handy untereinander, ab Tablet nebeneinander –
+   Datum breit, Uhrzeiten schmal, Notiz nimmt den Rest. */
+.tp-rows { display: flex; flex-direction: column; gap: .8rem; margin: .8rem 0; }
+.tp-row {
+  display: grid; gap: .5rem .7rem;
+  grid-template-columns: 1fr 1fr;
+  padding: .7rem .8rem; border: 1px solid var(--line); border-radius: 12px; background: var(--bg);
+}
+.tp-row-f { display: flex; flex-direction: column; min-width: 0; }
+.tp-row-f label { font-size: .78rem; font-weight: 600; color: var(--muted); margin-bottom: .18rem; }
+.tp-row-f input { width: 100%; }
+.tp-f-day { grid-column: 1 / -1; }
+.tp-f-label { grid-column: 1 / -1; }
+/* Die Höchstzahl ist zweistellig – ein über die halbe Zeile gezogenes Zahlenfeld sähe aus,
+   als gehörte da mehr hinein. */
+.tp-f-cap input { max-width: 7rem; }
+@media (min-width: 640px) {
+  /* Die Datumsspalte trägt nach dem Start des Wählers „Mi, 12.08.2026" – dafür braucht sie
+     mehr Platz als das nackte Browser-Feld. */
+  .tp-row { grid-template-columns: 12.5rem 6.5rem 6.5rem 1fr 5rem; align-items: end; }
+  .tp-f-day, .tp-f-label { grid-column: auto; }
+}
+.tp-rowbtns { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
+.tp-caphint { margin: .8rem 0 0; }
+.tp-add { margin-top: .9rem; }
+.tp-add .tp-row { margin-bottom: .7rem; }
+
+/* Aufklappbare Blöcke (Feineinstellungen, Tabelle, Gefahrenzone) */
+.tp-more { margin: 0 0 1rem; }
+.tp-more > summary {
+  cursor: pointer; font-weight: 700; color: var(--petrol-dark);
+  padding: .8rem 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--white);
+  display: flex; align-items: center; gap: .5rem;
+}
+.tp-more > summary:hover { border-color: var(--petrol); }
+.tp-more[open] > summary { border-radius: 12px 12px 0 0; border-bottom: 0; }
+.tp-more[open] > summary + .card,
+.tp-more[open] > form > .card { border-radius: 0 0 12px 12px; margin-top: 0; }
+
+/* ---- Der große Umschalter: zwei Wege, gleichrangig nebeneinander ----
+   Bewusst keine Liste kleiner Radiobuttons: Das hier ist eine Weggabelung, keine Option unter
+   vielen. Die ganze Kachel ist die Schaltfläche, damit man nicht den Punkt treffen muss. */
+.tp-zugang { display: grid; grid-template-columns: 1fr; gap: .8rem; margin-top: .9rem; }
+@media (min-width: 620px) { .tp-zugang { grid-template-columns: 1fr 1fr; } }
+.tp-zug {
+  display: grid; gap: .3rem; cursor: pointer;
+  padding: 1.1rem 1.15rem; border: 1.5px solid var(--line); border-radius: 14px;
+  background: var(--white); transition: border-color .13s, background .13s, box-shadow .13s;
+}
+.tp-zug:hover { border-color: var(--petrol); }
+.tp-zug input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.tp-zug:has(input:checked) {
+  border-color: var(--petrol); background: var(--petrol-soft);
+  box-shadow: 0 4px 14px rgba(14, 92, 115, .13);
+}
+.tp-zug:has(input:focus-visible) { outline: 2px solid var(--petrol); outline-offset: 2px; }
+.tp-zug-ico {
+  display: inline-grid; place-items: center; width: 2.4rem; height: 2.4rem; border-radius: 50%;
+  background: var(--petrol-soft); color: var(--petrol); font-size: 1.3rem; margin-bottom: .35rem;
+}
+.tp-zug:has(input:checked) .tp-zug-ico { background: var(--petrol); color: #fff; }
+.tp-zug-t { font-weight: 700; color: var(--petrol-dark); font-size: 1.02rem; }
+.tp-zug-d { color: var(--muted); font-size: .92rem; line-height: 1.45; }
+.tp-zug-e { color: var(--petrol); font-size: .84rem; font-weight: 600; margin-top: .2rem; }
+
+.tp-set { display: grid; gap: 1.4rem; }
+@media (min-width: 700px) { .tp-set { grid-template-columns: 1fr 1fr; } }
+.tp-set-block h3 { font-size: .95rem; margin: 0 0 .5rem; color: var(--petrol-dark); }
+.tp-set-block .um-opt-l { margin-bottom: .4rem; }
+.tp-set-block .um-opt-l span { line-height: 1.4; }
+.tp-set-sep { margin-top: .7rem; }
+
+/* ---- Link zum Kopieren ---- */
+.tp-copy { margin: 0 0 1.1rem; }
+.tp-copy > label { display: block; font-weight: 600; margin-bottom: .3rem; }
+.tp-copy-row { display: flex; gap: .5rem; flex-wrap: wrap; }
+.tp-copy-row input {
+  flex: 1 1 16rem; min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88rem;
+  background: var(--bg);
+}
+.tp-copy-btn.is-done { border-color: var(--green); color: var(--green); }
+/* Der Verwaltungs-Link ist der Ausweis – er sieht anders aus als der zum Weitergeben. */
+.tp-copy.warn { border-left: 4px solid var(--amber); padding-left: .9rem; }
+.tp-copy.warn > label { color: var(--amber); }
+
+.tp-inline { display: inline-flex; margin: .6rem .6rem 0 0; }
+
+/* ===========================================================================
+   Folgeseiten: randlos wie die Startseite, Inhalt in einer Lesespalte
+   ---------------------------------------------------------------------------
+   Alle Seiten des Terminplaners laufen unter „cinema" – der Inhaltsbereich hat also
+   weder Spaltenbreite noch Seitenpolster, beides übernehmen .pat-in und .tp-col.
+   Wären die Folgeseiten schmal und nur die Startseite randlos, sähe der Sprung von einer
+   zur anderen nach zwei verschiedenen Seiten aus.
+   Warum die Spalte trotzdem begrenzt ist: Ein Formular über 1440 Pixel wäre genauso
+   unangenehm zu lesen wie eines über 680 – nur andersherum.
+   =========================================================================== */
+.tp-col { max-width: 940px; margin: 0 auto; padding-top: clamp(1.3rem, 3vh, 2rem); }
+.tp-hero .pat-hero-lead { margin-top: .7rem; }
+.tp-hero h1 { max-width: 26ch; }
+.tp-col > .pat-back:first-child { margin-top: 0; }
+
+/* ===========================================================================
+   Kopf einer Terminumfrage
+   =========================================================================== */
+.tp-chips { display: flex; flex-wrap: wrap; gap: .4rem; }
+/* Im Band stehen die Plaketten auf dunklem Grund – dieselbe Machart wie die
+   Terminleiste des Pat:innenprogramms, damit beide Bereiche gleich aussehen. */
+.tp-hero .tp-chips { margin-top: 1.1rem; }
+.tp-hero .tp-chip { background: rgba(255, 255, 255, .14); border-color: rgba(255, 255, 255, .24); color: #fff; }
+.tp-hero .tp-chip.ok { background: rgba(84, 201, 138, .24); border-color: rgba(84, 201, 138, .5); color: #b6f0cd; }
+.tp-hero .tp-chip.akzent { background: rgba(255, 255, 255, .24); border-color: rgba(255, 255, 255, .38); color: #fff; }
+.tp-hero .tp-intro { color: rgba(255, 255, 255, .88); max-width: 70ch; }
+.tp-hero .tp-orga-hinweis { color: rgba(255, 255, 255, .7); }
+.tp-chip {
+  display: inline-flex; align-items: center; gap: .35rem;
+  padding: .28rem .7rem; border-radius: 999px;
+  background: var(--bg); border: 1px solid var(--line);
+  font-size: .85rem; color: var(--muted);
+}
+.tp-chip .ti { font-size: 1rem; }
+.tp-chip.ok { background: var(--green-bg); border-color: transparent; color: var(--green); font-weight: 600; }
+.tp-chip.akzent { background: var(--petrol-soft); border-color: transparent; color: var(--petrol); font-weight: 600; }
+.tp-intro { margin-top: .9rem; }
+.tp-orga-hinweis { margin: .9rem 0 0; }
+
+/* ---- Der festgelegte Termin: die wichtigste Karte der ganzen Seite ---- */
+.tp-final {
+  border: 0; color: #fff; text-align: center;
+  background: linear-gradient(102deg, #0a4757 0%, #0e5c73 55%, #14788f 100%);
+  box-shadow: 0 8px 22px rgba(14, 92, 115, .28);
+}
+.tp-final p { margin: 0; }
+.tp-final-k { font-size: .82rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; opacity: .8; }
+.tp-final-d { font-size: clamp(1.5rem, 4.5vw, 2.1rem); font-weight: 800; line-height: 1.15; margin-top: .3rem !important; }
+.tp-final-z { font-size: 1.1rem; opacity: .92; margin-top: .2rem !important; }
+.tp-final-o { margin-top: .5rem !important; opacity: .85; font-size: .95rem; }
+.tp-final-n { margin-top: .8rem !important; opacity: .92; line-height: 1.5; }
+.tp-final-btn { margin-top: 1.1rem !important; }
+.tp-final .btn { background: #fff; color: var(--petrol-dark); border-color: #fff; }
+.tp-final .btn:hover { background: #eef6f8; }
+
+.tp-ok { border-left: 4px solid var(--green); }
+.tp-ok h2, .tp-ok-t { margin-top: 0; color: var(--green); }
+.tp-neu { border-left: 4px solid var(--petrol); }
+.tp-neu h1 { margin-top: 0; font-size: 1.4rem; }
+.tp-zu { border-left: 4px solid var(--line); }
+.tp-zu p { margin: 0; color: var(--muted); }
+.tp-erkannt { border-left: 4px solid var(--petrol); }
+.tp-erkannt p { margin: 0; }
+.tp-erkannt p + p { margin-top: .4rem; }
+
+/* ===========================================================================
+   Stimmzettel: eine Zeile je Vorschlag, nach Tagen gruppiert
+   =========================================================================== */
+.tp-form .tp-liste {
+  background: var(--white); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: .4rem .9rem 1rem; margin: 0 0 1rem;
+}
+.tp-tag {
+  font-weight: 700; color: var(--petrol-dark);
+  padding: .9rem 0 .5rem; border-bottom: 1px solid var(--line); margin-bottom: .2rem;
+}
+.tp-tag-wd {
+  display: inline-grid; place-items: center; min-width: 2.1rem; padding: .1rem .4rem;
+  border-radius: 6px; background: var(--petrol-soft); color: var(--petrol);
+  font-size: .8rem; margin-right: .4rem;
+}
+.tp-zeile {
+  display: flex; align-items: center; justify-content: space-between; gap: .8rem; flex-wrap: wrap;
+  padding: .6rem 0; border-bottom: 1px solid var(--line);
+}
+.tp-zeile:last-child { border-bottom: 0; }
+.tp-zeile.ist-voll { opacity: .6; }
+.tp-zeile-w { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; min-width: 0; }
+.tp-zeit { font-weight: 600; font-variant-numeric: tabular-nums; }
+.tp-note {
+  font-size: .82rem; color: var(--muted);
+  background: var(--bg); border-radius: 999px; padding: .1rem .55rem;
+}
+.tp-kap { font-size: .82rem; color: var(--green); display: inline-flex; align-items: center; gap: .25rem; }
+.tp-kap.voll { color: var(--red); }
+
+/* Die drei Knöpfe sollen mit dem Daumen zu treffen sein – deutlich größer als in der App. */
+.statuspick.tp-pick { flex: none; }
+.statuspick.tp-pick span { padding: .55rem 1rem; font-size: .95rem; }
+@media (max-width: 420px) {
+  .tp-zeile { align-items: flex-start; }
+  .statuspick.tp-pick { width: 100%; }
+  .statuspick.tp-pick label { flex: 1 1 0; display: flex; }
+  .statuspick.tp-pick span { flex: 1; text-align: center; padding: .6rem .4rem; }
+}
+.tp-nachher { margin: .7rem 0 0; }
+
+/* ===========================================================================
+   Ergebnis
+   =========================================================================== */
+.tp-sub { font-weight: 400; }
+.tp-erg { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .7rem; }
+.tp-erg-i { border: 1px solid var(--line); border-radius: 12px; padding: .7rem .8rem; }
+.tp-erg-i.fuehrt { border-color: var(--green); background: color-mix(in srgb, var(--green) 7%, transparent); }
+.tp-erg-i.ist-final { border-color: var(--petrol); background: var(--petrol-soft); }
+.tp-erg-k { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
+.tp-erg-d { font-weight: 600; display: flex; align-items: baseline; gap: .45rem; flex-wrap: wrap; }
+.tp-erg-d .ti-crown { color: #d4a017; }
+.tp-erg-d .ti-calendar-check { color: var(--petrol); }
+.tp-erg-z { font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tp-erg-n { margin-left: auto; display: flex; gap: .55rem; white-space: nowrap; }
+.tp-erg-n .pc { font-weight: 700; font-size: .88rem; }
+.tp-erg-kap { margin: .4rem 0 0; }
+.tp-erg-akt { margin-top: .6rem; }
+
+.tp-bar { display: flex; height: 8px; border-radius: 5px; overflow: hidden; margin-top: .45rem; background: var(--line); }
+.tp-bar span { display: block; height: 100%; }
+.tp-b-yes { background: var(--green); }
+.tp-b-maybe { background: #e2b53a; }
+.tp-b-no { background: #d7d2c7; }
+html[data-theme="dark"] .tp-b-no { background: #4a4a52; }
+
+.tp-wer { margin: .5rem 0 0; display: flex; flex-wrap: wrap; gap: .2rem 1rem; }
+.tp-wer-j .ti { color: var(--green); }
+.tp-wer-e .ti { color: #b8860b; }
+
+/* Balkenbreiten als Klassen (siehe Kopfkommentar: kein style="width:…" möglich).
+   Zweierschritte – bei 8 px Höhe sieht niemand den Unterschied zu einem Prozent. */
+.tp-w0 { width: 0; } .tp-w2 { width: 2%; } .tp-w4 { width: 4%; } .tp-w6 { width: 6%; }
+.tp-w8 { width: 8%; } .tp-w10 { width: 10%; } .tp-w12 { width: 12%; } .tp-w14 { width: 14%; }
+.tp-w16 { width: 16%; } .tp-w18 { width: 18%; } .tp-w20 { width: 20%; } .tp-w22 { width: 22%; }
+.tp-w24 { width: 24%; } .tp-w26 { width: 26%; } .tp-w28 { width: 28%; } .tp-w30 { width: 30%; }
+.tp-w32 { width: 32%; } .tp-w34 { width: 34%; } .tp-w36 { width: 36%; } .tp-w38 { width: 38%; }
+.tp-w40 { width: 40%; } .tp-w42 { width: 42%; } .tp-w44 { width: 44%; } .tp-w46 { width: 46%; }
+.tp-w48 { width: 48%; } .tp-w50 { width: 50%; } .tp-w52 { width: 52%; } .tp-w54 { width: 54%; }
+.tp-w56 { width: 56%; } .tp-w58 { width: 58%; } .tp-w60 { width: 60%; } .tp-w62 { width: 62%; }
+.tp-w64 { width: 64%; } .tp-w66 { width: 66%; } .tp-w68 { width: 68%; } .tp-w70 { width: 70%; }
+.tp-w72 { width: 72%; } .tp-w74 { width: 74%; } .tp-w76 { width: 76%; } .tp-w78 { width: 78%; }
+.tp-w80 { width: 80%; } .tp-w82 { width: 82%; } .tp-w84 { width: 84%; } .tp-w86 { width: 86%; }
+.tp-w88 { width: 88%; } .tp-w90 { width: 90%; } .tp-w92 { width: 92%; } .tp-w94 { width: 94%; }
+.tp-w96 { width: 96%; } .tp-w98 { width: 98%; } .tp-w100 { width: 100%; }
+
+/* ===========================================================================
+   Tabellenansicht (eingeklappt)
+   =========================================================================== */
+.tp-tabelle { margin: 0 0 1.2rem; }
+.tp-tabelle > summary {
+  cursor: pointer; font-weight: 600; color: var(--petrol-dark);
+  display: flex; align-items: center; gap: .5rem; padding: .5rem 0;
+}
+.tp-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.tp-matrix { border-collapse: collapse; font-size: .9rem; background: var(--white); }
+.tp-matrix th, .tp-matrix td { border: 1px solid var(--line); padding: .4rem .55rem; text-align: center; }
+/* Die Namensspalte bleibt beim Wischen stehen – sonst weiß man nicht mehr, wessen Zeile man liest. */
+.tp-matrix tbody th, .tp-matrix thead th:first-child {
+  position: sticky; left: 0; z-index: 1;
+  background: var(--white); text-align: left; white-space: nowrap; font-weight: 600;
+}
+.tp-matrix thead th { background: var(--bg); font-weight: 600; line-height: 1.25; }
+.tp-m-wd, .tp-m-d, .tp-m-z { display: block; }
+.tp-m-wd { font-size: .74rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.tp-m-z { font-size: .76rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tp-m-k { color: var(--muted); margin-left: .25rem; }
+.tp-m-ja { background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); }
+.tp-m-evtl { background: color-mix(in srgb, var(--amber) 18%, transparent); color: #b8860b; }
+.tp-m-nein { color: var(--line); }
+.tp-komm { margin: .8rem 0 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: .35rem; }
+.tp-komm li { line-height: 1.5; font-size: .92rem; }
+
+/* ===========================================================================
+   Verwaltung
+   =========================================================================== */
+.tp-optliste { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.tp-optliste li {
+  display: flex; align-items: center; justify-content: space-between; gap: .8rem;
+  padding: .6rem 0; border-bottom: 1px solid var(--line);
+}
+.tp-optliste li:last-child { border-bottom: 0; }
+.tp-optliste form { flex: none; }
+
+.tp-gefahr { margin-top: 1.2rem; border-top: 1px solid var(--line); padding-top: .9rem; }
+.tp-gefahr > summary { cursor: pointer; font-weight: 600; color: var(--red); display: flex; align-items: center; gap: .45rem; }
+.tp-gefahr p { color: var(--muted); line-height: 1.55; margin: .7rem 0; }

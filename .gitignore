@@ -1,0 +1,16 @@
+# Alles, was im Betrieb entsteht, bleibt draußen: Datenbanken, Fehler-Log, hochgeladene
+# Dateien, Bilder, Vorlagen. Ausgenommen ist allein die .htaccess – die macht das
+# Verzeichnis von außen dicht und gehört deshalb mit ins Repo.
+/data/*
+!/data/.htaccess
+
+# Laufende Redelisten (redeliste.sqlite) – auch hier bleibt nur die Schutzdatei im Repo.
+/redeliste-data/*
+!/redeliste-data/.htaccess
+
+# Hochgeladene Umfrage-Bilder: Sie liegen nicht unter data/, weil die öffentliche
+# Umfrage sie direkt ausliefert – gehören aber genauso zum Betrieb, nicht zum Programm.
+/umfrage/bilder/
+
+# Finder-Beiwerk
+.DS_Store

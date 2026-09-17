@@ -1,0 +1,67 @@
+/* ===== Öffentliche Anmeldung (externe Events) =========================================
+   Baut auf style.css, pat.css und umfrage.css auf – hier stehen nur die Ergänzungen. */
+
+.an-feld { margin-bottom: 1rem; }
+.an-feld > label { display: block; font-weight: 600; margin-bottom: .3rem; }
+.an-feld input[type="text"], .an-feld input[type="email"], .an-feld input[type="number"], .an-feld textarea { width: 100%; }
+.an-feld input[type="number"] { max-width: 9rem; }
+.an-pflicht { color: var(--red); font-weight: 700; }
+
+/* Ausgebuchte Antwortmöglichkeit: sichtbar, aber nicht wählbar – wer sie sucht, soll sehen,
+   dass es sie gibt und dass sie weg ist. Sie einfach auszublenden wäre verwirrender. */
+.um-opt-l.an-voll { opacity: .55; cursor: not-allowed; }
+.um-opt-l.an-voll:hover { border-color: var(--line); }
+
+.an-status { margin: .7rem 0 0; }
+.an-code { font-size: 1.05rem; letter-spacing: .04em; }
+.an-code strong { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .12em; }
+.an-gruppe { border-left: 4px solid var(--petrol); }
+.an-gruppe h2 { margin-top: 0; font-size: 1.15rem; }
+.an-gruppe p { margin: .3rem 0 0; }
+
+/* Öffentliche Gruppenliste: eine Karte je Gruppe, ab Tablet nebeneinander */
+.an-gruppenliste { display: grid; gap: 1rem; grid-template-columns: 1fr; }
+@media (min-width: 720px) { .an-gruppenliste { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); } }
+.an-gruppenliste .card { margin: 0; }
+.an-namen { list-style: none; margin: .6rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: .35rem; }
+.an-namen li { padding: .2rem .55rem; border: 1px solid var(--line); border-radius: 999px; font-size: .9rem; }
+
+/* Fahrplan der eigenen Gruppe (Rotationsplan) */
+.an-plan-titel { font-size: 1rem; margin: .9rem 0 .3rem; }
+.an-plan { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
+.an-plan li { display: flex; gap: .7rem; align-items: baseline; padding: .45rem .6rem;
+  border-left: 3px solid var(--petrol); background: var(--petrol-soft); border-radius: 0 8px 8px 0; }
+.an-plan-zeit { flex: none; font-variant-numeric: tabular-nums; font-weight: 700; color: var(--petrol); }
+
+/* Abstands-Helfer statt style="…": Der öffentliche Bereich läuft unter einer CSP ohne
+   'unsafe-inline' – ein Inline-Stil wird vom Browser stillschweigend verworfen. */
+.an-m0 { margin: 0; }
+.an-mt-s { margin: .3rem 0 0; }
+.an-mt-m { margin-top: .6rem; }
+.an-hilfe { margin: .1rem 0 .4rem; }
+.an-upper { text-transform: uppercase; }
+
+/* ---- Aufhübschung: die Anmeldeseite soll nach Veranstaltung aussehen, ----
+   nicht nach Verwaltungsformular. Der Kopf ist die Bühne (Farbband oben, Chips statt
+   Fließtext), die Karten tragen Symbol-Überschriften, der Platz-Stand ist ein Balken. */
+.an-hero { position: relative; overflow: hidden; padding-top: 1.5rem; }
+.an-hero::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 5px;
+  background: linear-gradient(90deg, var(--petrol), var(--amber)); }
+.an-hero h1 { margin: 0 0 .4rem; letter-spacing: -.02em; }
+.an-hero .um-intro { margin: 0 0 .8rem; }
+
+.an-chips { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .6rem; }
+.an-chip { display: inline-flex; align-items: center; gap: .4em; font-size: .85rem; font-weight: 600;
+  padding: .35rem .75rem; border-radius: 999px; border: 1px solid var(--line); background: var(--white); }
+.an-chip .ti { color: var(--petrol); }
+.an-chip-ok { border-color: var(--petrol); background: var(--petrol-soft); }
+.an-chip-zu { color: var(--muted); }
+
+.an-plaetze { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: .7rem; margin-top: .8rem; }
+.an-plaetze .um-g-balken { height: .7rem; }
+.an-plaetze-t { font-size: .85rem; white-space: nowrap; }
+.an-plaetze-t strong { font-variant-numeric: tabular-nums; }
+
+/* Karten-Überschriften mit Symbol einheitlich */
+.pat-main .card > h2 { display: flex; align-items: center; gap: .5rem; margin-top: 0; font-size: 1.12rem; }
+.pat-main .card > h2 .ti { color: var(--petrol); }

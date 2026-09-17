@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Logo → was.läuft-Farben (1080×1080, Bildschirm aufnehmen)</title>
+<style>
+/* Schleife (7 s): Das Träger-Logo steht auf hellem Grund, dann wischt der
+   Marken-Verlauf von links durchs Logo, während der Grund auf die Bühnen-Tinte
+   abblendet – und darunter tritt die Wortmarke auf. */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; background: #000; }
+.b {
+  position: relative; width: 1080px; height: 1080px; margin: 0 auto; overflow: hidden;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+  text-align: center; animation: grund 7s ease-in-out infinite;
+}
+@keyframes grund {
+  0%, 18%  { background: #faf7f2; }
+  40%, 92% { background: #17141c; }
+  100%     { background: #faf7f2; }
+}
+.b::before {
+  content: ''; position: absolute; inset: 0; opacity: 0;
+  background:
+    radial-gradient(60% 46% at 8% 105%, rgba(255,217,61,.16), transparent 62%),
+    radial-gradient(64% 50% at 92% -5%, rgba(255,92,114,.22), transparent 64%);
+  animation: lichter 7s ease-in-out infinite;
+}
+@keyframes lichter { 0%, 20% { opacity: 0; } 42%, 90% { opacity: 1; } 100% { opacity: 0; } }
+.logos { position: absolute; top: 150px; left: 50%; width: 700px; margin-left: -350px; }
+.logos img { display: block; width: 100%; }
+.logos .neu {
+  position: absolute; inset: 0;
+  clip-path: inset(0 100% 0 0);
+  animation: wisch 7s cubic-bezier(.3,.72,.34,1) infinite;
+}
+@keyframes wisch {
+  0%, 20%  { clip-path: inset(0 100% 0 0); }
+  38%, 94% { clip-path: inset(0 0 0 0); }
+  100%     { clip-path: inset(0 100% 0 0); }
+}
+.marke {
+  position: absolute; top: 720px; left: 0; right: 0;
+  font-size: 120px; font-weight: 800; letter-spacing: -.03em; color: #fff;
+  opacity: 0; transform: translateY(24px);
+  animation: auf 7s ease-out infinite;
+}
+.dot { color: #d9f24b; }
+.wv { background: linear-gradient(92deg, #ffd93d, #ff5c72 75%);
+  -webkit-background-clip: text; background-clip: text; color: transparent; }
+.unter {
+  position: absolute; top: 880px; left: 0; right: 0;
+  font-size: 40px; font-weight: 800; color: #d9f24b;
+  opacity: 0; transform: translateY(24px);
+  animation: auf 7s ease-out infinite .12s;
+}
+@keyframes auf {
+  0%, 42%  { opacity: 0; transform: translateY(24px); }
+  52%, 92% { opacity: 1; transform: none; }
+  100%     { opacity: 0; transform: translateY(24px); }
+}
+</style>
+</head>
+<body>
+<div class="b">
+  <div class="logos">
+    <img src="{{LOGO}}" alt="">
+    <img class="neu" src="{{LOGO_VERLAUF}}" alt="">
+  </div>
+  <div class="marke">was<span class="dot">.</span><span class="wv">läuft</span></div>
+  <div class="unter">Der Veranstaltungskalender für {{ORT}}</div>
+</div>
+</body>
+</html>

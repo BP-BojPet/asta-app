@@ -1,0 +1,84 @@
+/* ===== Öffentliche Umfragen ==========================================================
+   Baut auf style.css und pat.css auf – hier stehen nur die Eigenheiten des Umfrage-Teils:
+   Stimmzettel, Skala und Ergebnisbalken. Alle Farben kommen aus den Variablen, damit Hell
+   und Dunkel ohne Zutun stimmen. */
+
+.um-kopf h1 { margin-top: 0; }
+.um-intro { white-space: pre-line; line-height: 1.55; }
+.um-frist { margin: .7rem 0 0; color: var(--muted); font-size: .92rem; }
+.um-klein { font-size: .86rem; color: var(--muted); line-height: 1.45; }
+.um-fehler { color: var(--red); font-weight: 600; margin: 0; }
+.um-fehlerkarte { border-left: 4px solid var(--red); }
+.um-ok h1, .um-ok h2 { margin-top: 0; }
+
+/* Adressformular */
+.um-form label { display: block; font-weight: 600; margin-bottom: .3rem; }
+.um-form input[type="email"] { width: 100%; max-width: 26rem; }
+/* Honigtopf: für Menschen unsichtbar, für Formular-Roboter verlockend.
+   Kein hidden/display:none – manche Roboter überspringen genau das. */
+.um-hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+
+/* ---- Stimmzettel ---- */
+.um-frage h2, .um-erg h2 { display: flex; align-items: baseline; gap: .5rem; margin-top: 0; font-size: 1.1rem; }
+.um-nr { flex: none; display: inline-grid; place-items: center; width: 1.7rem; height: 1.7rem;
+  border-radius: 999px; background: var(--petrol-soft); color: var(--petrol);
+  font-size: .85rem; font-weight: 700; }
+.um-opt { font-size: .72rem; font-weight: 600; color: var(--muted); background: var(--petrol-soft);
+  padding: .1rem .45rem; border-radius: 999px; }
+
+.um-wahl { display: flex; flex-direction: column; gap: .4rem; margin-top: .6rem; }
+.um-opt-l { display: flex; align-items: flex-start; gap: .6rem; padding: .55rem .7rem;
+  border: 1px solid var(--line); border-radius: 10px; cursor: pointer; transition: .12s; }
+.um-opt-l:hover { border-color: var(--petrol); }
+.um-opt-l input { margin-top: .18rem; flex: none; }
+.um-opt-l:has(input:checked) { border-color: var(--petrol); background: var(--petrol-soft); }
+
+/* Skala: die Stufen sollen auch auf dem Handy nebeneinander passen */
+.um-skala { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-top: .7rem; }
+.um-skala-e { font-size: .8rem; color: var(--muted); flex: 1 1 100%; }
+.um-stufe { position: relative; }
+.um-stufe input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.um-stufe span { display: grid; place-items: center; min-width: 2.6rem; height: 2.6rem;
+  border: 1px solid var(--line); border-radius: 10px; font-weight: 700; color: var(--muted);
+  background: var(--white); cursor: pointer; transition: .12s; }
+.um-stufe:hover span { border-color: var(--petrol); color: var(--petrol); }
+.um-stufe input:checked + span { background: var(--petrol); border-color: var(--petrol); color: #fff; }
+.um-stufe input:focus-visible + span { outline: 2px solid var(--petrol); outline-offset: 2px; }
+@media (min-width: 480px) { .um-skala-e { flex: 0 0 auto; } }
+
+/* Die Karte mit Adresse und Absenden steht am Ende des Stimmzettels und darf sich abheben. */
+.um-absenden-karte { border-left: 4px solid var(--petrol); }
+.um-absenden-karte h2 { margin-top: 0; font-size: 1.1rem; }
+.um-absenden-karte .um-form { margin: .8rem 0; }
+.um-absenden-karte .btn { width: 100%; justify-content: center; }
+@media (min-width: 520px) { .um-absenden-karte .btn { width: auto; } }
+
+/* ---- Ergebnis ----
+   Die Balken/Säulen (um-g-*) wohnen in style.css – dieselben Grafiken zeichnet auch die
+   Verwaltung. Hier stehen nur die Zutaten der öffentlichen Seiten. */
+.um-zwischen h2 { margin: 0; font-size: 1.15rem; }
+.um-zwischen p { margin: .4rem 0 0; color: var(--muted); white-space: pre-line; }
+/* „Sonstiges: …" im Stimmzettel – das Textfeld läuft in der Zeile mit. */
+.um-sonst { flex-wrap: wrap; align-items: center; }
+.um-sonst-txt { flex: 1; min-width: 8rem; }
+
+.um-texte { margin: .6rem 0 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: .5rem; }
+.um-texte li { line-height: 1.5; }
+
+/* Bild zur Frage: volle Breite der Karte, aber nie größer als das Original.
+   Feste Rundung wie bei den Karten, damit es nicht wie ein Fremdkörper wirkt. */
+.um-bild { margin: .2rem 0 .8rem; }
+/* Höhe gedeckelt: Ein hochkant fotografiertes Bild würde sonst die halbe Seite füllen und
+   die eigentliche Frage aus dem Blick schieben. Breite folgt der Höhe, nichts wird verzerrt. */
+.um-bild img { display: block; max-width: 100%; max-height: 420px; width: auto; height: auto;
+  border-radius: 10px; border: 1px solid var(--line); }
+
+/* Sprachumschalter: sitzt über der Überschrift und bleibt bewusst unauffällig –
+   er ist ein Angebot, keine Aufforderung. */
+.um-lang { margin: 0 0 .4rem; text-align: right; font-size: .9rem; }
+.um-lang a { display: inline-flex; align-items: center; gap: .3rem; text-decoration: none;
+  border: 1px solid var(--line); border-radius: 999px; padding: .15rem .6rem; color: var(--muted); }
+.um-lang a:hover { border-color: var(--petrol); color: var(--petrol); }
+
+/* Vorschau-Band: deutlich sichtbar, damit niemand die Probe für die echte Umfrage hält. */
+.um-vorschau-band { background: #fff6df; border-color: #e6c983; }

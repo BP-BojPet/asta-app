@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gerade offline · was.läuft</title>
+<!-- Die Offline-Seite des Service Workers (sw.js). BEWUSST eigenständig: Sie muss auch dann
+     stehen, wenn weder Stylesheet noch Server erreichbar sind – deshalb alles hier drin.
+     Als statische Datei läuft sie NICHT unter der CSP von wl_head(), Inline-Stile sind ok.
+     Bei Änderungen die VERSION in sw.js hochzählen, sonst bleibt die alte Fassung im Vorrat. -->
+<style>
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    background: #141220; color: #f4f1ea; text-align: center;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .mark { font-weight: 800; font-size: 2rem; letter-spacing: -.02em; }
+  .mark i { font-style: normal; color: #d9f24b; }
+  .mark b { color: #ff5c72; }
+  p { color: #a09a90; max-width: 26rem; margin: .8rem auto 1.6rem; padding: 0 1rem; }
+  a {
+    display: inline-block; padding: .62rem 1.25rem; border-radius: 999px;
+    background: #d9f24b; color: #17141c; font-weight: 800; text-decoration: none;
+  }
+</style>
+</head>
+<body>
+<div>
+  <div class="mark">was<i>.</i><b>läuft</b></div>
+  <p>Gerade besteht keine Verbindung – und Veranstaltungen von gestern bringen dich nicht weiter.
+     Sobald du wieder Netz hast, geht es hier weiter.</p>
+  <a href="index.php">Neu laden</a>
+</div>
+</body>
+</html>

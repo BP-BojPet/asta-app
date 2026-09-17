@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Favicon von was.läuft: das „w." der Wortmarke – w in Weiß, der Punkt in Limette,
+       auf dem Nacht-Grund der Seite. Bewusst ohne Text-Element (Schrift wäre je nach
+       System anders); das w ist eine Polyline mit runden Kappen. -->
+  <rect width="64" height="64" rx="14" fill="#141220"/>
+  <polyline points="12,24 19,43 26,29 33,43 40,24" fill="none" stroke="#ffffff"
+    stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="49" cy="40.5" r="5" fill="#d9f24b"/>
+</svg>
