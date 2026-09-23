@@ -354,6 +354,24 @@ function migrate_schema(PDO $pdo): void
         created_at TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
     )");
     $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS shop_purchases_uni ON shop_purchases(member_id, item)');
+    // Ursprungstermin weitergereichter TOPs und Berichte. Wandert ein TOP mehrfach weiter (eine
+    // Serie wird Termin für Termin gelöscht), merkt er sich trotzdem, für WANN er gedacht war –
+    // und kehrt dorthin zurück, sobald es dort wieder eine Sitzung gibt. Leer = nie weitergereicht.
+    foreach (['top_submissions', 'reports', 'vote_items'] as $tabU) {
+        if (!in_array('carried_from', $cols($tabU), true)) $pdo->exec("ALTER TABLE $tabU ADD COLUMN carried_from TEXT");
+    }
+    // Wartebank für TOPs und Berichte gelöschter Sitzungen, solange es noch keine nächste Sitzung
+    // gibt. Die Zeile selbst steht als JSON drin – so hängt die Wartebank nicht am Aufbau von
+    // top_submissions/reports, und eine später ergänzte Spalte geht beim Zurückholen nicht verloren.
+    $pdo->exec("CREATE TABLE IF NOT EXISTS parked_items (
+        id           INTEGER PRIMARY KEY,
+        kind         TEXT NOT NULL,              -- 'top' | 'report'
+        meeting_kind TEXT NOT NULL DEFAULT '',   -- Art der gelöschten Sitzung (TOPs bleiben bei ihrer Art)
+        from_date    TEXT NOT NULL,              -- Tag der gelöschten Sitzung (Y-m-d)
+        from_label   TEXT NOT NULL DEFAULT '',   -- ihr Name, damit die Übersicht sagt, woher etwas kommt
+        payload      TEXT NOT NULL,
+        parked_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    )");
     // Geschenkte AsT (Vorsitz/Admin über die Achievements-Übersicht): additive Buchungen,
     // ast_balance() zählt sie dazu – das Guthaben selbst bleibt abgeleitet, nie gespeichert.
     $pdo->exec("CREATE TABLE IF NOT EXISTS ast_grants (
@@ -3643,6 +3661,14 @@ function protocol_sync_pending_votes(): int
         }
         if (!$neu) { // gar keine kommende Sitzung mehr: Gegenstand weg, Durchgang 3 wartet auf eine neue
             if ($untauglich) {
+                // Wer die Genehmigung schon gelesen hatte, soll sie nicht noch einmal als ungelesen
+                // sehen, wenn sie in einer neuen Sitzung wieder entsteht: Haken aufheben (Durchgang 4).
+                $gl = $pdo->prepare('SELECT member_id, read_at FROM vote_item_reads WHERE item_id = ?');
+                $gl->execute([(int)$vi['id']]);
+                if ($gelesen = $gl->fetchAll()) {
+                    $pdo->prepare("INSERT INTO parked_items(kind, from_date, payload) VALUES('protocol_reads', '', ?)")
+                        ->execute([json_encode(['ref' => (int)$vi['ref_meeting_id'], 'gelesen' => $gelesen])]);
+                }
                 $pdo->prepare('DELETE FROM vote_items WHERE id = ?')->execute([(int)$vi['id']]);
                 $aenderungen++;
             }
@@ -3667,6 +3693,25 @@ function protocol_sync_pending_votes(): int
         if (!$target) continue;
         if (protocol_create_vote_item($m, $target) > 0) $aenderungen++;
     }
+
+    // --- 4. Aufgehobene Gelesen-Haken zurücklegen --------------------------------------------
+    // Ist die Genehmigung wieder entstanden, bekommt sie die Haken von vorher. Gibt es das
+    // Protokoll nicht mehr, sind auch die Haken gegenstandslos.
+    foreach ($pdo->query("SELECT * FROM parked_items WHERE kind = 'protocol_reads' ORDER BY id")->fetchAll() as $w) {
+        $z = json_decode((string)$w['payload'], true);
+        $ref = (int)($z['ref'] ?? 0);
+        $da = $pdo->prepare('SELECT 1 FROM meetings WHERE id = ?'); $da->execute([$ref]);
+        if (!$da->fetchColumn()) { $pdo->prepare('DELETE FROM parked_items WHERE id = ?')->execute([(int)$w['id']]); continue; }
+        $neuV = $pdo->prepare("SELECT id FROM vote_items WHERE kind = 'protocol' AND ref_meeting_id = ? AND decision = 'offen' ORDER BY id DESC LIMIT 1");
+        $neuV->execute([$ref]);
+        $vid = (int)$neuV->fetchColumn();
+        if (!$vid) continue;                                   // wartet weiter auf eine Sitzung
+        foreach ((array)($z['gelesen'] ?? []) as $r) {
+            $pdo->prepare('INSERT OR IGNORE INTO vote_item_reads(item_id, member_id, read_at) VALUES(?,?,?)')
+                ->execute([$vid, (int)$r['member_id'], (string)$r['read_at']]);
+        }
+        $pdo->prepare('DELETE FROM parked_items WHERE id = ?')->execute([(int)$w['id']]);
+    }
     return $aenderungen;
 }
 
@@ -3685,11 +3730,406 @@ function protocol_vote_reactivate(int $meetingId): bool
  * die Fremdschlüssel-Kaskade mit; die Protokoll-Genehmigung, die in einer ANDEREN Sitzung auf
  * diese hier verweist, nicht – die muss hier weg, sonst bleibt sie als Karteileiche stehen.
  */
-function meeting_delete(int $meetingId): void
+/**
+ * Sitzung löschen. Was an ihr hängt, geht dabei NICHT verloren:
+ *  - eingereichte TOPs und eigene Abstimmungsgegenstände wandern in die nächste Sitzung derselben
+ *    Art, Berichte in die nächste berichtspflichtige – oder, wenn es noch keine gibt, auf die
+ *    Wartebank (parked_items), bis eine angelegt wird (meeting_sync_parked);
+ *  - Protokoll-Abstimmungen zieht der Protokoll-Abgleich in die richtige Folgesitzung um.
+ * Gelesen-Haken, Anhänge und Beschlüsse bleiben dabei erhalten. Nicht übertragen werden
+ * Zu-/Absagen und Nicht-Erscheinen: Die gelten einem bestimmten Termin.
+ *
+ * Rückgabe: was weitergegeben wurde (für die Meldung in der Verwaltung).
+ */
+function meeting_delete(int $meetingId): array
 {
+    $st = db()->prepare('SELECT * FROM meetings WHERE id = ?');
+    $st->execute([$meetingId]);
+    $m = $st->fetch();
+    if (!$m) return [];
+    // Erst als abgesagt markieren und abgleichen: Dann ZIEHT der Protokoll-Abgleich die
+    // Protokoll-Abstimmungen dieser Sitzung um (UPDATE – Gelesen-Haken und Anhänge bleiben).
+    // Beim direkten Löschen nähme der Fremdschlüssel sie mit, und der Abgleich legte sie danach
+    // frisch an: dieselbe Abstimmung, aber ohne dass jemand sie gelesen hätte.
+    db()->prepare('UPDATE meetings SET cancelled = 1 WHERE id = ?')->execute([$meetingId]);
+    protocol_sync_pending_votes();
+    $bilanz = meeting_carry_over($m);
     db()->prepare("DELETE FROM vote_items WHERE kind = 'protocol' AND ref_meeting_id = ?")->execute([$meetingId]);
     db()->prepare('DELETE FROM meetings WHERE id = ?')->execute([$meetingId]);
     protocol_sync_pending_votes();
+    return $bilanz;
+}
+
+/**
+ * Liegt an diesem Tag schon eine Sitzung derselben Art? (Entwürfe zählen mit, ausgefallene nicht.)
+ * Zwei am selben Tag ergäben doppelte Nummern – die Serie, das Anlegen einer einzelnen Sitzung und
+ * das Verschieben prüfen deshalb alle hier. Rückgabe: die belegende Sitzung oder null.
+ */
+function meeting_day_taken(string $art, string $startsAt, int $ohneId = 0): ?array
+{
+    $st = db()->prepare('SELECT * FROM meetings WHERE kind = ? AND cancelled = 0 AND substr(starts_at, 1, 10) = ? AND id != ?
+                         ORDER BY starts_at LIMIT 1');
+    $st->execute([$art, substr($startsAt, 0, 10), $ohneId]);
+    return $st->fetch() ?: null;
+}
+
+/**
+ * Nächste Sitzung, die Inhalte einer weggefallenen aufnimmt: veröffentlicht, nicht abgesagt,
+ * noch nicht vorbei – und frühestens am Tag, für den der Inhalt gedacht war. „Frühestens am
+ * selben Tag" ist Absicht: Wird eine versehentlich doppelt angelegte Sitzung gelöscht, landet ihr
+ * Inhalt in der, die am selben Tag stehen bleibt. Eine frühere Sitzung bekommt nichts: Was für
+ * November geplant war, rutscht nicht in den Oktober.
+ *
+ *  - TOPs und Abstimmungsgegenstände ('top', 'vote') bleiben bei ihrer ART (ordentlich →
+ *    ordentlich), sonst stünde ein Antrag plötzlich in einer außerordentlichen Sitzung zu einem
+ *    ganz anderen Thema.
+ *  - Berichte ('report') gehen in die nächste BERICHTSPFLICHTIGE Sitzung; in einer anderen sähe
+ *    sie niemand.
+ */
+function carry_target(string $was, string $art, string $abTag, int $ohneId = 0): ?array
+{
+    $abTag = max(substr($abTag, 0, 10), date('Y-m-d'));
+    $sql = "SELECT * FROM meetings WHERE cancelled = 0 AND draft = 0 AND kind != 'stupa'
+            AND date(starts_at) >= ? AND id != ?";
+    $par = [$abTag, $ohneId];
+    if ($was === 'report') { $sql .= ' AND needs_report = 1'; }
+    else                   { $sql .= ' AND kind = ?'; $par[] = $art; }
+    $st = db()->prepare($sql . ' ORDER BY starts_at, id LIMIT 1');
+    $st->execute($par);
+    return $st->fetch() ?: null;
+}
+
+/**
+ * Bericht in eine Sitzung übernehmen. Hat das Referat dort schon einen, wird angehängt statt
+ * überschrieben – beide Texte sind Arbeit, und keiner davon soll stillschweigend verschwinden.
+ * Berichte sind Zeilen ohne Aufzählungszeichen (report_clean), das Anhängen hält die Form.
+ * Ein angehängter Bericht gehört danach der Zielsitzung und reist nicht mehr zurück.
+ */
+function carry_report_into(int $zielId, string $referat, string $inhalt, ?int $von, ?string $ursprung = null): void
+{
+    $inhalt = trim($inhalt);
+    if ($inhalt === '') return;
+    $st = db()->prepare('SELECT content FROM reports WHERE referat = ? AND meeting_id = ?');
+    $st->execute([$referat, $zielId]);
+    $da = $st->fetchColumn();
+    if ($da === false) {
+        db()->prepare('INSERT INTO reports(referat, meeting_id, content, updated_by, carried_from) VALUES(?,?,?,?,?)')
+            ->execute([$referat, $zielId, $inhalt, $von, $ursprung]);
+        return;
+    }
+    $da = trim((string)$da);
+    if ($da === $inhalt || str_contains($da, $inhalt)) return;   // steht schon drin
+    db()->prepare('UPDATE reports SET content = ? WHERE referat = ? AND meeting_id = ?')
+        ->execute([trim($da . "\n" . $inhalt), $referat, $zielId]);
+}
+
+/** Nächste freie Sortierstelle für Abstimmungsgegenstände einer Sitzung (Zugezogenes kommt ans Ende). */
+function carry_vote_sort(int $meetingId): int
+{
+    $st = db()->prepare('SELECT COALESCE(MAX(sort), 0) + 1 FROM vote_items WHERE meeting_id = ?');
+    $st->execute([$meetingId]);
+    return (int)$st->fetchColumn();
+}
+
+/** Zeile in eine Tabelle schreiben – nur mit den Spalten, die es dort (noch) gibt. Gibt die neue ID zurück. */
+function carry_insert_row(string $tabelle, array $zeile): int
+{
+    $spalten = array_column(db()->query("PRAGMA table_info($tabelle)")->fetchAll(), 'name');
+    $zeile = array_intersect_key($zeile, array_flip($spalten));
+    $namen = array_keys($zeile);
+    db()->prepare("INSERT INTO $tabelle(" . implode(',', $namen) . ') VALUES('
+                  . implode(',', array_fill(0, count($namen), '?')) . ')')->execute(array_values($zeile));
+    return (int)db()->lastInsertId();
+}
+
+/**
+ * Einen Abstimmungsgegenstand für die Wartebank einpacken – MIT allem, was an seiner ID hängt:
+ * Gelesen-Haken, Anhänge (nur der Verweis; die Datei bleibt im Upload-Ordner liegen) und deren
+ * Spiegel in Teams/Nextcloud. Die Spiegel-Verweise werden dabei herausgenommen: Sie haben keinen
+ * Fremdschlüssel und zeigten sonst auf eine Anhang-ID, die SQLite neu vergeben kann.
+ */
+function carry_vote_pack(array $vi): array
+{
+    $id = (int)$vi['id'];
+    $gegenstand = $vi; unset($gegenstand['id'], $gegenstand['meeting_id']);
+    $q = db()->prepare('SELECT member_id, read_at FROM vote_item_reads WHERE item_id = ?');
+    $q->execute([$id]);
+    $gelesen = $q->fetchAll();
+    $q = db()->prepare('SELECT * FROM vote_item_files WHERE item_id = ? ORDER BY id');
+    $q->execute([$id]);
+    $dateien = [];
+    foreach ($q->fetchAll() as $f) {
+        $spiegel = [];
+        foreach (['teams_files', 'nc_files'] as $tab) {
+            $s = db()->prepare("SELECT * FROM $tab WHERE kind = 'vfile' AND ref_id = ?");
+            $s->execute([(int)$f['id']]);
+            foreach ($s->fetchAll() as $row) { unset($row['id']); $spiegel[] = ['tab' => $tab, 'zeile' => $row]; }
+            db()->prepare("DELETE FROM $tab WHERE kind = 'vfile' AND ref_id = ?")->execute([(int)$f['id']]);
+        }
+        unset($f['id'], $f['item_id']);
+        $dateien[] = ['zeile' => $f, 'spiegel' => $spiegel];
+    }
+    return ['gegenstand' => $gegenstand, 'gelesen' => $gelesen, 'dateien' => $dateien];
+}
+
+/** Gegenstück zu carry_vote_pack(): alles wieder anlegen, an der neuen ID. Gibt die neue ID zurück. */
+function carry_vote_unpack(array $paket, int $zielId, string $ursprung): int
+{
+    $g = (array)($paket['gegenstand'] ?? []);
+    $g['meeting_id'] = $zielId;
+    $g['sort'] = carry_vote_sort($zielId);
+    $g['carried_from'] = $ursprung;
+    $neu = carry_insert_row('vote_items', $g);
+    foreach ((array)($paket['gelesen'] ?? []) as $r) {
+        db()->prepare('INSERT OR IGNORE INTO vote_item_reads(item_id, member_id, read_at) VALUES(?,?,?)')
+            ->execute([$neu, (int)$r['member_id'], (string)$r['read_at']]);
+    }
+    foreach ((array)($paket['dateien'] ?? []) as $d) {
+        $f = (array)$d['zeile']; $f['item_id'] = $neu;
+        $fid = carry_insert_row('vote_item_files', $f);
+        foreach ((array)($d['spiegel'] ?? []) as $sp) {
+            $z = (array)$sp['zeile']; $z['ref_id'] = $fid;
+            if (in_array($sp['tab'], ['teams_files', 'nc_files'], true)) carry_insert_row($sp['tab'], $z);
+        }
+    }
+    return $neu;
+}
+
+/**
+ * TOPs, Abstimmungsgegenstände und Berichte einer Sitzung weitergeben, die gelöscht oder abgesagt
+ * wird – in beiden Fällen findet sie nicht statt. Nur bei Sitzungen, die noch nicht vorbei sind: Wer eine längst gelaufene Sitzung aufräumt, will
+ * deren Inhalte nicht in die nächste kippen – sie sind dort ja schon besprochen.
+ *
+ * Gesucht wird immer ab dem URSPRÜNGLICHEN Termin (carried_from). Sonst schöbe jede weitere
+ * Löschung einen TOP eine Sitzung weiter, und nach „ganze Serie löschen, neu anlegen" stünde alles
+ * am Serienende.
+ */
+function meeting_carry_over(array $m): array
+{
+    $bilanz = ['tops' => 0, 'votes' => 0, 'reports' => 0, 'geparkt' => 0,
+               'ziel_top' => null, 'ziel_vote' => null, 'ziel_bericht' => null];
+    if (substr((string)$m['starts_at'], 0, 10) < date('Y-m-d') || ($m['kind'] ?? '') === 'stupa') return $bilanz;
+    $id = (int)$m['id'];
+    $tag = substr((string)$m['starts_at'], 0, 10);
+    $art = (string)$m['kind'];
+    $label = meeting_label($m) . ' am ' . fmt_date($tag);
+    $parken = db()->prepare('INSERT INTO parked_items(kind, meeting_kind, from_date, from_label, payload) VALUES(?,?,?,?,?)');
+    $urs = fn (array $z) => (string)($z['carried_from'] ?? '') !== '' ? (string)$z['carried_from'] : $tag;
+
+    // TOPs – Umzug statt Neuanlage: Die ID bleibt, und alles, was an ihr hängt, auch.
+    $q = db()->prepare('SELECT * FROM top_submissions WHERE meeting_id = ? ORDER BY id');
+    $q->execute([$id]);
+    foreach ($q->fetchAll() as $t) {
+        $u = $urs($t);
+        if ($ziel = carry_target('top', $art, $u, $id)) {
+            db()->prepare('UPDATE top_submissions SET meeting_id = ?, carried_from = ? WHERE id = ?')->execute([(int)$ziel['id'], $u, (int)$t['id']]);
+            $bilanz['ziel_top'] = $ziel;
+        } else {
+            $zeile = $t; unset($zeile['id'], $zeile['meeting_id']);
+            $parken->execute(['top', $art, $u, $label, json_encode($zeile, JSON_UNESCAPED_UNICODE)]);
+            // Ausdrücklich entfernen: Beim ABSAGEN bleibt die Sitzung stehen, und ohne das
+            // stünde der TOP danach zweimal da – einmal geparkt, einmal an der abgesagten.
+            db()->prepare('DELETE FROM top_submissions WHERE id = ?')->execute([(int)$t['id']]);
+            $bilanz['geparkt']++;
+        }
+        $bilanz['tops']++;
+    }
+
+    // Eigene Abstimmungsgegenstände (Protokoll-Abstimmungen erledigt der Protokoll-Abgleich).
+    // Vermerke „vertagt auf …" bleiben, wo sie sind – sie SIND der Nachweis für diese Sitzung.
+    $q = db()->prepare("SELECT * FROM vote_items WHERE meeting_id = ? AND kind <> 'protocol' AND decision <> 'vertagt' ORDER BY sort, id");
+    $q->execute([$id]);
+    foreach ($q->fetchAll() as $v) {
+        $u = $urs($v);
+        if ($ziel = carry_target('vote', $art, $u, $id)) {
+            db()->prepare('UPDATE vote_items SET meeting_id = ?, carried_from = ?, sort = ? WHERE id = ?')
+                ->execute([(int)$ziel['id'], $u, carry_vote_sort((int)$ziel['id']), (int)$v['id']]);
+            $bilanz['ziel_vote'] = $ziel;
+        } else {
+            $parken->execute(['vote', $art, $u, $label, json_encode(carry_vote_pack($v), JSON_UNESCAPED_UNICODE)]);
+            db()->prepare('DELETE FROM vote_items WHERE id = ?')->execute([(int)$v['id']]); // Paket hat alles
+            $bilanz['geparkt']++;
+        }
+        $bilanz['votes']++;
+    }
+
+    // Berichte – leere lohnen das Weiterreichen nicht.
+    $q = db()->prepare("SELECT * FROM reports WHERE meeting_id = ? AND trim(content) <> '' ORDER BY id");
+    $q->execute([$id]);
+    foreach ($q->fetchAll() as $r) {
+        $u = $urs($r);
+        if ($ziel = carry_target('report', $art, $u, $id)) {
+            carry_report_into((int)$ziel['id'], (string)$r['referat'], (string)$r['content'],
+                              $r['updated_by'] !== null ? (int)$r['updated_by'] : null, $u);
+            $bilanz['ziel_bericht'] = $ziel;
+        } else {
+            $zeile = $r; unset($zeile['id'], $zeile['meeting_id']);
+            $parken->execute(['report', $art, $u, $label, json_encode($zeile, JSON_UNESCAPED_UNICODE)]);
+            $bilanz['geparkt']++;
+        }
+        // Übernommen oder geparkt – das Original hat ausgedient (beim Absagen bliebe es sonst stehen).
+        db()->prepare('DELETE FROM reports WHERE id = ?')->execute([(int)$r['id']]);
+        $bilanz['reports']++;
+    }
+    return $bilanz;
+}
+
+/**
+ * Wartebank leeren und Weitergereichtes an seinen Ursprung zurückrücken. Läuft nach jeder
+ * Änderung am Sitzungsplan (anlegen, freigeben, verschieben, Absage zurücknehmen) und täglich im
+ * Cron. Idempotent: Was nicht unterkommt, bleibt einfach liegen.
+ *
+ * Rückgabe: ['tops' => n, 'votes' => n, 'reports' => n, 'ziele' => [meeting_id => Sitzung]].
+ */
+function meeting_sync_parked(): array
+{
+    $ergebnis = ['tops' => 0, 'votes' => 0, 'reports' => 0, 'ziele' => []];
+
+    // Abgesagte Sitzungen, die noch kommen und noch Inhalte tragen, geben sie weiter – wie beim
+    // Absagen selbst. Das erfasst auch, was schon VOR dieser Regel abgesagt wurde, und jeden
+    // anderen Weg, auf dem eine Sitzung abgesagt wird. Idempotent: danach trägt sie nichts mehr.
+    $abgesagt = db()->query("SELECT m.* FROM meetings m WHERE m.cancelled = 1 AND m.kind != 'stupa'
+        AND date(m.starts_at) >= date('now','localtime') AND (
+             EXISTS (SELECT 1 FROM top_submissions t WHERE t.meeting_id = m.id)
+          OR EXISTS (SELECT 1 FROM vote_items v WHERE v.meeting_id = m.id AND v.kind <> 'protocol' AND v.decision <> 'vertagt')
+          OR EXISTS (SELECT 1 FROM reports r WHERE r.meeting_id = m.id AND trim(r.content) <> ''))")->fetchAll();
+    foreach ($abgesagt as $am) {
+        $b = meeting_carry_over($am);
+        foreach (['tops' => 'ziel_top', 'votes' => 'ziel_vote', 'reports' => 'ziel_bericht'] as $k => $zk) {
+            if (!empty($b[$zk])) { $ergebnis[$k] += (int)$b[$k]; $ergebnis['ziele'][(int)$b[$zk]['id']] = $b[$zk]; }
+        }
+    }
+
+    foreach (db()->query("SELECT * FROM parked_items WHERE kind IN ('top', 'vote', 'report') ORDER BY id")->fetchAll() as $w) {
+        $ziel = carry_target((string)$w['kind'], (string)$w['meeting_kind'], (string)$w['from_date']);
+        if (!$ziel) continue;
+        $z = json_decode((string)$w['payload'], true);
+        if (is_array($z)) {
+            if ($w['kind'] === 'top') {
+                $z['meeting_id'] = (int)$ziel['id'];
+                $z['carried_from'] = (string)$w['from_date'];
+                unset($z['id']);
+                carry_insert_row('top_submissions', $z);
+                $ergebnis['tops']++;
+            } elseif ($w['kind'] === 'vote') {
+                carry_vote_unpack($z, (int)$ziel['id'], (string)$w['from_date']);
+                $ergebnis['votes']++;
+            } else {
+                carry_report_into((int)$ziel['id'], (string)($z['referat'] ?? ''), (string)($z['content'] ?? ''),
+                                  isset($z['updated_by']) ? (int)$z['updated_by'] : null, (string)$w['from_date']);
+                $ergebnis['reports']++;
+            }
+            $ergebnis['ziele'][(int)$ziel['id']] = $ziel;
+        }
+        db()->prepare('DELETE FROM parked_items WHERE id = ?')->execute([(int)$w['id']]);
+    }
+
+    // Zurückrücken: Weitergereichtes steht in einer SPÄTEREN Sitzung, als es inzwischen gibt –
+    // etwa weil die ursprüngliche neu angelegt wurde. Dann gehört es wieder dorthin. Nur
+    // Weitergereichtes (carried_from gesetzt) und nur, solange seine Sitzung noch kommt; normal
+    // eingereichte Inhalte rührt das nie an.
+    $rueck = db()->query("
+        SELECT 'top' AS art, t.id, t.carried_from, NULL AS referat, NULL AS content, NULL AS updated_by, m.kind, m.starts_at
+          FROM top_submissions t JOIN meetings m ON m.id = t.meeting_id
+         WHERE COALESCE(t.carried_from, '') <> '' AND date(m.starts_at) >= date('now','localtime')
+        UNION ALL
+        SELECT 'vote', v.id, v.carried_from, NULL, NULL, NULL, m.kind, m.starts_at
+          FROM vote_items v JOIN meetings m ON m.id = v.meeting_id
+         WHERE v.kind <> 'protocol' AND COALESCE(v.carried_from, '') <> '' AND date(m.starts_at) >= date('now','localtime')
+        UNION ALL
+        SELECT 'report', r.id, r.carried_from, r.referat, r.content, r.updated_by, m.kind, m.starts_at
+          FROM reports r JOIN meetings m ON m.id = r.meeting_id
+         WHERE COALESCE(r.carried_from, '') <> '' AND date(m.starts_at) >= date('now','localtime')")->fetchAll();
+    foreach ($rueck as $x) {
+        $besser = carry_target($x['art'], (string)$x['kind'], (string)$x['carried_from']);
+        if (!$besser || (string)$besser['starts_at'] >= (string)$x['starts_at']) continue;
+        if ($x['art'] === 'top') {
+            db()->prepare('UPDATE top_submissions SET meeting_id = ? WHERE id = ?')->execute([(int)$besser['id'], (int)$x['id']]);
+            $ergebnis['tops']++;
+        } elseif ($x['art'] === 'vote') {
+            db()->prepare('UPDATE vote_items SET meeting_id = ?, sort = ? WHERE id = ?')
+                ->execute([(int)$besser['id'], carry_vote_sort((int)$besser['id']), (int)$x['id']]);
+            $ergebnis['votes']++;
+        } else {
+            carry_report_into((int)$besser['id'], (string)$x['referat'], (string)$x['content'],
+                              $x['updated_by'] !== null ? (int)$x['updated_by'] : null, (string)$x['carried_from']);
+            db()->prepare('DELETE FROM reports WHERE id = ?')->execute([(int)$x['id']]);
+            $ergebnis['reports']++;
+        }
+        $ergebnis['ziele'][(int)$besser['id']] = $besser;
+    }
+    return $ergebnis;
+}
+
+/** Wartebank abgleichen und das Ergebnis gleich als Meldung zeigen (Verwaltung → Sitzungen). */
+function meeting_parked_flash(): void
+{
+    $text = parked_sync_message(meeting_sync_parked());
+    if ($text !== '') flash($text, 'success');
+}
+
+/** „2 TOPs, 1 Abstimmungsgegenstand und 1 Bericht" – leere Posten fallen weg. */
+function carry_aufzaehlung(int $tops, int $votes, int $reports): string
+{
+    $teile = array_values(array_filter([
+        $tops    ? $tops . ($tops === 1 ? ' TOP' : ' TOPs') : '',
+        $votes   ? $votes . ($votes === 1 ? ' Abstimmungsgegenstand' : ' Abstimmungsgegenstände') : '',
+        $reports ? $reports . ($reports === 1 ? ' Bericht' : ' Berichte') : '',
+    ]));
+    if (count($teile) <= 1) return $teile[0] ?? '';
+    return implode(', ', array_slice($teile, 0, -1)) . ' und ' . end($teile);
+}
+
+/** Satz zur Meldung „Sitzung gelöscht" – was mit TOPs, Abstimmungsgegenständen und Berichten passiert ist. */
+function carry_over_message(array $b): string
+{
+    $n = ['top' => (int)($b['tops'] ?? 0), 'vote' => (int)($b['votes'] ?? 0), 'report' => (int)($b['reports'] ?? 0)];
+    if (!array_sum($n)) return '';
+    $ziele = ['top' => $b['ziel_top'] ?? null, 'vote' => $b['ziel_vote'] ?? null, 'report' => $b['ziel_bericht'] ?? null];
+    $wo = fn (array $z) => meeting_label($z) . ' am ' . fmt_date(substr((string)$z['starts_at'], 0, 10));
+    // Nach Ziel bündeln: Was in dieselbe Sitzung geht, steht in EINEM Satz.
+    $gruppen = [];
+    foreach ($n as $art => $anzahl) {
+        if (!$anzahl) continue;
+        $schluessel = $ziele[$art] ? 'z' . (int)$ziele[$art]['id'] : 'warten-' . ($art === 'report' ? 'bericht' : 'art');
+        $gruppen[$schluessel]['ziel'] = $ziele[$art];
+        $gruppen[$schluessel][$art] = $anzahl;
+    }
+    $saetze = [];
+    foreach ($gruppen as $schluessel => $g) {
+        $summe = ($g['top'] ?? 0) + ($g['vote'] ?? 0) + ($g['report'] ?? 0);
+        $was = carry_aufzaehlung($g['top'] ?? 0, $g['vote'] ?? 0, $g['report'] ?? 0);
+        $saetze[] = $g['ziel']
+            ? $was . ($summe === 1 ? ' ist' : ' sind') . ' in die ' . $wo($g['ziel']) . ' gewandert.'
+            : $was . ($summe === 1 ? ' wartet' : ' warten') . ' auf '
+              . ($schluessel === 'warten-bericht' ? 'die nächste berichtspflichtige Sitzung' : 'die nächste Sitzung dieser Art')
+              . ' und ' . ($summe === 1 ? 'kommt' : 'kommen') . ' dort automatisch hinein.';
+    }
+    return ' ' . implode(' ', $saetze);
+}
+
+/** Was wartet auf eine Sitzung? ['top' => n, 'vote' => n, 'report' => n] */
+function parked_counts(): array
+{
+    $out = ['top' => 0, 'vote' => 0, 'report' => 0];
+    foreach (db()->query("SELECT kind, COUNT(*) AS n FROM parked_items WHERE kind IN ('top', 'vote', 'report') GROUP BY kind")->fetchAll() as $r) {
+        $out[(string)$r['kind']] = (int)$r['n'];
+    }
+    return $out;
+}
+
+/** Meldungstext zu einem Ergebnis von meeting_sync_parked() – leer, wenn nichts übernommen wurde. */
+function parked_sync_message(array $e): string
+{
+    $summe = (int)($e['tops'] ?? 0) + (int)($e['votes'] ?? 0) + (int)($e['reports'] ?? 0);
+    if (!$summe) return '';
+    $ziele = $e['ziele'];
+    usort($ziele, fn ($x, $y) => strcmp((string)$x['starts_at'], (string)$y['starts_at']));
+    $wo = array_map(fn ($z) => meeting_label($z) . ' am ' . fmt_date(substr((string)$z['starts_at'], 0, 10)), $ziele);
+    // Bewusst ohne „aus gelöschten Sitzungen": Weitergereicht wird auch aus abgesagten und
+    // vertagten Einträgen, und beim Zurückrücken aus einer späteren Sitzung.
+    return 'Weitergereicht in die ' . implode(' bzw. die ', $wo) . ': '
+        . carry_aufzaehlung((int)($e['tops'] ?? 0), (int)($e['votes'] ?? 0), (int)($e['reports'] ?? 0)) . '.';
 }
 
 /**
@@ -3699,19 +4139,22 @@ function meeting_delete(int $meetingId): void
  * (offen/vertagt) setzt 'approved' wieder auf 'uploaded' (ein bereits in OLAT
  * veröffentlichtes Protokoll bleibt unangetastet). $decision: offen|angenommen|vertagt.
  */
-function vote_item_set_decision(int $itemId, string $decision, int $byMemberId): void
+function vote_item_set_decision(int $itemId, string $decision, int $byMemberId): ?string
 {
-    if (!in_array($decision, ['offen', 'angenommen', 'vertagt'], true)) return;
+    if (!in_array($decision, ['offen', 'angenommen', 'vertagt'], true)) return null;
     $vi = vote_item_get($itemId);
-    if (!$vi) return;
+    if (!$vi) return null;
     db()->prepare("UPDATE vote_items SET decision = ?, decided_by = ?, decided_at = datetime('now','localtime') WHERE id = ?")
        ->execute([$decision, $byMemberId ?: null, $itemId]);
-    if (($vi['kind'] ?? '') !== 'protocol' || (int)($vi['ref_meeting_id'] ?? 0) <= 0) return;
+    if (($vi['kind'] ?? '') !== 'protocol') {
+        return ($decision === 'vertagt' && ($vi['decision'] ?? '') !== 'vertagt') ? vote_item_postpone($itemId, $byMemberId) : null;
+    }
+    if ((int)($vi['ref_meeting_id'] ?? 0) <= 0) return null;
 
     $src = (int)$vi['ref_meeting_id'];
     if ($decision === 'angenommen') {
         db()->prepare("UPDATE meetings SET protocol_status = 'approved' WHERE id = ? AND protocol_status = 'uploaded'")->execute([$src]);
-        return;
+        return null;
     }
     db()->prepare("UPDATE meetings SET protocol_status = 'uploaded' WHERE id = ? AND protocol_status = 'approved'")->execute([$src]);
 
@@ -3724,7 +4167,7 @@ function vote_item_set_decision(int $itemId, string $decision, int $byMemberId):
         $wo = (string)($mq->fetchColumn() ?: '');
         db()->prepare('UPDATE meetings SET protocol_vote_after = ? WHERE id = ?')->execute([$wo, $src]);
         protocol_sync_pending_votes();
-        return;
+        return null;
     }
 
     // Zurück auf „offen": eine wegen Vertagung angelegte Nachfolge-Abstimmung wieder einsammeln,
@@ -3736,6 +4179,55 @@ function vote_item_set_decision(int $itemId, string $decision, int $byMemberId):
         db()->prepare('DELETE FROM vote_items WHERE id = ?')->execute([(int)$x['id']]);
     }
     db()->prepare('UPDATE meetings SET protocol_vote_after = NULL WHERE id = ?')->execute([$src]);
+    return null;
+}
+
+/**
+ * Eigenen Abstimmungsgegenstand vertagen. Vertagt heißt: nicht hier, sondern beim nächsten Mal.
+ * Der Gegenstand wandert deshalb – mit Gelesen-Haken, Anhängen und ihren Teams-/Nextcloud-Kopien –
+ * in die nächste Sitzung derselben Art und steht dort wieder auf „offen". In seiner Sitzung bleibt
+ * ein Vermerk „vertagt auf …" zurück: der Nachweis fürs Protokoll, ohne Anhänge (die gehören dem
+ * Gegenstand, nicht dem Vermerk – zwei Verweise auf dieselbe Datei würden sich beim Löschen die
+ * Datei gegenseitig wegnehmen). Gibt es noch keine nächste Sitzung, wartet er auf der Wartebank.
+ *
+ * Gesucht wird ab dem TAG NACH der Sitzung: Sonst fände das Zurückrücken später dieselbe Sitzung
+ * wieder und holte den vertagten Gegenstand zurück.
+ *
+ * Rückgabe: Satz für die Meldung.
+ */
+function vote_item_postpone(int $itemId, int $byMemberId): string
+{
+    $vi = vote_item_get($itemId);
+    if (!$vi) return '';
+    $mq = db()->prepare('SELECT * FROM meetings WHERE id = ?');
+    $mq->execute([(int)$vi['meeting_id']]);
+    $m = $mq->fetch();
+    if (!$m) return '';
+    $ab = date('Y-m-d', strtotime(substr((string)$m['starts_at'], 0, 10) . ' +1 day'));
+    $ziel = carry_target('vote', (string)$m['kind'], $ab, (int)$m['id']);
+    $wohin = $ziel ? meeting_label($ziel) . ' am ' . fmt_date(substr((string)$ziel['starts_at'], 0, 10)) : '';
+
+    // Vermerk in der vertagenden Sitzung – wer den Gegenstand gelesen hatte, hat auch ihn gelesen.
+    db()->prepare("INSERT INTO vote_items(meeting_id, title, body, sort, created_by, decision, decided_by, decided_at, kind)
+                   VALUES(?, ?, ?, ?, ?, 'vertagt', ?, datetime('now','localtime'), '')")
+        ->execute([(int)$m['id'], (string)$vi['title'], $ziel ? 'Vertagt auf die ' . $wohin . '.' : 'Vertagt auf die nächste Sitzung.',
+                   (int)$vi['sort'], $vi['created_by'], $byMemberId ?: null]);
+    $vermerk = (int)db()->lastInsertId();
+    db()->prepare('INSERT OR IGNORE INTO vote_item_reads(item_id, member_id, read_at) SELECT ?, member_id, read_at FROM vote_item_reads WHERE item_id = ?')
+        ->execute([$vermerk, $itemId]);
+
+    // Der Gegenstand selbst geht weiter – wieder offen.
+    db()->prepare("UPDATE vote_items SET decision = 'offen', decided_by = NULL, decided_at = NULL WHERE id = ?")->execute([$itemId]);
+    if ($ziel) {
+        db()->prepare('UPDATE vote_items SET meeting_id = ?, sort = ?, carried_from = ? WHERE id = ?')
+            ->execute([(int)$ziel['id'], carry_vote_sort((int)$ziel['id']), $ab, $itemId]);
+        return 'Der Gegenstand wurde in die ' . $wohin . ' verschoben; hier bleibt der Vermerk „vertagt".';
+    }
+    $label = meeting_label($m) . ' am ' . fmt_date(substr((string)$m['starts_at'], 0, 10));
+    db()->prepare("INSERT INTO parked_items(kind, meeting_kind, from_date, from_label, payload) VALUES('vote', ?, ?, ?, ?)")
+        ->execute([(string)$m['kind'], $ab, $label, json_encode(carry_vote_pack((array)vote_item_get($itemId)), JSON_UNESCAPED_UNICODE)]);
+    db()->prepare('DELETE FROM vote_items WHERE id = ?')->execute([$itemId]);
+    return 'Noch gibt es keine nächste Sitzung – der Gegenstand wartet und kommt automatisch in die nächste, die angelegt wird.';
 }
 
 /**

@@ -262,8 +262,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $vid = (int)($_POST['vote_id'] ?? 0);
         $vi = vote_item_get($vid);
         if ($vi && (int)$vi['meeting_id'] === $id && $me) {
-            vote_item_set_decision($vid, (string)($_POST['decision'] ?? 'offen'), (int)$me['id']);
-            flash('Beschluss festgehalten.', 'success');
+            $hinweis = vote_item_set_decision($vid, (string)($_POST['decision'] ?? 'offen'), (int)$me['id']);
+            flash('Beschluss festgehalten.' . ($hinweis ? ' ' . $hinweis : ''), 'success');
         }
         redirect('meeting.php?id=' . $id . '#abstimmung');
     }

@@ -677,6 +677,153 @@ if ($doTest) {
             'basis_context() lädt closed_at der Umläufe nicht mehr – ohne das ist „vorzeitig" nicht erkennbar');
     });
 
+    $run('Sitzungen: gelöschte geben TOPs, Abstimmungsgegenstände und Berichte weiter', function () {
+        // Durchgespielt in einer TRANSAKTION, die am Ende zurückgenommen wird: Der Test läuft auf
+        // dem Live-Server gegen echte Daten und darf keine Spur hinterlassen. Die Termine liegen
+        // im Jahr 2099 – dort gibt es keine echte Sitzung, die dazwischenfunken könnte.
+        $pdo = db();
+        $pdo->beginTransaction();
+        try {
+            $zahl = fn (string $sql) => (int)$pdo->query($sql)->fetchColumn();
+            $neu = $pdo->prepare("INSERT INTO meetings(title, starts_at, kind, cancelled, draft, needs_report)
+                                  VALUES('', ?, 'ordentlich', 0, 0, 1)");
+            $neu->execute(['2098-12-30 20:00']); $q = (int)$pdo->lastInsertId();   // Quelle eines Protokolls
+            $neu->execute(['2099-01-07 20:00']); $a = (int)$pdo->lastInsertId();
+            $neu->execute(['2099-01-21 20:00']); $b = (int)$pdo->lastInsertId();
+            $mitglied = $zahl('SELECT id FROM members ORDER BY id LIMIT 1');
+            $pdo->prepare("INSERT INTO top_submissions(meeting_id, title, anchor) VALUES(?, 'Selbsttest-TOP', 3)")->execute([$a]);
+            $pdo->prepare("INSERT INTO reports(referat, meeting_id, content) VALUES('Selbsttest-Referat', ?, 'Zeile aus A')")->execute([$a]);
+            $pdo->prepare("INSERT INTO reports(referat, meeting_id, content) VALUES('Selbsttest-Referat', ?, 'Zeile aus B')")->execute([$b]);
+            $pdo->prepare("INSERT INTO vote_items(meeting_id, title, sort) VALUES(?, 'Selbsttest-Antrag', 1)")->execute([$a]);
+            $antrag = (int)$pdo->lastInsertId();
+            $pdo->prepare('INSERT INTO vote_item_reads(item_id, member_id) VALUES(?, ?)')->execute([$antrag, $mitglied]);
+            $pdo->prepare("INSERT INTO vote_item_files(item_id, orig_name, stored_name) VALUES(?, 'st.pdf', 'selbsttest.pdf')")->execute([$antrag]);
+            $pdo->prepare("INSERT INTO teams_files(kind, ref_id, drive_id, item_id, web_url) VALUES('vfile', ?, 'st', 'st', 'st')")->execute([(int)$pdo->lastInsertId()]);
+            $pdo->prepare("UPDATE meetings SET protocol_status = 'uploaded' WHERE id = ?")->execute([$q]);
+            protocol_sync_pending_votes();                                  // Genehmigung von Q entsteht in A
+            $prot = fn () => $zahl("SELECT id FROM vote_items WHERE kind = 'protocol' AND ref_meeting_id = $q");
+            $pdo->prepare('INSERT INTO vote_item_reads(item_id, member_id) VALUES(?, ?)')->execute([$prot(), $mitglied]);
+            $antragStand = fn () => $pdo->query("SELECT v.meeting_id,
+                (SELECT COUNT(*) FROM vote_item_reads r WHERE r.item_id = v.id) AS gel,
+                (SELECT COUNT(*) FROM vote_item_files f WHERE f.item_id = v.id) AS dat,
+                (SELECT COUNT(*) FROM vote_item_files f JOIN teams_files t ON t.kind = 'vfile' AND t.ref_id = f.id WHERE f.item_id = v.id) AS spg
+                FROM vote_items v WHERE v.title = 'Selbsttest-Antrag'")->fetch();
+
+            // 1. A löschen → alles wandert nach B; der Bericht wird angehängt statt überschrieben
+            $bil = meeting_delete($a);
+            $wo = $pdo->query("SELECT meeting_id, anchor FROM top_submissions WHERE title = 'Selbsttest-TOP'")->fetch();
+            st_expect($wo && (int)$wo['meeting_id'] === $b && (int)$wo['anchor'] === 3,
+                'der TOP einer gelöschten Sitzung ist nicht (mit seinem Platz) in die nächste gewandert');
+            $st = $antragStand();
+            st_expect($st && (int)$st['meeting_id'] === $b && (int)$st['gel'] === 1 && (int)$st['dat'] === 1 && (int)$st['spg'] === 1,
+                'der Abstimmungsgegenstand ist nicht mit Gelesen-Haken, Anhang und Teams-Spiegel in die nächste Sitzung gewandert');
+            st_expect((string)$pdo->query("SELECT content FROM reports WHERE referat = 'Selbsttest-Referat' AND meeting_id = $b")->fetchColumn()
+                      === "Zeile aus B\nZeile aus A", 'der Bericht wurde nicht an den vorhandenen angehängt – einer der Texte ginge verloren');
+            st_expect($zahl("SELECT meeting_id FROM vote_items WHERE kind = 'protocol' AND ref_meeting_id = $q") === $b
+                      && $zahl('SELECT COUNT(*) FROM vote_item_reads WHERE item_id = ' . $prot()) === 1,
+                'die Protokoll-Abstimmung ist beim Löschen ihrer Sitzung nicht UMGEZOGEN (Gelesen-Haken weg)');
+            st_expect(($bil['tops'] ?? 0) === 1 && ($bil['votes'] ?? 0) === 1 && ($bil['reports'] ?? 0) === 1 && ($bil['geparkt'] ?? 1) === 0,
+                'meeting_delete meldet nicht, was weitergegeben wurde');
+
+            // 2. B löschen → keine Sitzung mehr danach: alles auf die Wartebank
+            $bil = meeting_delete($b);
+            st_expect(($bil['geparkt'] ?? 0) === 3, 'ohne nächste Sitzung landen TOP, Antrag und Bericht nicht auf der Wartebank');
+
+            // 3. Neue Sitzung → Wartebank leert sich hinein, samt Haken, Anhang, Spiegel
+            $neu->execute(['2099-02-04 20:00']); $c = (int)$pdo->lastInsertId();
+            protocol_sync_pending_votes();
+            meeting_sync_parked();
+            st_expect($zahl("SELECT meeting_id FROM top_submissions WHERE title = 'Selbsttest-TOP'") === $c,
+                'ein wartender TOP kommt nicht in die neu angelegte Sitzung');
+            $st = $antragStand();
+            st_expect($st && (int)$st['meeting_id'] === $c && (int)$st['gel'] === 1 && (int)$st['dat'] === 1 && (int)$st['spg'] === 1,
+                'ein wartender Abstimmungsgegenstand kommt ohne Gelesen-Haken, Anhang oder Teams-Spiegel zurück');
+            st_expect((string)$pdo->query("SELECT content FROM reports WHERE referat = 'Selbsttest-Referat' AND meeting_id = $c")->fetchColumn()
+                      === "Zeile aus B\nZeile aus A", 'ein wartender Bericht kommt nicht (vollständig) in die neu angelegte Sitzung');
+            st_expect($zahl('SELECT COUNT(*) FROM vote_item_reads WHERE item_id = ' . $prot()) === 1,
+                'die neu entstandene Protokoll-Abstimmung hat ihre Gelesen-Haken von vorher verloren');
+            st_expect($zahl("SELECT COUNT(*) FROM parked_items WHERE payload LIKE '%Selbsttest-%'") === 0,
+                'die Wartebank behält übernommene Einträge – sie kämen beim nächsten Abgleich doppelt');
+
+            // 4. Der Ursprung reist mit: Wird der 07.01. neu angelegt, rücken TOP und Antrag zurück.
+            //    Der Bericht bleibt – A wurde an B angehängt und gehört seitdem zu B (21.01.).
+            $neu->execute(['2099-01-07 20:00']); $d = (int)$pdo->lastInsertId();
+            meeting_sync_parked();
+            st_expect($zahl("SELECT meeting_id FROM top_submissions WHERE title = 'Selbsttest-TOP'") === $d,
+                'der TOP rückt nicht zu seinem ursprünglichen Termin zurück, obwohl es dort wieder eine Sitzung gibt');
+            $st = $antragStand();
+            st_expect($st && (int)$st['meeting_id'] === $d && (int)$st['gel'] === 1,
+                'der Abstimmungsgegenstand rückt nicht (mit Gelesen-Haken) zu seinem ursprünglichen Termin zurück');
+            st_expect($zahl("SELECT meeting_id FROM reports WHERE referat = 'Selbsttest-Referat'") === $c
+                      && $zahl("SELECT COUNT(*) FROM reports WHERE referat = 'Selbsttest-Referat'") === 1,
+                'ein zusammengeführter Bericht ist gewandert oder doppelt entstanden');
+
+            // 5. Vergangene Sitzungen geben nichts weiter: Deren Inhalte sind längst besprochen.
+            $neu->execute(['2001-01-10 20:00']); $alt = (int)$pdo->lastInsertId();
+            $pdo->prepare("INSERT INTO top_submissions(meeting_id, title) VALUES(?, 'Selbsttest-Alt')")->execute([$alt]);
+            $bil = meeting_delete($alt);
+            st_expect(($bil['tops'] ?? 0) === 0 && $zahl("SELECT COUNT(*) FROM parked_items WHERE payload LIKE '%Selbsttest-Alt%'") === 0,
+                'eine vergangene Sitzung hat ihre TOPs weitergegeben – sie gehörten nicht mehr in eine neue');
+
+            // 7. Absagen gibt weiter wie Löschen; Absage zurücknehmen holt zurück. Geprüft über den
+            //    Abgleich allein – so, wie es auch für schon vorher abgesagte Sitzungen greift.
+            $neu->execute(['2099-03-04 20:00']); $e = (int)$pdo->lastInsertId();
+            $neu->execute(['2099-03-18 20:00']); $f = (int)$pdo->lastInsertId();
+            $pdo->prepare("INSERT INTO top_submissions(meeting_id, title) VALUES(?, 'Selbsttest-Absage')")->execute([$e]);
+            $pdo->prepare('UPDATE meetings SET cancelled = 1 WHERE id = ?')->execute([$e]);
+            meeting_sync_parked();
+            st_expect($zahl("SELECT meeting_id FROM top_submissions WHERE title = 'Selbsttest-Absage'") === $f,
+                'der TOP einer abgesagten Sitzung ist nicht in die nächste gewandert – er stünde bei einem Termin, der nicht stattfindet');
+            $pdo->prepare('UPDATE meetings SET cancelled = 0 WHERE id = ?')->execute([$e]);
+            meeting_sync_parked();
+            st_expect($zahl("SELECT meeting_id FROM top_submissions WHERE title = 'Selbsttest-Absage'") === $e,
+                'nach zurückgenommener Absage kehrt der TOP nicht in seine Sitzung zurück');
+
+            // 8. Vertagen: Der Antrag geht (offen, mit Haken) in die nächste Sitzung, der Vermerk bleibt.
+            $pdo->prepare("INSERT INTO vote_items(meeting_id, title, sort) VALUES(?, 'Selbsttest-Vertagt', 1)")->execute([$e]);
+            $vt = (int)$pdo->lastInsertId();
+            $pdo->prepare('INSERT INTO vote_item_reads(item_id, member_id) VALUES(?, ?)')->execute([$vt, $mitglied]);
+            vote_item_set_decision($vt, 'vertagt', $mitglied);
+            $weiter = $pdo->query("SELECT meeting_id, decision, (SELECT COUNT(*) FROM vote_item_reads r WHERE r.item_id = v.id) AS gel
+                                   FROM vote_items v WHERE id = $vt")->fetch();
+            st_expect($weiter && (int)$weiter['meeting_id'] === $f && $weiter['decision'] === 'offen' && (int)$weiter['gel'] === 1,
+                'ein vertagter Antrag steht nicht (offen, mit Gelesen-Haken) in der nächsten Sitzung');
+            st_expect($zahl("SELECT COUNT(*) FROM vote_items WHERE meeting_id = $e AND title = 'Selbsttest-Vertagt' AND decision = 'vertagt'") === 1,
+                'nach dem Vertagen fehlt in der alten Sitzung der Vermerk „vertagt" – das Protokoll hätte keinen Nachweis');
+            meeting_sync_parked();
+            st_expect($zahl("SELECT meeting_id FROM vote_items WHERE id = $vt") === $f,
+                'das Zurückrücken holt einen vertagten Antrag in die Sitzung zurück, die ihn vertagt hat');
+
+            // 6. Pro Tag eine Sitzung derselben Art – die Prüfung, die Anlegen und Verschieben nutzen.
+            st_expect(meeting_day_taken('ordentlich', '2099-02-04 09:00') !== null
+                      && meeting_day_taken('ordentlich', '2099-02-04 09:00', $c) === null
+                      && meeting_day_taken('sonstige', '2099-02-04 09:00') === null,
+                'meeting_day_taken erkennt einen belegten Tag nicht (oder sperrt die Sitzung selbst bzw. eine andere Art)');
+        } finally {
+            $pdo->rollBack();
+        }
+        return 'Löschen, Absagen, Vertagen, Wartebank, Zurückrücken, Tagessperre geprüft (nichts gespeichert)';
+    });
+
+    $run('Sitzungen: kein Tag doppelt belegt', function () {
+        // Zwei Sitzungen derselben Art am selben TAG sind fast immer Reste eines früheren
+        // Anlege-Versuchs – auch wenn die Uhrzeit abweicht (Datumswähler-Vorgabe 12:00 neben der
+        // echten Serie um 20:00). Jede zusätzliche Sitzung schiebt die Nummern aller späteren um
+        // eins weiter. Entwürfe zählen mit, ausgefallene nicht.
+        $rows = db()->query("SELECT kind, substr(starts_at, 1, 10) AS tag, COUNT(*) AS n,
+                                    GROUP_CONCAT(substr(starts_at, 12, 5), '+') AS zeiten
+                             FROM meetings WHERE cancelled = 0 AND kind IN ('ordentlich', 'stupa')
+                             GROUP BY kind, tag HAVING n > 1 ORDER BY tag")->fetchAll();
+        if ($rows) {
+            $liste = array_map(fn ($r) => fmt_date((string)$r['tag']) . ' (' . $r['zeiten'] . ($r['kind'] === 'stupa' ? ', StuPa' : '') . ')',
+                               array_slice($rows, 0, 4));
+            throw new \RuntimeException(count($rows) . ' Tag' . (count($rows) === 1 ? ' ist' : 'e sind')
+                . ' doppelt belegt: ' . implode(', ', $liste) . (count($rows) > 4 ? ' …' : '')
+                . ' – die überzähligen unter Verwaltung → Sitzungen löschen');
+        }
+        return 'keine Doppelungen';
+    });
+
     $run('Sitzungen: vorgegebene Kennungen werden verworfen', function () {
         // Jeder Bereich startet seine EIGENE Sitzung (bewusst, sie sind getrennt) – und jeder
         // braucht darum dieselbe Absicherung. Ohne session.use_strict_mode übernimmt PHP die

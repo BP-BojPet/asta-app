@@ -34,8 +34,12 @@ $res = run_report_doc_automation();
 // verschoben wurde. Passiert schon bei jeder Änderung an einer Sitzung – der Cron ist das Netz.
 $protoAttached = protocol_sync_pending_votes();
 
+// Wartebank: TOPs und Berichte gelöschter Sitzungen in eine inzwischen angelegte Sitzung holen.
+$geparkt = meeting_sync_parked();
+
 cron_stamp('automations'); // Herzschlag: Selbsttest/Dashboard warnen, wenn dieser Stempel >26 h alt ist
 
 echo date('Y-m-d H:i') . ' · Berichte-Dok-Automation: ' . $res['count'] . " hochgeladen.\n";
 foreach ($res['lines'] as $l) echo '  - ' . $l . "\n";
 echo '  · Protokoll-Abstimmungen angelegt oder umgehängt: ' . $protoAttached . "\n";
+echo '  · Wartende TOPs/Abstimmungsgegenstände/Berichte übernommen: ' . ($geparkt['tops'] + $geparkt['votes'] + $geparkt['reports']) . "\n";

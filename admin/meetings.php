@@ -72,6 +72,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('Bitte Datum/Uhrzeit der ersten Sitzung angeben.', 'error');
             redirect('meetings.php');
         }
+        // Dubletten verhindern, BEVOR etwas entsteht: Zwei Sitzungen derselben Art am selben TAG
+        // sind nie gewollt – fast immer ist es der Rest eines früheren Versuchs. Verglichen wird der
+        // Tag, nicht die Uhrzeit: Der Datumswähler setzt 12:00, wenn man die Zeit nicht anfasst, und
+        // eine zweite Serie um 12:00 neben der alten um 20:00 schob jede Nummer um eins weiter.
+        // Entwürfe zählen mit (sie kollidieren spätestens beim Freigeben), Ausgefallene nicht.
+        $termine = [];
+        $dT = new DateTime($first);
+        for ($i = 0; $i < $count; $i++) { $termine[] = $dT->format('Y-m-d'); $dT->modify("+{$weeks} weeks"); }
+        $platz = implode(',', array_fill(0, count($termine), '?'));
+        $stD = db()->prepare("SELECT starts_at FROM meetings WHERE kind = ? AND cancelled = 0
+                              AND substr(starts_at, 1, 10) IN ($platz) ORDER BY starts_at");
+        $stD->execute(array_merge([$kind], $termine));
+        // Nach Tagen bündeln: Liegen an einem Tag schon zwei, ist das EIN belegter Tag, nicht zwei.
+        $doppelt = [];
+        foreach ($stD->fetchAll(PDO::FETCH_COLUMN) as $t) $doppelt[substr((string)$t, 0, 10)][] = substr((string)$t, 11, 5);
+        if ($doppelt) {
+            $zeigen = [];
+            foreach (array_slice($doppelt, 0, 4, true) as $tag => $zeiten) $zeigen[] = fmt_date($tag) . ' (' . implode(' + ', $zeiten) . ' Uhr)';
+            flash('Serie nicht angelegt: ' . (count($doppelt) === 1 ? 'Am ' . $zeigen[0] . ' gibt'
+                                                                     : 'An ' . count($doppelt) . ' Tagen – ' . implode(', ', $zeigen)
+                                                                       . (count($doppelt) > 4 ? ' …' : '') . ' – gibt')
+                  . ' es schon ' . ($isStupa ? 'eine StuPa-Sitzung' : 'eine ordentliche Sitzung')
+                  . '. Zwei am selben Tag ergeben doppelte Nummern. Bitte die alten zuerst löschen '
+                  . 'oder die Serie an anderen Tagen anlegen.', 'error');
+            redirect('meetings.php');
+        }
+
         // „1. Sitzung ist Nr." meint die erste Sitzung DIESER Serie. Gespeichert wird die Zahl aber
         // als Startnummer der Periode – und die gilt für deren erste Sitzung. Liegen in der Periode
         // schon Sitzungen vor der Serie, rücken sie davor: Die Startnummer wird um genau so viele
@@ -122,8 +149,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($legS && !$asDraft) {
             $ersteNr = ' Die erste ist Nr. ' . max(1, $startNum, $vorher + 1) . '.';
         }
-        flash($count . ' ' . $lbl . ($asDraft ? ' als Entwurf' : '') . " im {$weeks}-Wochen-Rhythmus angelegt."
+        flash($count . ' ' . $lbl . ($asDraft ? ' als Entwurf' : '') . " im {$weeks}-Wochen-Rhythmus angelegt, ab " . fmt_date(substr($first, 0, 10)) . ', ' . substr($first, 11, 5) . ' Uhr.'
               . $ersteNr . $serienHinweis, 'success');
+        if (!$asDraft) meeting_parked_flash(); // wartende TOPs/Berichte gelöschter Sitzungen übernehmen
         redirect('meetings.php');
     }
 
@@ -139,16 +167,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $needsReport = isset($_POST['needs_report']) ? 1 : 0;
         $inviteReq = isset($_POST['no_invite']) ? 0 : 1; // Kästchen „muss nicht eingeladen werden"
         if ($kind === 'stupa') { $needsReport = 0; $inviteReq = 0; } // StuPa: kein Bericht, keine Einladung
+        $belegt = $start ? meeting_day_taken($kind, $start, $id) : null;
         if (!$start) {
             flash('Bitte Datum/Zeit angeben.', 'error');
         } elseif ($loc === '' && $kind !== 'stupa') {
             flash('Bitte den Raum angeben (steht in der Einladung).', 'error');
+        } elseif ($belegt) {
+            // Pro Tag eine Sitzung derselben Art – wie bei der Serie. Sonst verschöbe jede
+            // weitere Sitzung am selben Tag alle späteren Nummern um eins.
+            flash('Nicht gespeichert: Am ' . fmt_date(substr($start, 0, 10)) . ' gibt es schon die '
+                  . meeting_label($belegt) . ' (' . substr((string)$belegt['starts_at'], 11, 5) . ' Uhr'
+                  . (!empty($belegt['draft']) ? ', Entwurf' : '') . '). Zwei am selben Tag ergeben doppelte Nummern – '
+                  . 'bitte einen anderen Tag wählen oder die andere Sitzung zuerst löschen.', 'error');
+            redirect($id ? 'meetings.php?edit=' . $id . '#bearbeiten' : 'meetings.php');
         } elseif ($id) {
             // Bearbeiten: Entwurfs-Status und Anleger:in bleiben unverändert
             db()->prepare('UPDATE meetings SET title=?, starts_at=?, location=?, description=?, kind=?, needs_report=?, teams_link=?, invite_required=? WHERE id=?')
                ->execute([$title, $start, $loc, $desc, $kind, $needsReport, $teams, $inviteReq, $id]);
             protocol_sync_pending_votes(); // verschoben/umgewidmet: Protokoll-Abstimmungen nachziehen
             flash('Sitzung gespeichert.', 'success');
+            meeting_parked_flash(); // wartende TOPs/Berichte gelöschter Sitzungen übernehmen
         } else {
             $cmS = current_member();
             $asDraft = (isset($_POST['as_draft']) && $cmS) ? 1 : 0;
@@ -156,6 +194,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                ->execute([$title, $start, $loc, $desc, $kind, $needsReport, $asDraft, $cmS ? (int)$cmS['id'] : null, $teams, $inviteReq]);
             if (!$asDraft) protocol_sync_pending_votes(); // wartende Protokoll-Abstimmungen an die neue Folgesitzung hängen
             flash('Sitzung' . ($asDraft ? ' als Entwurf' : '') . ' angelegt.', 'success');
+            if (!$asDraft) meeting_parked_flash(); // wartende TOPs/Berichte gelöschter Sitzungen übernehmen
         }
         redirect('meetings.php');
     }
@@ -167,6 +206,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             db()->prepare('UPDATE meetings SET draft=0 WHERE id=?')->execute([$id]);
             protocol_sync_pending_votes(); // wartende Protokoll-Abstimmungen an die freigegebene Folgesitzung hängen
             flash('Sitzung veröffentlicht.', 'success');
+            meeting_parked_flash(); // wartende TOPs/Berichte gelöschter Sitzungen übernehmen
         }
         redirect('meetings.php');
     }
@@ -179,6 +219,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $st->execute([$sid, (int)$cmS['id']]);
             protocol_sync_pending_votes(); // wartende Protokoll-Abstimmungen an die freigegebenen Folgesitzungen hängen
             flash($st->rowCount() . ' Sitzung(en) der Serie veröffentlicht.', 'success');
+            meeting_parked_flash(); // wartende TOPs/Berichte gelöschter Sitzungen übernehmen
         }
         redirect('meetings.php');
     }
@@ -187,13 +228,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $id = (int)($_POST['id'] ?? 0);
         db()->prepare('UPDATE meetings SET cancelled = 1 - cancelled WHERE id=?')->execute([$id]);
         protocol_sync_pending_votes(); // abgesagt: wartende Protokoll-Abstimmung in die nächste Sitzung
-        flash('Status der Sitzung geändert.', 'success');
+        $stA = db()->prepare('SELECT * FROM meetings WHERE id = ?'); $stA->execute([$id]); $mA = $stA->fetch();
+        if ($mA && !empty($mA['cancelled'])) {
+            // Eine abgesagte Sitzung findet nicht statt – ihre Inhalte gehen weiter wie beim Löschen.
+            flash('Sitzung abgesagt.' . carry_over_message(meeting_carry_over($mA)), 'success');
+        } else {
+            flash('Absage zurückgenommen.', 'success');
+            meeting_parked_flash(); // Weitergereichtes rückt in die wieder stattfindende Sitzung zurück
+        }
         redirect('meetings.php');
     }
 
     if ($action === 'delete') {
-        meeting_delete((int)($_POST['id'] ?? 0)); // räumt auch Protokoll-Abstimmungen auf und hängt sie um
-        flash('Sitzung gelöscht.', 'success');
+        // räumt Protokoll-Abstimmungen auf und gibt eingereichte TOPs und Berichte weiter
+        $weiter = meeting_delete((int)($_POST['id'] ?? 0));
+        flash('Sitzung gelöscht.' . carry_over_message($weiter), 'success');
         redirect('meetings.php');
     }
 
@@ -336,7 +385,7 @@ $meetingTable = function (array $rows) {
               <?php if (empty($m['draft'])): ?><?= share_button('meeting.php?id=' . (int)$m['id'], 'Sitzungs-Link teilen', true) ?><?php endif; ?>
               <a class="btn secondary small" href="meetings.php?edit=<?= (int)$m['id'] ?>#bearbeiten">Bearbeiten</a>
               <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="cancel"><input type="hidden" name="id" value="<?= (int)$m['id'] ?>"><button class="btn secondary small" type="submit"><?= $m['cancelled'] ? 'Reaktivieren' : 'Ausfallen lassen' ?></button></form>
-              <form method="post" data-confirm="Sitzung löschen?" data-confirm-danger data-confirm-ok="Löschen"><?= csrf_field() ?><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= (int)$m['id'] ?>"><button class="btn danger small" type="submit" title="Sitzung löschen" aria-label="Sitzung löschen"><i class="ti ti-trash"></i></button></form>
+              <form method="post" data-confirm="<?= substr((string)$m['starts_at'], 0, 10) >= date('Y-m-d') ? 'Sitzung löschen? TOPs, Abstimmungsgegenstände und Berichte wandern in die nächste Sitzung.' : 'Sitzung löschen?' ?>" data-confirm-danger data-confirm-ok="Löschen"><?= csrf_field() ?><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= (int)$m['id'] ?>"><button class="btn danger small" type="submit" title="Sitzung löschen" aria-label="Sitzung löschen"><i class="ti ti-trash"></i></button></form>
             </div>
           </td>
         </tr>
@@ -449,6 +498,12 @@ page_header('Sitzungen', true);
 </nav>
 
 <?php if ($mTab === 'sitzungen'): ?>
+<?php $wartet = parked_counts(); $wartetN = array_sum($wartet); if ($wartetN): ?>
+  <p class="small" style="margin:.2rem 0 .9rem"><i class="ti ti-hourglass" aria-hidden="true"></i>
+    <?= h(carry_aufzaehlung($wartet['top'], $wartet['vote'], $wartet['report'])) ?>
+    <?= $wartetN === 1 ? 'wartet' : 'warten' ?> auf die nächste Sitzung
+    und <?= $wartetN === 1 ? 'kommt' : 'kommen' ?> automatisch hinein, sobald eine angelegt ist.</p>
+<?php endif; ?>
 <?php if ($edit) echo $singleForm; // beim Bearbeiten oben anzeigen ?>
 
 <div class="section-title"><i class="ti ti-calendar-up"></i> Kommende Sitzungen <span class="count"><?= count($upcoming) ?></span></div>
