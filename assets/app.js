@@ -2273,19 +2273,19 @@
   });
 })();
 
-/* Zuständigkeits-Umschalter (Referate | Personen, siehe zust_picker_html in lib.php):
-   zeigt beim Klick sofort die passende Liste. Rein zur Vorschau – gespeichert wird erst beim
-   Absenden, und der Server entscheidet ohnehin allein anhand des gewählten Modus. Ohne dieses
-   Skript bleibt die gespeicherte Liste stehen; dann schaltet man in zwei Schritten. */
+/* Referate-/Personen-Umschalter (siehe wahl_picker_html in lib.php – Zuständigkeiten und der
+   Kreis einer Abstimmung): zeigt beim Klick sofort die passende Liste, bei „Alle" keine. Rein
+   zur Vorschau – gespeichert wird erst beim Absenden, und der Server entscheidet ohnehin allein
+   anhand des gewählten Modus. Ohne dieses Skript bleibt die gespeicherte Liste stehen; dann
+   schaltet man in zwei Schritten. */
 (function () {
   document.addEventListener('change', function (e) {
     var r = e.target;
-    if (!r || r.name !== 'zust_modus') return;
+    if (!r || r.type !== 'radio' || !r.closest('.zust-modus')) return;
     var box = r.closest('.zust-wahl');
     if (!box) return;
-    var personen = r.value === 'personen';
     var ref = box.querySelector('.zust-ref'), per = box.querySelector('.zust-pers');
-    if (ref) ref.hidden = personen;
-    if (per) per.hidden = !personen;
+    if (ref) ref.hidden = r.value !== 'referate';
+    if (per) per.hidden = r.value !== 'personen';
   });
 })();

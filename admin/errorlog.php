@@ -794,6 +794,21 @@ if ($doTest) {
             st_expect($zahl("SELECT meeting_id FROM vote_items WHERE id = $vt") === $f,
                 'das Zurückrücken holt einen vertagten Antrag in die Sitzung zurück, die ihn vertagt hat');
 
+            // 9. Alles, was in mehreren Schritten schreibt, läuft als EINE Transaktion (db_atomar).
+            //    Sonst bricht ein gleichzeitiger Seitenaufruf den Vorgang mit „database is locked"
+            //    mittendrin ab – so geschehen beim Löschen einer Serie – und hinterlässt ihn halb.
+            $qLibA = (string)@file_get_contents(__DIR__ . '/../lib.php');
+            foreach (['meeting_delete' => 'meeting_delete_innen($meetingId)', 'meeting_sync_parked' => 'meeting_sync_parked_innen()',
+                      'protocol_sync_pending_votes' => 'protocol_sync_pending_votes_innen()',
+                      'vote_item_set_decision' => 'vote_item_set_decision_innen($itemId, $decision, $byMemberId)'] as $fn => $innen) {
+                st_expect(str_contains($qLibA, 'return db_atomar(fn () => ' . $innen . ');'),
+                    $fn . '() läuft nicht mehr als eine Transaktion – gleichzeitige Seitenaufrufe können es mittendrin abbrechen');
+            }
+            st_expect(str_contains($qLibA, "\$pdo->exec('BEGIN IMMEDIATE');"),
+                'db_atomar holt sich die Schreibsperre nicht mehr vorab (BEGIN IMMEDIATE) – dann hilft auch busy_timeout nicht');
+            st_expect(str_contains((string)@file_get_contents(__DIR__ . '/meetings.php'), '[$mA, $weiter] = db_atomar(function () use ($id) {'),
+                'das Absagen läuft nicht mehr als eine Transaktion');
+
             // 6. Pro Tag eine Sitzung derselben Art – die Prüfung, die Anlegen und Verschieben nutzen.
             st_expect(meeting_day_taken('ordentlich', '2099-02-04 09:00') !== null
                       && meeting_day_taken('ordentlich', '2099-02-04 09:00', $c) === null
@@ -5512,6 +5527,73 @@ if ($doTest) {
         st_expect(poll_create(0, 'x', '', null, false, false, false, ['a', 'b']) === 0, 'ohne Ersteller:in darf nichts angelegt werden');
         st_expect(poll_create(1, 'x', '', null, false, false, false, ['nur eine']) === 0, 'unter zwei Antwortoptionen darf nichts angelegt werden');
         st_expect(poll_create(1, 'x', '', null, false, false, true, ['a', 'b']) === 0, 'verpflichtend ohne Frist darf nichts angelegt werden');
+    });
+
+    $run('Abstimmungen mit eingeschränktem Kreis (Referate oder Personen)', function () {
+        // In einer Transaktion, die am Ende zurückgenommen wird: keine Spur auf dem Live-Server.
+        // Bewusst ohne poll_create()/Pflicht-Abschluss – die verschicken Mitteilungen.
+        $pdo = db();
+        $pdo->beginTransaction();
+        try {
+            $heute = date('Y-m-d');
+            $mit = $pdo->prepare("INSERT INTO members(name, referat, active, joined_at) VALUES(?, ?, ?, ?)");
+            $mit->execute(['Selbsttest Kreis', 'Selbsttest-Kreis', 1, $heute]);   $a = (int)$pdo->lastInsertId();
+            $mit->execute(['Selbsttest Start', '', 1, $heute]);                   $b = (int)$pdo->lastInsertId();
+            $mit->execute(['Selbsttest Ruhend', 'Selbsttest-Kreis', 0, $heute]); $c = (int)$pdo->lastInsertId();
+            $mit->execute(['Selbsttest Draußen', '', 1, $heute]);                $d = (int)$pdo->lastInsertId();
+            $poll = $pdo->prepare("INSERT INTO simple_polls(title, created_by, deadline, mandatory, kreis, status, closed_at, result_json)
+                                   VALUES('Selbsttest-Kreis', ?, ?, ?, ?, ?, ?, ?)");
+            $opt = $pdo->prepare("INSERT INTO simple_poll_options(poll_id, label, sort) VALUES(?, ?, ?)");
+            $poll->execute([$b, '2099-01-01 12:00', 0, json_encode(['modus' => 'personen', 'ids' => [$a, $c]]), 'open', null, null]);
+            $pp = (int)$pdo->lastInsertId();
+            $opt->execute([$pp, 'Ja', 0]); $o1 = (int)$pdo->lastInsertId(); $opt->execute([$pp, 'Nein', 1]);
+            $poll->execute([$b, '2099-01-01 12:00', 1, json_encode(['modus' => 'referate', 'refs' => ['Selbsttest-Kreis']]), 'open', null, null]);
+            $pr = (int)$pdo->lastInsertId();
+
+            $P = poll_get($pp);
+            st_expect(poll_kreis_ids($P) === [$a] && poll_soll($P) === 1, 'Personen-Kreis: nur aktive Angekreuzte zählen');
+            st_expect(poll_darf_stimmen($P, $a) && !poll_darf_stimmen($P, $b) && !poll_darf_stimmen($P, $d), 'nur der Kreis darf abstimmen');
+            st_expect(poll_sichtbar($P, member_get($a)) && poll_sichtbar($P, member_get($b)) && !poll_sichtbar($P, member_get($d)),
+                'sehen dürfen nur Kreis und Ersteller:in');
+            st_expect(!poll_vote($pp, $d, [$o1]) && poll_vote($pp, $a, [$o1]), 'eine Stimme von außerhalb des Kreises wurde angenommen');
+            $R = poll_get($pr);
+            st_expect(poll_kreis_ids($R) === [$a], 'Referats-Kreis: nur aktive Mitglieder des Referats');
+            st_expect(in_array($pr, array_column(poll_pending_for_member($a), 'id'))
+                      && !in_array($pr, array_column(poll_pending_for_member($d), 'id')),
+                'die Pflichtaufgabe erreicht nicht genau den Kreis');
+            st_expect(poll_kreis_json('personen', [], []) === '' && poll_kreis_json('alle', [], [$a]) === '',
+                'leere Auswahl oder „Alle" muss als alle gespeichert werden');
+
+            // Beenden friert den Kreis ein: Wer danach ins Referat kommt, war nicht dabei.
+            poll_close($pp);
+            $pdo->prepare('UPDATE members SET active = 1 WHERE id = ?')->execute([$c]);
+            st_expect(poll_kreis_ids(poll_get($pp)) === [$a], 'der Kreis einer beendeten Abstimmung ist nicht eingefroren');
+            st_expect(count(poll_kreis_ids(poll_get($pr))) === 2, 'der Kreis einer laufenden Abstimmung folgt dem Referat nicht');
+
+            // Basis-Score: Verpasst hat die Pflicht nur, wer zum Kreis gehörte.
+            $pdo->prepare("UPDATE simple_polls SET status = 'closed', deadline = ?, closed_at = ?, result_json = ? WHERE id = ?")
+                ->execute([$heute . ' 00:01', date('Y-m-d H:i:s'), json_encode(['counts' => [], 'voters' => 0, 'kreis' => [$a]]), $pr]);
+            $ctx = basis_context();
+            $verpasst = function (int $mid) use ($ctx) {
+                foreach (member_basis_breakdown(member_get($mid), $ctx)['rows'] as $row) {
+                    if (preg_match('/verpflichtender Abstimmung nicht teilgenommen \((\d+)/', $row['reason'], $t)) return (int)$t[1];
+                }
+                return 0;
+            };
+            st_expect($verpasst($a) - $verpasst($d) === 1, 'der Basis-Score zieht auch außerhalb des Kreises ab (oder im Kreis nicht)');
+        } finally {
+            $pdo->rollBack();
+        }
+        $srcU = (string)file_get_contents(dirname(__DIR__) . '/umlauf.php');
+        $srcD = (string)file_get_contents(dirname(__DIR__) . '/download.php');
+        $srcL = (string)file_get_contents(dirname(__DIR__) . '/lib.php');
+        st_expect(str_contains($srcU, 'if (!$p || !poll_sichtbar($p, $me))') && str_contains($srcU, 'fn($p) => poll_sichtbar($p, $me)'),
+            'umlauf.php zeigt eingeschränkte Abstimmungen auch außerhalb des Kreises');
+        st_expect(str_contains($srcD, 'poll_sichtbar($pollF, current_member())'), 'Anhänge eingeschränkter Abstimmungen sind für alle abrufbar');
+        st_expect(preg_match('/function poll_notify_new.*?poll_darf_stimmen/s', $srcL) === 1
+                  && preg_match('/function poll_send_reminders.*?nicht im Kreis/s', $srcL) === 1,
+            'Mitteilungen oder Erinnerungen gehen über den Kreis hinaus');
+        return 'Kreis, Sichtbarkeit, Stimmrecht, Einfrieren, Basis-Score geprüft (nichts gespeichert)';
     });
 
     $run('„In Teams öffnen" (Bereiche, Rechte, Spiegel-Verwaltung)', function () {

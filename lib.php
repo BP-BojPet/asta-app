@@ -130,6 +130,41 @@ function db(): PDO
     return $pdo;
 }
 
+/**
+ * Mehrschrittige Änderungen als EINE Transaktion – mit der Schreibsperre von Anfang an.
+ *
+ * Warum IMMEDIATE und nicht einfach nacheinander schreiben: Im WAL-Modus hält eine Anfrage, die
+ * etwas gelesen hat und danach schreiben will, einen Lese-Schnappschuss. Hat eine ANDERE Anfrage
+ * inzwischen geschrieben (jeder Seitenaufruf schreibt Aktivität mit), kann SQLite diesen
+ * Schnappschuss nicht mehr zum Schreiben aufwerten und bricht SOFORT mit „database is locked" ab –
+ * busy_timeout hilft da nicht. BEGIN IMMEDIATE holt die Sperre vorab; dort wartet busy_timeout,
+ * und die andere Anfrage wartet ihrerseits kurz auf uns.
+ *
+ * Zugleich macht es den Vorgang unteilbar: Scheitert ein Schritt, wird alles zurückgenommen –
+ * statt einer halb verschobenen Sitzung. Verschachtelt aufgerufen (etwa innerhalb des
+ * Selbsttests, der selbst eine Transaktion hält) läuft der Inhalt einfach mit. Die Tiefe wird
+ * zusätzlich selbst gezählt: Nicht jede PHP-Fassung meldet ein per exec() begonnenes BEGIN über
+ * inTransaction().
+ */
+function db_atomar(callable $fn)
+{
+    static $tiefe = 0;
+    $pdo = db();
+    if ($tiefe > 0 || $pdo->inTransaction()) return $fn();
+    $pdo->exec('BEGIN IMMEDIATE');
+    $tiefe++;
+    try {
+        $ergebnis = $fn();
+        $tiefe--;
+        $pdo->exec('COMMIT');
+        return $ergebnis;
+    } catch (\Throwable $e) {
+        $tiefe = 0;
+        try { $pdo->exec('ROLLBACK'); } catch (\Throwable $egal) { /* schon beendet */ }
+        throw $e;
+    }
+}
+
 /** Spalten ergänzen, falls eine ältere Datenbank existiert. */
 function migrate_schema(PDO $pdo): void
 {
@@ -464,6 +499,8 @@ function migrate_schema(PDO $pdo): void
         WHERE status = 'closed' AND result_yes IS NULL");
     $spCols = $cols('simple_polls');
     if ($spCols && !in_array('result_json', $spCols, true)) $pdo->exec('ALTER TABLE simple_polls ADD COLUMN result_json TEXT');
+    // Kreis der Abstimmenden (poll_kreis): leer = alle aktiven Mitglieder
+    if ($spCols && !in_array('kreis', $spCols, true)) $pdo->exec("ALTER TABLE simple_polls ADD COLUMN kreis TEXT NOT NULL DEFAULT ''");
     // Backfill: bereits beendete Abstimmungen einmalig einfrieren
     foreach ($pdo->query("SELECT id FROM simple_polls WHERE status = 'closed' AND (result_json IS NULL OR result_json = '')")->fetchAll() as $spRow) {
         $spId = (int)$spRow['id'];
@@ -3622,7 +3659,7 @@ function protocol_create_vote_item(array $source, array $target): int
  *
  * Rückgabe: Anzahl der Änderungen (angelegt + umgehängt).
  */
-function protocol_sync_pending_votes(): int
+function protocol_sync_pending_votes_innen(): int
 {
     $pdo = db();
     $aenderungen = 0;
@@ -3715,6 +3752,13 @@ function protocol_sync_pending_votes(): int
     return $aenderungen;
 }
 
+/** Siehe protocol_sync_pending_votes_innen() – hier nur als EINE Transaktion (db_atomar), damit gleichzeitige
+ *  Seitenaufrufe den Vorgang nicht mit „database is locked" mittendrin abbrechen. */
+function protocol_sync_pending_votes(): int
+{
+    return db_atomar(fn () => protocol_sync_pending_votes_innen());
+}
+
 /**
  * Eine bewusst entfernte Protokoll-Abstimmung wieder zulassen (Knopf in der Protokoll-Karte).
  * Rückgabe: true, wenn dabei ein Gegenstand entstanden ist.
@@ -3741,7 +3785,7 @@ function protocol_vote_reactivate(int $meetingId): bool
  *
  * Rückgabe: was weitergegeben wurde (für die Meldung in der Verwaltung).
  */
-function meeting_delete(int $meetingId): array
+function meeting_delete_innen(int $meetingId): array
 {
     $st = db()->prepare('SELECT * FROM meetings WHERE id = ?');
     $st->execute([$meetingId]);
@@ -3758,6 +3802,13 @@ function meeting_delete(int $meetingId): array
     db()->prepare('DELETE FROM meetings WHERE id = ?')->execute([$meetingId]);
     protocol_sync_pending_votes();
     return $bilanz;
+}
+
+/** Siehe meeting_delete_innen() – hier nur als EINE Transaktion (db_atomar), damit gleichzeitige
+ *  Seitenaufrufe den Vorgang nicht mit „database is locked" mittendrin abbrechen. */
+function meeting_delete(int $meetingId): array
+{
+    return db_atomar(fn () => meeting_delete_innen($meetingId));
 }
 
 /**
@@ -3981,7 +4032,7 @@ function meeting_carry_over(array $m): array
  *
  * Rückgabe: ['tops' => n, 'votes' => n, 'reports' => n, 'ziele' => [meeting_id => Sitzung]].
  */
-function meeting_sync_parked(): array
+function meeting_sync_parked_innen(): array
 {
     $ergebnis = ['tops' => 0, 'votes' => 0, 'reports' => 0, 'ziele' => []];
 
@@ -4059,6 +4110,13 @@ function meeting_sync_parked(): array
         $ergebnis['ziele'][(int)$besser['id']] = $besser;
     }
     return $ergebnis;
+}
+
+/** Siehe meeting_sync_parked_innen() – hier nur als EINE Transaktion (db_atomar), damit gleichzeitige
+ *  Seitenaufrufe den Vorgang nicht mit „database is locked" mittendrin abbrechen. */
+function meeting_sync_parked(): array
+{
+    return db_atomar(fn () => meeting_sync_parked_innen());
 }
 
 /** Wartebank abgleichen und das Ergebnis gleich als Meldung zeigen (Verwaltung → Sitzungen). */
@@ -4139,7 +4197,7 @@ function parked_sync_message(array $e): string
  * (offen/vertagt) setzt 'approved' wieder auf 'uploaded' (ein bereits in OLAT
  * veröffentlichtes Protokoll bleibt unangetastet). $decision: offen|angenommen|vertagt.
  */
-function vote_item_set_decision(int $itemId, string $decision, int $byMemberId): ?string
+function vote_item_set_decision_innen(int $itemId, string $decision, int $byMemberId): ?string
 {
     if (!in_array($decision, ['offen', 'angenommen', 'vertagt'], true)) return null;
     $vi = vote_item_get($itemId);
@@ -4180,6 +4238,13 @@ function vote_item_set_decision(int $itemId, string $decision, int $byMemberId):
     }
     db()->prepare('UPDATE meetings SET protocol_vote_after = NULL WHERE id = ?')->execute([$src]);
     return null;
+}
+
+/** Siehe vote_item_set_decision_innen() – hier nur als EINE Transaktion (db_atomar), damit gleichzeitige
+ *  Seitenaufrufe den Vorgang nicht mit „database is locked" mittendrin abbrechen. */
+function vote_item_set_decision(int $itemId, string $decision, int $byMemberId): ?string
+{
+    return db_atomar(fn () => vote_item_set_decision_innen($itemId, $decision, $byMemberId));
 }
 
 /**
@@ -8269,15 +8334,25 @@ function zust_text(string $bereich): string
  */
 function zust_picker_html(string $bereich): string
 {
-    $modus = zust_modus($bereich);
-    $refs  = zust_referate($bereich);
-    $pers  = zust_personen($bereich);
-    $uid   = 'z' . substr(md5($bereich), 0, 6);          // eindeutig, falls mehrere auf einer Seite stehen
+    return wahl_picker_html('zust', zust_modus($bereich), zust_referate($bereich), zust_personen($bereich),
+        ['referate' => ['ti-list-numbers', 'Referate'], 'personen' => ['ti-users', 'Personen']],
+        'Entweder <strong>Referate</strong> oder <strong>Personen</strong> – beim Umschalten wird die '
+        . 'vorherige Auswahl gelöscht. Vorsitz und Admin haben unabhängig davon immer Zugriff.');
+}
+
+/**
+ * Der Baustein dahinter: Modus-Chips und je eine Liste für Referate und Personen.
+ * $feld gibt die Feldnamen vor (`{feld}_modus`, `{feld}_ref[]`, `{feld}_pers[]`); ein Modus
+ * außer 'referate'/'personen' (etwa 'alle') blendet beide Listen aus. $hinweis ist fertiges HTML.
+ */
+function wahl_picker_html(string $feld, string $modus, array $refs, array $pers, array $modi, string $hinweis): string
+{
+    $uid = 'z' . substr(md5($feld . $modus), 0, 6);       // eindeutig, falls mehrere auf einer Seite stehen
 
     $o = '<div class="zust-wahl" data-zust="' . h($uid) . '">';
     $o .= '<div class="wl-chips zust-modus">';
-    foreach (['referate' => ['ti-list-numbers', 'Referate'], 'personen' => ['ti-users', 'Personen']] as $k => [$ico, $lbl]) {
-        $o .= '<label class="wl-chk"><input type="radio" name="zust_modus" value="' . $k . '"'
+    foreach ($modi as $k => [$ico, $lbl]) {
+        $o .= '<label class="wl-chk"><input type="radio" name="' . h($feld) . '_modus" value="' . h($k) . '"'
             . ($modus === $k ? ' checked' : '') . '>'
             . '<span><i class="ti ' . $ico . '"></i>' . h($lbl) . '</span></label>';
     }
@@ -8285,7 +8360,7 @@ function zust_picker_html(string $bereich): string
 
     $o .= '<div class="wl-chips zust-liste zust-ref"' . ($modus === 'referate' ? '' : ' hidden') . '>';
     foreach (referate_list() as $r) {
-        $o .= '<label class="wl-chk"><input type="checkbox" name="zust_ref[]" value="' . h($r) . '"'
+        $o .= '<label class="wl-chk"><input type="checkbox" name="' . h($feld) . '_ref[]" value="' . h($r) . '"'
             . (in_array($r, $refs, true) ? ' checked' : '') . '>'
             . '<span><i class="ti ti-check"></i>' . h($r) . '</span></label>';
     }
@@ -8293,14 +8368,14 @@ function zust_picker_html(string $bereich): string
 
     $o .= '<div class="wl-chips zust-liste zust-pers"' . ($modus === 'personen' ? '' : ' hidden') . '>';
     foreach (members_all() as $m) {
-        $o .= '<label class="wl-chk"><input type="checkbox" name="zust_pers[]" value="' . (int)$m['id'] . '"'
+        $o .= '<label class="wl-chk"><input type="checkbox" name="' . h($feld) . '_pers[]" value="' . (int)$m['id'] . '"'
             . (in_array((int)$m['id'], $pers, true) ? ' checked' : '') . '>'
             . '<span><i class="ti ti-check"></i>' . h(short_name((string)$m['name'])) . '</span></label>';
     }
     $o .= '</div>';
-    $o .= '<p class="small muted" style="margin:.45rem 0 0"><i class="ti ti-info-circle"></i> '
-        . 'Entweder <strong>Referate</strong> oder <strong>Personen</strong> – beim Umschalten wird die '
-        . 'vorherige Auswahl gelöscht. Vorsitz und Admin haben unabhängig davon immer Zugriff.</p>';
+    if ($hinweis !== '') {
+        $o .= '<p class="small muted" style="margin:.45rem 0 0"><i class="ti ti-info-circle"></i> ' . $hinweis . '</p>';
+    }
     return $o . '</div>';
 }
 
@@ -12245,13 +12320,15 @@ function basis_context(?array $eventScores = null): array
         $umlaufBallots[(int)$r['member_id']][(int)$r['vote_id']] = true;
     }
     // Abgeschlossene VERPFLICHTENDE Abstimmungen + wer (mind. eine Option) gekreuzt hat
-    $mpStmt = db()->prepare("SELECT id, deadline, closed_at,
+    $mpStmt = db()->prepare("SELECT id, deadline, closed_at, status, kreis, result_json,
                                     COALESCE(NULLIF(deadline, ''), closed_at, created_at) AS d FROM simple_polls
                              WHERE status = 'closed' AND mandatory = 1
                                AND date(COALESCE(NULLIF(deadline, ''), closed_at, created_at)) >= ?");
     $mpStmt->execute([$since]);
     $mandPolls = array_values(array_filter($mpStmt->fetchAll(),   // vorzeitig beendete zählen nicht, siehe oben
         fn($p) => !vote_closed_early((string)$p['deadline'], $p['closed_at'] ?? null)));
+    foreach ($mandPolls as &$mp) $mp['kreis_ids'] = poll_kreis_ids($mp);   // nur der Kreis war verpflichtet
+    unset($mp);
     $pollVotes = [];
     foreach (db()->query('SELECT DISTINCT o.poll_id, v.member_id FROM simple_poll_votes v JOIN simple_poll_options o ON o.id = v.option_id')->fetchAll() as $r) {
         $pollVotes[(int)$r['member_id']][(int)$r['poll_id']] = true;
@@ -12359,6 +12436,7 @@ function member_basis_breakdown(array $member, ?array $ctx = null): array
     $missedPoll = 0;
     foreach ($ctx['mand_polls'] ?? [] as $p) {
         if ($joined !== '' && substr((string)$p['d'], 0, 10) < $joined) continue;
+        if (($p['kreis_ids'] ?? null) !== null && !in_array($mid, $p['kreis_ids'], true)) continue;
         if (empty($ctx['poll_votes'][$mid][(int)$p['id']])) $missedPoll++;
     }
     if ($missedPoll > 0) $rows[] = ['reason' => 'An verpflichtender Abstimmung nicht teilgenommen (' . $missedPoll . '×)', 'points' => -$missedPoll];
@@ -13486,11 +13564,106 @@ function poll_options(int $pollId): array
 }
 
 /**
+ * Der Kreis einer Abstimmung: wer sie sieht, benachrichtigt wird und mitstimmt.
+ *
+ * Gespeichert in simple_polls.kreis: '' = alle aktiven Mitglieder, sonst JSON
+ * {"modus":"referate","refs":[…]} oder {"modus":"personen","ids":[…]} – dieselben zwei Wege wie
+ * bei den Zuständigkeiten. Solange die Abstimmung läuft, zählen nur aktive Mitglieder, bei
+ * Referaten die, die JETZT darin sind. poll_close() friert den Kreis mit dem Ergebnis ein.
+ * Rückgabe null = alle.
+ */
+function poll_kreis(array $p): ?array
+{
+    $k = json_decode((string)($p['kreis'] ?? ''), true);
+    if (!is_array($k)) return null;
+    if (($k['modus'] ?? '') === 'personen') {
+        $ids = array_values(array_unique(array_filter(array_map('intval', (array)($k['ids'] ?? [])), static fn ($i) => $i > 0)));
+        return $ids ? ['modus' => 'personen', 'ids' => $ids] : null;
+    }
+    if (($k['modus'] ?? '') === 'referate') {
+        $refs = array_values(array_unique(array_filter(array_map(static fn ($r) => trim((string)$r), (array)($k['refs'] ?? [])), static fn ($r) => $r !== '')));
+        return $refs ? ['modus' => 'referate', 'refs' => $refs] : null;
+    }
+    return null;
+}
+
+/** Formularwerte → Speicherform für simple_polls.kreis ('' bei „Alle" oder leerer Auswahl). */
+function poll_kreis_json(string $modus, array $refs, array $ids): string
+{
+    if ($modus === 'personen') {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn ($i) => $i > 0)));
+        return $ids ? json_encode(['modus' => 'personen', 'ids' => $ids]) : '';
+    }
+    if ($modus === 'referate') {
+        $refs = array_values(array_filter(array_unique(array_map(static fn ($r) => trim((string)$r), $refs)),
+            static fn ($r) => in_array($r, referate_list(), true)));
+        return $refs ? json_encode(['modus' => 'referate', 'refs' => $refs], JSON_UNESCAPED_UNICODE) : '';
+    }
+    return '';
+}
+
+/** Mitglieds-IDs des Kreises – null = alle aktiven Mitglieder. Beendete: der eingefrorene Kreis. */
+function poll_kreis_ids(array $p): ?array
+{
+    $k = poll_kreis($p);
+    if ($k === null) return null;
+    if ((string)($p['status'] ?? '') === 'closed') {
+        $snap = json_decode((string)($p['result_json'] ?? ''), true);
+        if (is_array($snap) && isset($snap['kreis']) && is_array($snap['kreis'])) return array_map('intval', $snap['kreis']);
+    }
+    $werte = $k['modus'] === 'personen' ? $k['ids'] : $k['refs'];
+    $ph = implode(',', array_fill(0, count($werte), '?'));
+    $st = db()->prepare('SELECT id FROM members WHERE active = 1 AND '
+        . ($k['modus'] === 'personen' ? 'id' : 'referat') . " IN ($ph)");
+    $st->execute($werte);
+    return array_map('intval', array_column($st->fetchAll(), 'id'));
+}
+
+/** Soll-Stimmen: so viele können abstimmen. */
+function poll_soll(array $p): int
+{
+    $ids = poll_kreis_ids($p);
+    return $ids === null ? active_member_count() : count($ids);
+}
+
+/** Darf dieses Mitglied abstimmen (gehört es zum Kreis)? */
+function poll_darf_stimmen(array $p, int $memberId): bool
+{
+    if ($memberId <= 0) return false;
+    $ids = poll_kreis_ids($p);
+    return $ids === null || in_array($memberId, $ids, true);
+}
+
+/** Darf dieses Mitglied die Abstimmung sehen? Der Kreis, dazu immer Ersteller:in und Admin. */
+function poll_sichtbar(array $p, ?array $me): bool
+{
+    if (poll_kreis($p) === null) return true;
+    if (!$me) return false;
+    if ((int)$p['created_by'] === (int)$me['id'] || !empty($me['is_admin'])) return true;
+    return poll_darf_stimmen($p, (int)$me['id']);
+}
+
+/** Der Kreis in Worten: „Referat Finanzen" / „Anna, Bea, Cleo" – '' bei allen. */
+function poll_kreis_text(array $p): string
+{
+    $k = poll_kreis($p);
+    if ($k === null) return '';
+    if ($k['modus'] === 'referate') return (count($k['refs']) === 1 ? 'Referat ' : 'Referate ') . implode(', ', $k['refs']);
+    $namen = [];
+    foreach (poll_kreis_ids($p) ?? [] as $mid) {
+        $m = member_get($mid);
+        if ($m) $namen[] = short_name((string)$m['name']);
+    }
+    return $namen ? implode(', ', $namen) : 'niemand mehr';
+}
+
+/**
  * Abstimmung anlegen (dürfen alle Mitglieder). $optionLabels = Antwortoptionen (min. 2).
  * Frist ist optional – bei verpflichtenden Abstimmungen aber Pflicht (sonst 0).
- * Benachrichtigt sofort alle anderen aktiven Mitglieder. Rückgabe: neue ID oder 0.
+ * $kreis aus poll_kreis_json() ('' = alle). Benachrichtigt sofort den Kreis (ohne die
+ * Ersteller:in). Rückgabe: neue ID oder 0.
  */
-function poll_create(int $creatorId, string $title, string $description, ?string $deadline, bool $secret, bool $multi, bool $mandatory, array $optionLabels): int
+function poll_create(int $creatorId, string $title, string $description, ?string $deadline, bool $secret, bool $multi, bool $mandatory, array $optionLabels, string $kreis = ''): int
 {
     $title = trim($title);
     $opts = [];
@@ -13498,10 +13671,10 @@ function poll_create(int $creatorId, string $title, string $description, ?string
     if ($creatorId <= 0 || $title === '' || count($opts) < 2) return 0;
     $deadline = trim((string)$deadline);
     if ($mandatory && $deadline === '') return 0; // verpflichtend braucht eine Frist (für Erinnerungen/Abschluss)
-    db()->prepare('INSERT INTO simple_polls(title, description, created_by, deadline, secret, multi, mandatory)
-                   VALUES(?,?,?,?,?,?,?)')
+    db()->prepare('INSERT INTO simple_polls(title, description, created_by, deadline, secret, multi, mandatory, kreis)
+                   VALUES(?,?,?,?,?,?,?,?)')
         ->execute([$title, trim($description), $creatorId, $deadline !== '' ? $deadline : null,
-                   $secret ? 1 : 0, $multi ? 1 : 0, $mandatory ? 1 : 0]);
+                   $secret ? 1 : 0, $multi ? 1 : 0, $mandatory ? 1 : 0, $kreis]);
     $id = (int)db()->lastInsertId();
     $ins = db()->prepare('INSERT INTO simple_poll_options(poll_id, label, sort) VALUES(?,?,?)');
     foreach ($opts as $i => $o) $ins->execute([$id, $o, $i]);
@@ -13553,7 +13726,7 @@ function poll_voter_ids(int $pollId): array
 function poll_vote(int $pollId, int $memberId, array $optionIds): bool
 {
     $p = poll_get($pollId);
-    if (!$p || $memberId <= 0 || !poll_open($p)) return false;
+    if (!$p || $memberId <= 0 || !poll_open($p) || !poll_darf_stimmen($p, $memberId)) return false;
     $valid = array_map(fn($o) => (int)$o['id'], poll_options($pollId));
     $picks = array_values(array_unique(array_filter(array_map('intval', $optionIds), fn($i) => in_array($i, $valid, true))));
     if (!$picks) return false;
@@ -13568,7 +13741,10 @@ function poll_vote(int $pollId, int $memberId, array $optionIds): bool
         ->execute([$memberId, $pollId]);
     $ins = db()->prepare('INSERT OR IGNORE INTO simple_poll_votes(option_id, member_id) VALUES(?,?)');
     foreach ($picks as $oid) $ins->execute([$oid, $memberId]);
-    if (!empty($p['mandatory']) && count(poll_voter_ids($pollId)) >= active_member_count()) {
+    $kreisIds = poll_kreis_ids($p);
+    $dabei = poll_voter_ids($pollId);
+    if ($kreisIds !== null) $dabei = array_intersect($dabei, $kreisIds);   // wer den Kreis inzwischen verlassen hat, zählt nicht
+    if (!empty($p['mandatory']) && count($dabei) >= poll_soll($p)) {
         poll_close($pollId); // alle haben abgestimmt → vorzeitiger Abschluss
     }
     return true;
@@ -13619,6 +13795,8 @@ function poll_close(int $id): bool
     $p = poll_get($id);
     if (!$p || (string)$p['status'] !== 'open') return false;
     $snap = poll_results($id); // Zählung VOR dem Schließen einfrieren (Status ist noch 'open' → live gezählt)
+    $kreisIds = poll_kreis_ids($p);
+    if ($kreisIds !== null) $snap['kreis'] = $kreisIds;   // der Kreis von JETZT – später wechseln Referate
     $upd = db()->prepare("UPDATE simple_polls SET status = 'closed', closed_at = datetime('now','localtime'),
                           result_json = ? WHERE id = ? AND status = 'open'");
     $upd->execute([json_encode($snap), $id]);
@@ -13633,8 +13811,9 @@ function poll_close(int $id): bool
         }
         $body = 'Abstimmung „' . $p['title'] . '" ist abgeschlossen. Vorn: '
             . implode(' / ', $top) . ' (' . $topN . ' Stimme(n), Beteiligung ' . $res['voters'] . ' von '
-            . active_member_count() . '). Details: ' . app_url('umlauf.php?poll=' . $id);
+            . ($kreisIds === null ? active_member_count() : count($kreisIds)) . '). Details: ' . app_url('umlauf.php?poll=' . $id);
         foreach (members_all() as $m) {
+            if ($kreisIds !== null && !in_array((int)$m['id'], $kreisIds, true) && (int)$m['id'] !== (int)$p['created_by']) continue;
             try {
                 dm_send((int)$m['id'], 'Abstimmung 🗳️', $body, null,
                     notify_pref((int)$m['id'], 'umlauf_result')['mail'], true, 'umlauf_result');
@@ -13676,7 +13855,7 @@ function poll_pending_for_member(int $memberId): array
                                          WHERE o.poll_id = p.id AND v.member_id = ?)
                          ORDER BY p.deadline, p.id");
     $st->execute([$memberId]);
-    foreach ($st->fetchAll() as $p) if (poll_open($p)) $out[] = $p;
+    foreach ($st->fetchAll() as $p) if (poll_open($p) && poll_darf_stimmen($p, $memberId)) $out[] = $p;
     return $out;
 }
 
@@ -13695,7 +13874,7 @@ function poll_optional_for_member(int $memberId): array
                          AND NOT EXISTS (SELECT 1 FROM poll_hides h WHERE h.poll_id = p.id AND h.member_id = ?)
                          ORDER BY p.deadline IS NULL OR p.deadline = '', p.deadline, p.id");
     $st->execute([$memberId, $memberId]);
-    foreach ($st->fetchAll() as $p) if (poll_open($p)) $out[] = $p;
+    foreach ($st->fetchAll() as $p) if (poll_open($p) && poll_darf_stimmen($p, $memberId)) $out[] = $p;
     return $out;
 }
 
@@ -13706,7 +13885,7 @@ function poll_hide_for_member(int $pollId, int $memberId): void
     db()->prepare('INSERT OR IGNORE INTO poll_hides(poll_id, member_id) VALUES(?,?)')->execute([$pollId, $memberId]);
 }
 
-/** "Neue Abstimmung" an alle anderen aktiven Mitglieder (Dashboard + Push, Mail je nach Register). */
+/** "Neue Abstimmung" an den Kreis ohne die Ersteller:in (Dashboard + Push, Mail je nach Register). */
 function poll_notify_new(array $p): int
 {
     $creator = member_get((int)$p['created_by']);
@@ -13716,7 +13895,7 @@ function poll_notify_new(array $p): int
         . ' gestartet: „' . $p['title'] . '". Bitte stimme' . $frist . ' ab: ' . app_url('umlauf.php?poll=' . (int)$p['id']);
     $n = 0;
     foreach (members_all() as $m) {
-        if ((int)$m['id'] === (int)$p['created_by']) continue;
+        if ((int)$m['id'] === (int)$p['created_by'] || !poll_darf_stimmen($p, (int)$m['id'])) continue;
         try {
             if (dm_send((int)$m['id'], 'Abstimmung 🗳️', $body, null,
                 notify_pref((int)$m['id'], 'poll_new')['mail'], true, 'poll_new')) $n++;
@@ -13738,9 +13917,11 @@ function poll_send_reminders(bool $dryRun = false): int
         $daysLeft = days_until_d(substr((string)$p['deadline'], 0, 10));
         $url = app_url('umlauf.php?poll=' . (int)$p['id']);
         $voted = poll_voter_ids((int)$p['id']);
+        $kreisIds = poll_kreis_ids($p);
         foreach (members_all() as $m) {
             $mid = (int)$m['id'];
             if (in_array($mid, $voted, true)) continue;
+            if ($kreisIds !== null && !in_array($mid, $kreisIds, true)) continue; // nicht im Kreis
             if ($daysLeft > notify_pref($mid, 'umlauf_reminder')['timing']) continue;
             $chk = db()->prepare('SELECT 1 FROM poll_reminder_log WHERE poll_id=? AND member_id=? AND sent_on=?');
             $chk->execute([(int)$p['id'], $mid, $today]);

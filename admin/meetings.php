@@ -226,12 +226,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'cancel') {
         $id = (int)($_POST['id'] ?? 0);
-        db()->prepare('UPDATE meetings SET cancelled = 1 - cancelled WHERE id=?')->execute([$id]);
-        protocol_sync_pending_votes(); // abgesagt: wartende Protokoll-Abstimmung in die nächste Sitzung
-        $stA = db()->prepare('SELECT * FROM meetings WHERE id = ?'); $stA->execute([$id]); $mA = $stA->fetch();
-        if ($mA && !empty($mA['cancelled'])) {
+        // Absagen, Protokoll-Abgleich und Weitergabe als EIN Vorgang (db_atomar): Sonst könnte ein
+        // gleichzeitiger Seitenaufruf ihn mittendrin abbrechen und eine halb verschobene Sitzung hinterlassen.
+        [$mA, $weiter] = db_atomar(function () use ($id) {
+            db()->prepare('UPDATE meetings SET cancelled = 1 - cancelled WHERE id=?')->execute([$id]);
+            protocol_sync_pending_votes(); // abgesagt: wartende Protokoll-Abstimmung in die nächste Sitzung
+            $stA = db()->prepare('SELECT * FROM meetings WHERE id = ?'); $stA->execute([$id]); $mA = $stA->fetch();
+            $stA->closeCursor();
             // Eine abgesagte Sitzung findet nicht statt – ihre Inhalte gehen weiter wie beim Löschen.
-            flash('Sitzung abgesagt.' . carry_over_message(meeting_carry_over($mA)), 'success');
+            return [$mA, ($mA && !empty($mA['cancelled'])) ? meeting_carry_over($mA) : null];
+        });
+        if ($mA && !empty($mA['cancelled'])) {
+            flash('Sitzung abgesagt.' . carry_over_message($weiter ?? []), 'success');
         } else {
             flash('Absage zurückgenommen.', 'success');
             meeting_parked_flash(); // Weitergereichtes rückt in die wieder stattfindende Sitzung zurück

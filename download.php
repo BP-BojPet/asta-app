@@ -89,6 +89,15 @@ if (isset($_GET['efile'])) {
     }
 }
 
+// Anhänge einer Abstimmung mit eingeschränktem Kreis: nur, wer die Abstimmung auch sieht
+if (isset($_GET['ufile']) && (string)$f['kind'] === 'poll') {
+    $pollF = poll_get((int)$f['ref_id']);
+    if ($pollF && !poll_sichtbar($pollF, current_member())) {
+        http_response_code(403);
+        exit('Keine Berechtigung für diesen Anhang.');
+    }
+}
+
 $path = upload_dir() . '/' . basename((string)$f['stored_name']); // basename schützt vor Pfad-Tricks
 if (!is_file($path)) { http_response_code(404); exit('Datei ist nicht mehr vorhanden.'); }
 

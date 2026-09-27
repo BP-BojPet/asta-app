@@ -59,13 +59,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $mandatory = ($_POST['binding'] ?? '') === 'mandatory';
         if ($deadline !== null && $deadline !== '' && $deadline <= date('Y-m-d H:i')) { flash('Die Frist muss in der Zukunft liegen.', 'error'); redirect('umlauf.php#neu'); }
         if ($mandatory && !$deadline) { flash('Verpflichtende Abstimmungen brauchen eine Frist.', 'error'); redirect('umlauf.php#neu'); }
+        $kModus = (string)($_POST['kreis_modus'] ?? 'alle');
+        $kreis = poll_kreis_json($kModus, (array)($_POST['kreis_ref'] ?? []), (array)($_POST['kreis_pers'] ?? []));
+        if ($kModus !== 'alle' && ($kreis === '' || !poll_kreis_ids(['kreis' => $kreis]))) {
+            flash($kModus === 'personen' ? 'Bitte mindestens eine Person für den Kreis ankreuzen.'
+                                         : 'In den gewählten Referaten ist niemand – bitte andere Referate oder Personen wählen.', 'error');
+            redirect('umlauf.php#neu');
+        }
         $optLines = preg_split('/\r\n|\r|\n/', (string)($_POST['options'] ?? ''));
         $nid = poll_create($meId, (string)($_POST['title'] ?? ''), (string)($_POST['description'] ?? ''),
             $deadline, ($_POST['visibility'] ?? '') === 'secret', ($_POST['mode'] ?? '') === 'multi',
-            $mandatory, $optLines ?: []);
+            $mandatory, $optLines ?: [], $kreis);
         if ($nid) {
             umlauf_handle_doc_uploads('poll', $nid, $meId);
-            flash('Abstimmung gestartet – alle Mitglieder wurden benachrichtigt.', 'success');
+            flash('Abstimmung gestartet – ' . ($kreis === '' ? 'alle Mitglieder wurden' : 'der Kreis wurde') . ' benachrichtigt.', 'success');
             redirect('umlauf.php?poll=' . $nid);
         }
         flash('Bitte einen Titel und mindestens zwei Antwortoptionen (eine pro Zeile) angeben.', 'error');
@@ -204,12 +211,15 @@ $ufileBlock = function (string $fkind, int $rid, bool $canEdit) {
 // ---------------------------------------------------------------- Detail: Abstimmung
 if ($pollId) {
     $p = poll_get($pollId);
-    if (!$p) { http_response_code(404); page_header('Nicht gefunden'); echo '<p>Abstimmung nicht gefunden.</p>'; page_footer(); exit; }
+    if (!$p || !poll_sichtbar($p, $me)) { http_response_code(404); page_header('Nicht gefunden'); echo '<p>Abstimmung nicht gefunden.</p>'; page_footer(); exit; }
     $open = poll_open($p);
     $secret = !empty($p['secret']);
     $multi = !empty($p['multi']);
     $mandatory = !empty($p['mandatory']);
     $canManage = poll_can_manage($p, $me);
+    $darf = poll_darf_stimmen($p, $meId);
+    $soll = poll_soll($p);
+    $kreisText = poll_kreis_text($p);
     $options = poll_options($pollId);
     $res = poll_results($pollId);
     $mine = $meId ? poll_my_votes($pollId, $meId) : [];
@@ -233,7 +243,8 @@ if ($pollId) {
       </div>
       <div class="event-facts">
         <?php if (trim((string)($p['deadline'] ?? '')) !== ''): ?><span class="fact<?= $open ? ' fact-accent' : '' ?>"><i class="ti ti-clock"></i> Abstimmen bis <?= h(fmt_slot((string)$p['deadline'], null)) ?></span><?php endif; ?>
-        <span class="fact"><i class="ti ti-users"></i> <?= $res['voters'] ?> von <?= max($res['voters'], $activeN) ?> haben abgestimmt</span>
+        <span class="fact"><i class="ti ti-users"></i> <?= $res['voters'] ?> von <?= max($res['voters'], $soll) ?> haben abgestimmt</span>
+        <?php if ($kreisText !== ''): ?><span class="fact"><i class="ti ti-users-group"></i> nur <?= h($kreisText) ?></span><?php endif; ?>
         <span class="fact"><i class="ti ti-<?= $multi ? 'checklist' : 'circle-dot' ?>"></i> <?= $multi ? 'Mehrfachauswahl' : 'eine Option' ?></span>
         <span class="fact"><i class="ti ti-<?= $secret ? 'eye-off' : 'eye' ?>"></i> <?= $secret ? 'geheim' : 'namentlich' ?></span>
         <span class="fact"><i class="ti ti-<?= $mandatory ? 'alert-triangle' : 'feather' ?>"></i> <?= $mandatory ? 'verpflichtend' : 'freiwillig' ?></span>
@@ -244,12 +255,14 @@ if ($pollId) {
 
     <?php $ufileBlock('poll', $pollId, $canManage); ?>
 
-    <?php if ($me && $open && $mandatory && !$mine): ?>
+    <?php if ($me && $open && $mandatory && !$mine && $darf): ?>
       <div class="attention" style="margin-bottom:1rem"><div class="section-title" style="margin-top:0"><i class="ti ti-alert-triangle"></i> Bitte abstimmen</div>
-      <p class="note small" style="margin:0">Diese Abstimmung ist <strong>für alle verpflichtend</strong> – gib unten deine Stimme ab<?= trim((string)($p['deadline'] ?? '')) !== '' ? ' (bis ' . h(fmt_slot((string)$p['deadline'], null)) . ')' : '' ?>. Du kannst sie bis zum Abschluss jederzeit ändern.</p></div>
+      <p class="note small" style="margin:0">Diese Abstimmung ist <strong><?= $kreisText !== '' ? 'für dich' : 'für alle' ?> verpflichtend</strong> – gib unten deine Stimme ab<?= trim((string)($p['deadline'] ?? '')) !== '' ? ' (bis ' . h(fmt_slot((string)$p['deadline'], null)) . ')' : '' ?>. Du kannst sie bis zum Abschluss jederzeit ändern.</p></div>
     <?php endif; ?>
 
-    <?php if ($me && $open): ?>
+    <?php if ($me && $open && !$darf): ?>
+      <p class="small muted"><i class="ti ti-users-group"></i> Du gehörst nicht zum Kreis dieser Abstimmung – du siehst sie, weil du sie gestartet hast oder Admin bist.</p>
+    <?php elseif ($me && $open): ?>
       <div class="section-title" id="abstimmen"><i class="ti ti-checkbox"></i> Deine Stimme <span class="muted small" style="font-weight:400">– <?= $multi ? 'mehrere Optionen möglich' : 'genau eine Option' ?></span></div>
       <div class="card">
         <form method="post">
@@ -269,7 +282,7 @@ if ($pollId) {
     <div class="section-title" id="ergebnis"><i class="ti ti-chart-bar"></i> <?= (string)$p['status'] === 'closed' ? 'Ergebnis' : 'Zwischenstand' ?></div>
     <div class="card">
       <?php if ($hideTally): ?>
-        <p class="small" style="margin:0"><i class="ti ti-eye-off" style="color:var(--petrol)"></i> Geheime Abstimmung: Der Zwischenstand bleibt bis zum Abschluss verborgen. Bisher haben <strong><?= $res['voters'] ?> von <?= max($res['voters'], $activeN) ?></strong> abgestimmt.</p>
+        <p class="small" style="margin:0"><i class="ti ti-eye-off" style="color:var(--petrol)"></i> Geheime Abstimmung: Der Zwischenstand bleibt bis zum Abschluss verborgen. Bisher haben <strong><?= $res['voters'] ?> von <?= max($res['voters'], $soll) ?></strong> abgestimmt.</p>
       <?php else: ?>
         <ul class="poll-results">
           <?php foreach ($options as $o): $oid = (int)$o['id']; $n = $res['counts'][$oid] ?? 0;
@@ -286,7 +299,7 @@ if ($pollId) {
             </li>
           <?php endforeach; ?>
         </ul>
-        <p class="small muted" style="margin:.4rem 0 0">Beteiligung: <?= $res['voters'] ?> von <?= max($res['voters'], $activeN) ?><?= $multi ? ' · Mehrfachauswahl (Stimmen können sich auf mehrere Optionen verteilen)' : '' ?></p>
+        <p class="small muted" style="margin:.4rem 0 0">Beteiligung: <?= $res['voters'] ?> von <?= max($res['voters'], $soll) ?><?= $multi ? ' · Mehrfachauswahl (Stimmen können sich auf mehrere Optionen verteilen)' : '' ?></p>
       <?php endif; ?>
     </div>
 
@@ -440,7 +453,7 @@ if ($id) {
 $all = umlauf_all();
 $openList = array_values(array_filter($all, fn($u) => (string)$u['status'] === 'open'));
 $doneList = array_values(array_filter($all, fn($u) => (string)$u['status'] !== 'open'));
-$allPolls = poll_all();
+$allPolls = array_values(array_filter(poll_all(), fn($p) => poll_sichtbar($p, $me))); // eingeschränkte nur für ihren Kreis
 $openPolls = array_values(array_filter($allPolls, fn($p) => (string)$p['status'] === 'open'));
 $donePolls = array_values(array_filter($allPolls, fn($p) => (string)$p['status'] !== 'open'));
 
@@ -479,10 +492,10 @@ page_header('Abstimmungen & Umlaufverfahren');
       <div class="hero-head" style="align-items:flex-start">
         <h3 style="margin:.1rem 0;font-size:1.05rem"><a class="tl-stretch" href="umlauf.php?poll=<?= (int)$p['id'] ?>" style="text-decoration:none;color:var(--ink)"><?= h($p['title']) ?></a></h3>
         <?php if ($mineP): ?><span class="pill pill-ok"><i class="ti ti-check"></i> abgestimmt</span>
-        <?php elseif (!empty($p['mandatory'])): ?><span class="pill pill-important"><i class="ti ti-alert-triangle"></i> Stimme fehlt</span><?php endif; ?>
+        <?php elseif (!empty($p['mandatory']) && poll_darf_stimmen($p, $meId)): ?><span class="pill pill-important"><i class="ti ti-alert-triangle"></i> Stimme fehlt</span><?php endif; ?>
       </div>
-      <p class="small muted" style="margin:.2rem 0 .5rem"><?php if (trim((string)($p['deadline'] ?? '')) !== ''): ?><i class="ti ti-clock"></i> bis <?= h(fmt_slot((string)$p['deadline'], null)) ?> · <?php endif; ?><i class="ti ti-users"></i> <?= $res['voters'] ?>/<?= max($res['voters'], $activeN) ?> · <?= empty($p['secret']) ? 'namentlich' : 'geheim' ?> · <?= empty($p['multi']) ? 'eine Option' : 'Mehrfachauswahl' ?> · <?= empty($p['mandatory']) ? 'freiwillig' : 'verpflichtend' ?></p>
-      <a class="btn small" href="umlauf.php?poll=<?= (int)$p['id'] ?>"><i class="ti ti-checkbox"></i> <?= $mineP ? 'Ansehen / Stimme ändern' : 'Jetzt abstimmen' ?></a>
+      <p class="small muted" style="margin:.2rem 0 .5rem"><?php if (trim((string)($p['deadline'] ?? '')) !== ''): ?><i class="ti ti-clock"></i> bis <?= h(fmt_slot((string)$p['deadline'], null)) ?> · <?php endif; ?><i class="ti ti-users"></i> <?= $res['voters'] ?>/<?= max($res['voters'], poll_soll($p)) ?> · <?= empty($p['secret']) ? 'namentlich' : 'geheim' ?> · <?= empty($p['multi']) ? 'eine Option' : 'Mehrfachauswahl' ?> · <?= empty($p['mandatory']) ? 'freiwillig' : 'verpflichtend' ?><?= poll_kreis($p) !== null ? ' · <i class="ti ti-users-group"></i> nur ' . h(poll_kreis_text($p)) : '' ?></p>
+      <a class="btn small" href="umlauf.php?poll=<?= (int)$p['id'] ?>"><i class="ti ti-checkbox"></i> <?= $mineP ? 'Ansehen / Stimme ändern' : (poll_darf_stimmen($p, $meId) ? 'Jetzt abstimmen' : 'Ansehen') ?></a>
     </div>
   <?php endforeach; ?>
 <?php endif; ?>
@@ -498,7 +511,7 @@ page_header('Abstimmungen & Umlaufverfahren');
 
 <dialog id="dlgPoll" class="fb-modal fb-form">
   <div class="fb-form-head"><h3><i class="ti ti-list-check" style="color:var(--petrol)"></i> Neue Abstimmung</h3><button type="button" class="fb-x" onclick="this.closest('dialog').close()" aria-label="Schließen"><i class="ti ti-x"></i></button></div>
-  <p class="small muted" style="margin-top:0">Für alles, was kein förmlicher Beschluss sein muss – vom Sommerfest-Motto bis zur Meinungsabfrage. <strong>Alle Mitglieder</strong> werden beim Start benachrichtigt.</p>
+  <p class="small muted" style="margin-top:0">Für alles, was kein förmlicher Beschluss sein muss – vom Sommerfest-Motto bis zur Meinungsabfrage. Beim Start wird benachrichtigt, wer abstimmen darf.</p>
   <form method="post" enctype="multipart/form-data">
     <?= csrf_field() ?><input type="hidden" name="action" value="poll_create">
     <label for="p_title">Frage / Titel</label>
@@ -519,6 +532,14 @@ page_header('Abstimmungen & Umlaufverfahren');
       <label><input type="radio" name="visibility" value="open" checked><span class="s-yes">Namentlich</span></label>
       <label><input type="radio" name="visibility" value="secret"><span class="s-maybe">Geheim</span></label>
     </span>
+    <details style="margin-top:.8rem">
+      <summary style="cursor:pointer;font-weight:600"><i class="ti ti-users-group"></i> Teilnehmer begrenzen <span class="muted small" style="font-weight:400">– sonst stimmen alle ab</span></summary>
+      <div style="margin-top:.5rem">
+      <?= wahl_picker_html('kreis', 'alle', [], $meId ? [$meId] : [],
+          ['alle' => ['ti-users-group', 'Alle'], 'referate' => ['ti-list-numbers', 'Referate'], 'personen' => ['ti-users', 'Personen']],
+          'Bei <strong>Referaten</strong> oder <strong>Personen</strong> sieht nur dieser Kreis die Abstimmung, wird benachrichtigt und kann abstimmen. Du und Admins seht sie immer.') ?>
+      </div>
+    </details>
     <label style="margin-top:.8rem">Verbindlichkeit</label>
     <span class="statuspick">
       <label><input type="radio" name="binding" value="optional" checked><span class="s-yes">Freiwillig</span></label>
