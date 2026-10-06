@@ -37,6 +37,7 @@ require_once __DIR__ . '/brand-core.php';
 
 // Gemeinsames Mail-Konto aller Bereiche (eigenständig, ohne lib.php).
 require_once __DIR__ . '/mail-pool.php';
+require_once __DIR__ . '/mail-rahmen.php';
 // Gemeinsamer Grafik-Bausatz (eigenständig, ohne lib.php).
 require_once __DIR__ . '/chart-core.php';
 
@@ -65,6 +66,7 @@ function umfrage_db(): PDO
     $pdo->exec('PRAGMA journal_mode = WAL');
     $pdo->exec('PRAGMA busy_timeout = 4000');
     umfrage_schema($pdo);
+    umfrage_bild_schutz();
     return $pdo;
 }
 
@@ -401,6 +403,7 @@ function umfrage_mail(string $to, string $subject, string $body): bool
         'X-Mailer: AStA-App',
         'Auto-Submitted: auto-generated',
     ];
+    [$headers, $body] = mail_rahmen_verpacken($headers, $body, $name); // Aussehen wie alle App-Mails (mail-rahmen.php)
     return @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $body, implode("\r\n", $headers));
 }
 
@@ -1360,6 +1363,38 @@ const UMFRAGE_BILD_MAX_BYTES = 12582912;   // 12 MB Rohdatei – nach dem Rechne
 function umfrage_bild_dir(): string { return __DIR__ . '/umfrage/bilder'; }
 
 /**
+ * Schutzdatei des Bilder-Ordners. Der Ordner MUSS öffentlich lesbar sein – die Bilder werden
+ * ja ausgeliefert –, aber eben NUR die Bilder: Alles außer .jpg ist gesperrt, auch falls je
+ * etwas anderes hineingerät.
+ *
+ * KEIN `php_flag engine off`: Mittwald betreibt PHP als FPM, dort ist php_flag in .htaccess
+ * verboten, und der Server beantwortet dann JEDE Anfrage in diesem Ordner mit 500 – die Bilder
+ * sind kaputt, in der Vorschau wie in der fertigen Umfrage. Die Sperre per Endung erledigt
+ * dasselbe, ohne PHP-Einstellungen anzufassen.
+ *
+ * Steht dort eine andere Fassung (etwa die alte mit php_flag), wird sie ersetzt. Läuft beim
+ * Verbindungsaufbau mit, damit ein schon kaputter Ordner ohne neuen Upload heilt.
+ */
+const UMFRAGE_BILD_HTACCESS = "# Bilder zu Umfrage-Fragen: ausgeliefert werden nur JPEGs, alles andere ist gesperrt.\n"
+    . "# KEIN php_flag – unter PHP-FPM (Mittwald) bricht das jede Anfrage in diesem Ordner mit 500 ab.\n"
+    . "Options -Indexes\n"
+    . "<IfModule mod_authz_core.c>\n"
+    . "    Require all denied\n"
+    . "    <FilesMatch \"\\.jpe?g$\">\n"
+    . "        Require all granted\n"
+    . "    </FilesMatch>\n"
+    . "</IfModule>\n";
+
+function umfrage_bild_schutz(): void
+{
+    $dir = umfrage_bild_dir();
+    if (!is_dir($dir)) return;                      // gibt es erst mit dem ersten Bild
+    $f = $dir . '/.htaccess';
+    if (is_file($f) && (string)@file_get_contents($f) === UMFRAGE_BILD_HTACCESS) return;
+    @file_put_contents($f, UMFRAGE_BILD_HTACCESS);
+}
+
+/**
  * Geheimer Vorschau-Link: zeigt auch den ENTWURF, damit man den fertigen Bogen einmal
  * durchklicken kann, bevor er an die Hochschule geht. Das Token wird bei Bedarf nachgelegt
  * (Umfragen von vor dieser Funktion haben noch keins) und lässt sich neu würfeln, falls der
@@ -1412,13 +1447,7 @@ function umfrage_bild_speichern(array $file, ?string &$err = null): string
     }
     $dir = umfrage_bild_dir();
     if (!is_dir($dir) && !@mkdir($dir, 0775, true)) { $err = 'Der Bilder-Ordner lässt sich nicht anlegen.'; return ''; }
-    // Der Ordner MUSS öffentlich lesbar sein – die Bilder werden ja ausgeliefert. Ausgeführt
-    // werden darf dort nichts: Wir legen nur fertig gerechnete JPEGs ab, aber falls doch je
-    // etwas anderes hineingerät, soll der Server es als Datei behandeln und nicht als Programm.
-    if (!is_file($dir . '/.htaccess')) {
-        @file_put_contents($dir . '/.htaccess',
-            "php_flag engine off\n<FilesMatch \"\\.(php|phtml|phar|cgi|pl)$\">\n  Require all denied\n</FilesMatch>\n");
-    }
+    umfrage_bild_schutz();
     $name = 'f' . date('Ymd') . '-' . bin2hex(random_bytes(6)) . '.jpg';
     if (!umfrage_bild_rechnen($tmp, $dir . '/' . $name, (string)$g['mime'])) {
         @unlink($dir . '/' . $name);

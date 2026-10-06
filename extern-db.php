@@ -24,6 +24,7 @@ require_once __DIR__ . '/brand-core.php';
 
 // Gemeinsames Mail-Konto aller Bereiche (eigenständig, ohne lib.php).
 require_once __DIR__ . '/mail-pool.php';
+require_once __DIR__ . '/mail-rahmen.php';
 // Gemeinsamer Grafik-Bausatz (eigenständig, ohne lib.php) – für die Teilnahme-Ansicht.
 require_once __DIR__ . '/chart-core.php';
 
@@ -810,6 +811,7 @@ function extern_mail(string $to, string $subject, string $body): bool
         'X-Mailer: AStA-App',
         'Auto-Submitted: auto-generated',
     ];
+    [$headers, $body] = mail_rahmen_verpacken($headers, $body, $name); // Aussehen wie alle App-Mails (mail-rahmen.php)
     return @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $body, implode("\r\n", $headers));
 }
 

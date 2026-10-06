@@ -41,6 +41,7 @@ require_once __DIR__ . '/brand-core.php';
 
 // Gemeinsames Mail-Konto aller Bereiche (eigenständig, ohne lib.php).
 require_once __DIR__ . '/mail-pool.php';
+require_once __DIR__ . '/mail-rahmen.php';
 
 /*
  * Der Pfad ist überschreibbar, damit Prüfläufe NIEMALS die echte Datei anfassen: Wer vorher
@@ -1164,6 +1165,7 @@ function tplan_mail(string $to, string $subject, string $body): bool
         'X-Mailer: AStA-App',
         'Auto-Submitted: auto-generated',
     ];
+    [$headers, $body] = mail_rahmen_verpacken($headers, $body, $name); // Aussehen wie alle App-Mails (mail-rahmen.php)
     $ok = @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $body, implode("\r\n", $headers));
     if ($ok) mail_pool_note('termin');
     return (bool)$ok;

@@ -158,7 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($to === '') {
             flash('Testmail braucht ein persönliches Konto mit E-Mail-Adresse.', 'error');
         } else {
-            $ok = send_mail($to, 'Testmail aus der AStA-App', "Hallo,\n\nwenn du das liest, funktioniert der Mailversand der App.\n\n(ausgelöst über Verwaltung → Diagnose)", false);
+            $ok = send_mail($to, 'Testmail aus der AStA-App', "Hallo,\n\nwenn du das liest, funktioniert der Mailversand der App. So sehen alle Mails der App aus.\n\nZur App:\n" . app_url('dashboard.php') . "\n\n(ausgelöst über Verwaltung → Diagnose)", false);
             flash($ok ? 'Testmail an ' . $to . ' übergeben – prüfe dein Postfach (ggf. Spam).'
                       : 'Mailversand fehlgeschlagen – Mail-Konfiguration prüfen.', $ok ? 'success' : 'error');
         }
@@ -622,6 +622,32 @@ if ($doTest) {
         // Ein hochgeladener Name darf nie in einen Pfad geraten.
         st_expect(umfrage_bild_url('../../lib.php') === 'bilder/lib.php' && umfrage_bild_url('') === '',
             'umfrage_bild_url() lässt Pfad-Anteile durch');
+        // Der Bilder-Ordner muss ausliefern: php_flag/php_value in einer .htaccess beantwortet unter
+        // PHP-FPM (Mittwald) JEDE Anfrage dort mit 500 – so waren alle Fragen-Bilder kaputt.
+        st_expect(!preg_match('~php_(flag|value)\s+\w+\s+\S~', UMFRAGE_BILD_HTACCESS)
+            && str_contains(UMFRAGE_BILD_HTACCESS, 'Require all denied') && str_contains(UMFRAGE_BILD_HTACCESS, '\.jpe?g$'),
+            'Die Schutzdatei der Umfrage-Bilder enthält php_flag (500 bei Mittwald) oder sperrt nicht mehr alles außer JPEG');
+        $bildHt = umfrage_bild_dir() . '/.htaccess';
+        st_expect(!is_dir(umfrage_bild_dir()) || (string)@file_get_contents($bildHt) === UMFRAGE_BILD_HTACCESS,
+            'umfrage/bilder/.htaccess ist nicht die aktuelle Fassung – Bilder kommen womöglich als Fehler 500');
+        // Und nirgends sonst: Quelltext ohne Kommentare und alle .htaccess durchsuchen.
+        $phpDirektive = [];
+        $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(dirname(__DIR__), FilesystemIterator::SKIP_DOTS));
+        foreach ($it as $f) {
+            $pfad = $f->getPathname();
+            if (str_contains($pfad, '/.git/') || str_contains($pfad, '/data/')) continue;
+            $name = $f->getFilename();
+            if ($name === '.htaccess') $inhalt = (string)file_get_contents($pfad);
+            elseif (str_ends_with($name, '.php')) {
+                $inhalt = '';
+                foreach (token_get_all((string)file_get_contents($pfad)) as $tok) {
+                    if (is_array($tok) && in_array($tok[0], [T_COMMENT, T_DOC_COMMENT], true)) continue;
+                    $inhalt .= is_array($tok) ? $tok[1] : $tok;
+                }
+            } else continue;
+            if (preg_match('~php_(flag|value)\s+\w+\s+(on|off|\d)~i', $inhalt)) $phpDirektive[] = basename($pfad);
+        }
+        st_expect(!$phpDirektive, 'php_flag/php_value (500 bei Mittwald) in: ' . implode(', ', $phpDirektive));
 
         // --- Englische Fassung: nur wenn gepflegt, sonst Rückfall auf Deutsch ---
         st_expect(um_feld(['title' => 'De', 'title_en' => 'En'], 'title', 'en') === 'En'
@@ -4467,6 +4493,47 @@ if ($doTest) {
                 || extern_mail_budget() === mail_pool_budget('extern', extern_mail_cap_day()),
                 'Ohne Stundenbremse darf sie das Kontingent der externen Events nicht kürzen');
         }
+    });
+    $run('Mail-Rahmen: jede Mail mit Aussehen und Textfassung', function () {
+        $wurzel = dirname(__DIR__);
+        $src = (string)@file_get_contents($wurzel . '/mail-rahmen.php');
+        st_expect($src !== '' && !str_contains($src, '/lib.php'), 'mail-rahmen.php fehlt oder bindet die lib.php ein – der öffentliche Bereich darf sie nie laden');
+        $t = mail_rahmen_bauen("Hallo Test,\n\nKurz <b>&</b> **wichtig**.\n\nHier eintragen:\nhttps://example.org/x?a=1&b=2\n\nA1B2-C3D4", false,
+            ['name' => 'Probe', 'logo' => '', 'basis' => '']);
+        st_expect(str_starts_with($t['text'], 'Hallo Test,'), 'die Textfassung ist nicht mehr der Mailtext selbst');
+        st_expect(str_contains($t['html'], '&lt;b&gt;&amp;&lt;/b&gt;') && str_contains($t['html'], '<strong>wichtig</strong>'),
+            'Mailtext landet unmaskiert im HTML (oder **fett** wirkt nicht)');
+        st_expect(preg_match('~<a href="https://example\.org/x\?a=1&amp;b=2"[^>]*>Hier eintragen ~', $t['html']) === 1,
+            'ein Link allein auf seiner Zeile wird kein Knopf mit der Zeile darüber als Aufschrift');
+        st_expect(preg_match('~class="mr-code"[^>]*><span style="[^"]*user-select:all[^"]*">A1B2-C3D4<~', $t['html']) === 1,
+            'der Login-Code bekommt keinen eigenen Kasten (oder lässt sich nicht mehr mit einem Tipp ganz markieren)');
+        [$typ, $rumpf] = mail_rahmen_mime($t['text'], $t['html']);
+        $laengste = max(array_map('strlen', explode("\r\n", $rumpf)));
+        st_expect(str_contains($typ, 'multipart/alternative') && substr_count($rumpf, 'Content-Type: text/') === 2 && $laengste <= 998,
+            'Mail geht nicht als Text + HTML raus (oder eine Zeile sprengt die SMTP-Grenze)');
+        // Alle Wege, auf denen verschickt wird: send_mail() und jede eigene @mail()-Stelle.
+        $lib = (string)@file_get_contents($wurzel . '/lib.php');
+        st_expect(preg_match('~function send_mail\(.*?mail_rahmen_bauen\(.*?@mail\(\$to, \$subjectEnc, \$rumpf~s', $lib) === 1,
+            'send_mail() verschickt ohne den Mail-Rahmen');
+        $stellen = 0;
+        foreach (glob($wurzel . '/*.php') ?: [] as $f) {
+            $c = (string)file_get_contents($f);
+            if (!preg_match('~@mail\(~', $c) || in_array(basename($f), ['lib.php', 'mail-rahmen.php'], true)) continue;
+            $stellen++;
+            // was.läuft tritt mit eigener Marke auf und verschickt bewusst ohne den Rahmen des Trägers.
+            if (basename($f) === 'wl-db.php') continue;
+            st_expect(str_contains($c, 'mail_rahmen_verpacken('), basename($f) . ' verschickt Mails ohne den Mail-Rahmen');
+        }
+        st_expect($stellen >= 3, 'die eigenen Versandstellen (Terminplaner, Umfragen, externe Events) wurden nicht gefunden');
+        // Die Testmail unter jeder Vorlage braucht für JEDEN Platzhalter einen Beispielwert – sonst
+        // steht in der Testmail „{{…}}", und niemand weiß, ob die echte Mail genauso aussieht.
+        $beispiel = mail_tpl_beispiel(null);
+        foreach (mail_templates() as $k => $tpl) {
+            foreach (array_keys($tpl['vars']) as $ph) {
+                st_expect(isset($beispiel[$ph]), 'Mailvorlage ' . $k . ': Platzhalter ' . $ph . ' hat keinen Beispielwert für die Testmail');
+            }
+        }
+        return 'Text + HTML, Maskierung, Knopf, Code-Kasten, alle Versandwege geprüft';
     });
     $run('Mail-Konto: ein Topf für alle Bereiche', function () {
         // Der Topf muss ohne lib.php auskommen – der öffentliche Bereich bindet sie nie ein.

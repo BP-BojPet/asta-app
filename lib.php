@@ -20,6 +20,7 @@ mb_internal_encoding('UTF-8');
 // Gemeinsames Mail-Konto: eigenständig und ohne Abhängigkeiten, damit der öffentliche
 // Bereich (der die lib.php nie einbindet) denselben Kontostand sieht.
 require_once __DIR__ . '/mail-pool.php';
+require_once __DIR__ . '/mail-rahmen.php';
 
 // Marke dieser Installation (Logo, App-Symbol): ebenfalls eigenständig, denn die öffentlichen
 // Bereiche zeigen dasselbe Logo und dürfen die lib.php nicht laden.
@@ -8667,8 +8668,7 @@ function send_login_link(string $email): bool
         $body .= "\n\nApp installiert und der Link öffnet sich nicht in der App?\n"
             . "Gib stattdessen diesen Code in der App ein (Anmelden → Code eingeben): " . $codeDisp . "\n";
     }
-    $html = mail_tpl_format('login') === 'html';
-    return send_mail($email, $subject, $html ? mail_body_html($body) : $body, $html);
+    return send_mail($email, $subject, $body, mail_tpl_ist_html('login', $body));
 }
 
 /** Token einlösen → zugehörige E-Mail (oder null). Token wird verbraucht. */
@@ -16847,17 +16847,20 @@ function send_mail(string $to, string $subject, string $body, bool $html = false
         if ($adr !== '' && filter_var($adr, FILTER_VALIDATE_EMAIL)) $ccListe[] = $adr;
     }
 
+    // Jede Mail im Rahmen und in zwei Fassungen: HTML zum Ansehen, Text für alles andere.
+    $teile = mail_rahmen_bauen($body, $html, mail_rahmen_app());
+    [$typ, $rumpf] = mail_rahmen_mime($teile['text'], $teile['html']);
     $headers = [
         'From: ' . ($name !== '' ? $name . ' <' . $from . '>' : $from),
         'Reply-To: ' . $reply,
-        'Content-Type: text/' . ($html ? 'html' : 'plain') . '; charset=UTF-8',
+        $typ,
         'MIME-Version: 1.0',
         'X-Mailer: AStA-App',
     ];
     if ($ccListe) $headers[] = 'Cc: ' . implode(', ', $ccListe);
     // Betreff für Nicht-ASCII korrekt kodieren
     $subjectEnc = '=?UTF-8?B?' . base64_encode($subject) . '?=';
-    $ok = @mail($to, $subjectEnc, $body, implode("\r\n", $headers));
+    $ok = @mail($to, $subjectEnc, $rumpf, implode("\r\n", $headers));
     // Ins gemeinsame Mail-Konto eintragen. App-Mails werden NIE gebremst – sie zählen nur mit,
     // damit die Rundmails wissen, wie viel vom Tageskontingent noch übrig ist.
     // CC-Empfänger:innen zählen einzeln: Der Hoster rechnet je Empfänger:in, nicht je mail()-Aufruf.
@@ -16908,6 +16911,38 @@ function mail_templates(): array
     ];
 }
 
+/**
+ * Beispielwerte für die Testmail unter jeder Vorlage (Verwaltung → Mailtexte). Links führen
+ * in die echte App, aber nie zu etwas, das eine Aktion auslöst – der Login-Link hat keinen
+ * gültigen Schlüssel, er zeigt nur die Anmeldeseite.
+ */
+function mail_tpl_beispiel(?array $me): array
+{
+    $vorname = $me ? first_name((string)$me['name']) : 'Alex';
+    $tag = date('Y-m-d', strtotime('+3 days'));
+    return [
+        '{{VORNAME}}' => $vorname,
+        '{{LINK}}' => app_url('dashboard.php'),
+        '{{LOGIN_LINK}}' => app_url('login.php'),
+        '{{LOGIN_CODE}}' => 'AB12-CD34',
+        '{{KOPF}}' => 'Nachricht von Alex:',
+        '{{NACHRICHT}}' => 'Das ist eine Beispielnachricht, damit du siehst, wie die Mail aussieht.',
+        '{{EVENT}}' => 'Sommerfest (Beispiel)',
+        '{{SCHICHTEN}}' => '• ' . fmt_date($tag) . ', 14:00–18:00 – Bar' . "\n" . '• ' . fmt_date($tag) . ', 20:00–23:00 – Abbau',
+        '{{SCHICHT}}' => fmt_date($tag) . ', 14:00–18:00 – Bar',
+        '{{SITZUNG}}' => 'Ordentliche Sitzung (Beispiel)',
+        '{{DATUM}}' => fmt_date($tag),
+        '{{REFERAT}}' => trim((string)($me['referat'] ?? '')) !== '' ? (string)$me['referat'] : 'Finanzen',
+        '{{ANZAHL}}' => '2',
+        '{{ANBIETER}}' => 'Alex',
+        '{{DEINE_SCHICHT}}' => fmt_date($tag) . ', 14:00–18:00 – Bar',
+        '{{ANGEBOTENE_SCHICHT}}' => fmt_date($tag) . ', 20:00–23:00 – Abbau',
+        '{{FRISTHINWEIS}}' => 'Die Frist endet am ' . fmt_date($tag) . '.',
+        '{{FRIST}}' => fmt_date($tag),
+        '{{STICHTAG}}' => fmt_date(date('Y-m-d', strtotime('+1 day'))),
+    ];
+}
+
 function mail_tpl_subject(string $key): string
 {
     $d = mail_templates()[$key] ?? null; if (!$d) return '';
@@ -16926,21 +16961,32 @@ function mail_tpl_format(string $key): string
     return (string)setting_get('mailtpl_' . $key . '_format', '') === 'html' ? 'html' : 'plain';
 }
 
-/** Reinen Text als sicheres HTML aufbereiten (Zeilenumbrüche -> <br>); fertiges HTML bleibt unverändert. */
-function mail_body_html(string $body): string
+/**
+ * Gilt der Text als fertiges HTML? Nur, wenn die Vorlage auf HTML steht UND wirklich Tags
+ * enthält – ein HTML-Schalter über reinem Text bekommt sonst keine Knöpfe im Mail-Rahmen.
+ */
+function mail_tpl_ist_html(string $key, string $body): bool
 {
-    if (strip_tags($body) !== $body) return $body; // enthält bereits HTML-Tags
-    return '<div style="font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;font-size:14px;color:#1c2b30;line-height:1.55">'
-        . nl2br(htmlspecialchars($body, ENT_QUOTES, 'UTF-8')) . '</div>';
+    return mail_tpl_format($key) === 'html' && strip_tags($body) !== $body;
 }
 
-/** Mailvorlage mit Platzhaltern füllen und – je nach Format – als HTML oder Plaintext senden. */
+/** Mailvorlage mit Platzhaltern füllen und senden (im Mail-Rahmen, siehe send_mail()). */
 function mail_tpl_send(string $key, string $to, array $vars, ?string $from = null): bool
 {
     $subject = strtr(mail_tpl_subject($key), $vars);
     $body = strtr(mail_tpl_body($key), $vars);
-    $html = mail_tpl_format($key) === 'html';
-    return send_mail($to, $subject, $html ? mail_body_html($body) : $body, $html, $from);
+    return send_mail($to, $subject, $body, mail_tpl_ist_html($key, $body), $from);
+}
+
+/** Kopf und Fuß des Mail-Rahmens: Name und Logo des Trägers, Adresse der App. */
+function mail_rahmen_app(): array
+{
+    $basis = base_url();
+    $o = ['name' => org_name_kurz(), 'logo' => $basis !== '' ? app_url(brand_url('logo-header')) : '', 'basis' => $basis];
+    // Für Terminplaner, Umfragen und externe Events, die lib.php nie laden (siehe mail-rahmen.php)
+    static $gespiegelt = false;
+    if (!$gespiegelt) { $gespiegelt = true; mail_rahmen_spiegeln($o['name'], $o['logo'], $o['basis']); }
+    return $o;
 }
 
 /**
