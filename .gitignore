@@ -14,3 +14,7 @@
 
 # Finder-Beiwerk
 .DS_Store
+
+# Syncthing-Einstellungen (nur lokal)
+.stignore
+.stfolder/
