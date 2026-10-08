@@ -1241,8 +1241,38 @@ function pat_round_stats(int $roundId): array
 // ---------------------------------------------------------------------------
 
 /**
+ * Wen eine Einteilungs-Mail betrifft – abgelesen an den Adressen, die darin stehen. Damit
+ * erkennt „nur an Neue und Geänderte", ob sich für diese Mail etwas geändert hat, auch bei
+ * Mails, die verschickt wurden, bevor es diese Funktion gab (gespeichert wird nichts extra).
+ *
+ *   • Ersti-Mail: die Pat:in (ihre Adresse im Text). Ändert sich nur der Rest der Gruppe,
+ *     erfährt das Ersti es über die Gruppen-Mail – eine zweite Einzelmail wäre doppelt.
+ *   • Pat:innen-Mail: die Erstis der Liste.
+ *   • Gruppen-Mail: alle in An und CC.
+ * Rückgabe: sortierte Adressen, kommagetrennt, klein geschrieben.
+ */
+function pat_mail_kreis(string $kind, string $to, string $cc, string $body, array $erstiMails, array $pateMails): string
+{
+    $norm = static fn ($a) => strtolower(trim((string)$a));
+    if ($kind === 'group') {
+        $alle = array_merge([$to], $cc === '' ? [] : explode(',', $cc));
+    } else {
+        preg_match_all('/[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/', $body, $m);
+        $gefunden = array_map($norm, $m[0]);
+        $alle = array_intersect($gefunden, array_map($norm, $kind === 'assign_ersti' ? $pateMails : $erstiMails));
+    }
+    $alle = array_values(array_unique(array_filter(array_map($norm, $alle), static fn ($a) => $a !== '')));
+    sort($alle);
+    return implode(',', $alle);
+}
+
+/**
  * Einteilungs-Mails für ein Programm zusammenstellen und einstellen.
- * $role: 'ersti' | 'pate' | 'both'. Verschickt wird hier NICHTS – das macht pat_mail_run()
+ * $role: 'ersti' | 'pate' | 'both' | 'changed'. 'changed' baut dieselben Mails wie 'both',
+ * reiht aber nur die ein, deren Inhalt sich gegenüber der zuletzt VERSCHICKTEN Mail derselben
+ * Art an dieselbe Person geändert hat (pat_mail_kreis()): nach dem Verschieben also die
+ * Verschobenen, ihre alte und neue Pat:in und die Gruppen-Mail beider Gruppen – dazu alle,
+ * die noch nie eine bekommen haben. Verschickt wird hier NICHTS – das macht pat_mail_run()
  * in kleinen Schüben. Bereits wartende Mails DERSELBEN ART werden vorher verworfen, damit ein
  * zweiter Klick keine Dubletten erzeugt (schon versandte bleiben stehen); wartende Absagen
  * bleiben unangetastet – sonst würde ein Klick den jeweils anderen Vorgang stillschweigend
@@ -1253,9 +1283,11 @@ function pat_mail_queue_assignments(int $roundId, string $role = 'both'): array
 {
     $round = pat_round_get($roundId);
     if (!$round) return ['ok' => false, 'queued' => 0, 'skipped' => 0, 'error' => 'Programm nicht gefunden.'];
-    if (!in_array($role, ['ersti', 'pate', 'both'], true)) {
-        return ['ok' => false, 'queued' => 0, 'skipped' => 0, 'error' => 'Unbekannte Rolle.'];
+    if (!in_array($role, ['ersti', 'pate', 'both', 'changed'], true)) {
+        return ['ok' => false, 'queued' => 0, 'skipped' => 0, 'unchanged' => 0, 'error' => 'Unbekannte Rolle.'];
     }
+    $nurGeaendert = $role === 'changed';
+    if ($nurGeaendert) $role = 'both';
     // Zeitplan-Platzhalter gelten in JEDEM Text – siehe pat_round_vars().
     $base = pat_round_vars($round);
     $g = pat_groups_of($roundId);
@@ -1264,8 +1296,36 @@ function pat_mail_queue_assignments(int $roundId, string $role = 'both'): array
     // Rolle neu einreiht, wiederholt damit nicht ungefragt die gemeinsame Kennenlern-Mail.
     pat_mail_forget_queued($roundId, $role === 'both' ? ['assign_pate', 'assign_ersti', 'group']
         : ($role === 'pate' ? ['assign_pate'] : ['assign_ersti']));
-    $ins = pat_db()->prepare('INSERT INTO pat_mailqueue(round_id, signup_id, kind, to_email, cc, subject, body) VALUES(?,?,?,?,?,?,?)');
-    $queued = 0; $skipped = count($g['free']);
+    $insert = pat_db()->prepare('INSERT INTO pat_mailqueue(round_id, signup_id, kind, to_email, cc, subject, body) VALUES(?,?,?,?,?,?,?)');
+    $queued = 0; $skipped = count($g['free']); $unchanged = 0;
+
+    // Für 'changed': je Art und Person der Kreis der zuletzt verschickten Mail. 'sending' zählt
+    // mit (ist unterwegs), 'failed' nicht – die holt „zurück in die Warteschlange" ohnehin nach.
+    $zuletzt = [];
+    if ($nurGeaendert) {
+        $erstiMails = array_column(pat_signups_of($roundId, 'ersti'), 'email');
+        $pateMails  = array_column(pat_signups_of($roundId, 'pate'), 'email');
+        $st = pat_db()->prepare("SELECT kind, signup_id, to_email, cc, body FROM pat_mailqueue
+                                 WHERE round_id = ? AND status IN ('sent','sending')
+                                   AND kind IN ('assign_pate','assign_ersti','group') ORDER BY id");
+        $st->execute([$roundId]);
+        foreach ($st->fetchAll() as $r) {
+            $zuletzt[$r['kind'] . ':' . (int)$r['signup_id']] = pat_mail_kreis((string)$r['kind'], (string)$r['to_email'],
+                (string)$r['cc'], (string)$r['body'], $erstiMails, $pateMails);
+        }
+    }
+    $erstiMails = $erstiMails ?? []; $pateMails = $pateMails ?? [];
+    // Einreihen – oder bei 'changed' überspringen, wenn sich für diese Mail nichts geändert hat.
+    $einreihen = function (array $w) use ($insert, $nurGeaendert, $zuletzt, $erstiMails, $pateMails, &$unchanged): bool {
+        [, $sid, $kind, $to, $cc, , $body] = $w;
+        $schluessel = $kind . ':' . (int)$sid;
+        if ($nurGeaendert && isset($zuletzt[$schluessel])
+            && $zuletzt[$schluessel] === pat_mail_kreis($kind, $to, $cc, $body, $erstiMails, $pateMails)) {
+            $unchanged++;
+            return false;
+        }
+        return $insert->execute($w);
+    };
 
     // EIN Listenbau für alle drei Mails (Pat:in, Ersti-{{GRUPPE}}, Gruppen-Mail) – sonst
     // driften die Formate auseinander. $rolle ergänzt hinter dem Studiengang einen Zusatz.
@@ -1286,10 +1346,9 @@ function pat_mail_queue_assignments(int $roundId, string $role = 'both'): array
                 foreach ($grp['erstis'] as $e) $liste .= $zeile($e);
                 $vars = $base + ['{{VORNAME}}' => (string)$p['first_name'],
                     '{{ANZAHL}}' => (string)count($grp['erstis']), '{{LISTE}}' => rtrim($liste)];
-                $ins->execute([$roundId, (int)$p['id'], 'assign_pate', (string)$p['email'], '',
+                if ($einreihen([$roundId, (int)$p['id'], 'assign_pate', (string)$p['email'], '',
                     pat_text_fill(pat_text('mail_pate_subject'), $vars),
-                    pat_text_fill(pat_text('mail_pate_body'), $vars)]);
-                $queued++;
+                    pat_text_fill(pat_text('mail_pate_body'), $vars)])) $queued++;
             }
         }
         if ($role !== 'pate') {
@@ -1308,10 +1367,9 @@ function pat_mail_queue_assignments(int $roundId, string $role = 'both'): array
                     '{{PATIN_UEBER}}' => trim((string)$p['about']),
                     '{{PATIN_FACH}}' => (string)$p['course_label'],
                     '{{GRUPPE}}' => rtrim($gruppe)];
-                $ins->execute([$roundId, (int)$e['id'], 'assign_ersti', (string)$e['email'], '',
+                if ($einreihen([$roundId, (int)$e['id'], 'assign_ersti', (string)$e['email'], '',
                     pat_text_fill(pat_text('mail_ersti_subject'), $vars),
-                    pat_text_fill(pat_text('mail_ersti_body'), $vars)]);
-                $queued++;
+                    pat_text_fill(pat_text('mail_ersti_body'), $vars)])) $queued++;
             }
         }
         // Gemeinsame Kennenlern-Mail: EINE je Gruppe, Pat:in im An, alle Erstis im CC – jede:r
@@ -1323,13 +1381,12 @@ function pat_mail_queue_assignments(int $roundId, string $role = 'both'): array
             $vars = $base + ['{{PATIN}}' => $p['first_name'] . ' ' . $p['last_name'],
                 '{{ANZAHL}}' => (string)count($grp['erstis']), '{{LISTE}}' => rtrim($alle)];
             $cc = implode(', ', array_map(fn ($e) => (string)$e['email'], $grp['erstis']));
-            $ins->execute([$roundId, (int)$p['id'], 'group', (string)$p['email'], $cc,
+            if ($einreihen([$roundId, (int)$p['id'], 'group', (string)$p['email'], $cc,
                 pat_text_fill(pat_text('mail_gruppe_subject'), $vars),
-                pat_text_fill(pat_text('mail_gruppe_body'), $vars)]);
-            $queued++;
+                pat_text_fill(pat_text('mail_gruppe_body'), $vars)])) $queued++;
         }
     }
-    return ['ok' => true, 'queued' => $queued, 'skipped' => $skipped, 'error' => ''];
+    return ['ok' => true, 'queued' => $queued, 'skipped' => $skipped, 'unchanged' => $unchanged, 'error' => ''];
 }
 
 /**

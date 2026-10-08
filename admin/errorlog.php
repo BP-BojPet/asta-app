@@ -5753,6 +5753,92 @@ if ($doTest) {
         st_expect(function_exists('file_delivery_headers'), 'zentraler Datei-Header-Helfer muss vorhanden sein (ersetzt no-store der Session – sonst weiße Quick-Look-Seite auf iOS)');
     });
 
+    $run('Pat:innenprogramm: Mails nur an Neue und Geänderte', function () {
+        // In einer Transaktion der Pat-Datenbank, die am Ende zurückgenommen wird: keine Spur im
+        // laufenden Programm. Nachgespielt: Mails sind raus, dann wird eine Person verschoben.
+        $pdo = pat_db();
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare("INSERT INTO pat_rounds(term, year, slug, status) VALUES('wise', 2099, ?, 'open')")
+                ->execute(['selbsttest-' . bin2hex(random_bytes(4))]);
+            $rid = (int)$pdo->lastInsertId();
+            $neu = $pdo->prepare("INSERT INTO pat_signups(round_id, role, degree, course_label, first_name, last_name, email, pate_id)
+                                  VALUES(?, ?, 'bachelor', 'Probe', ?, 'Test', ?, ?)");
+            $neu->execute([$rid, 'pate', 'PatA', 'pa@st.invalid', null]);  $pa = (int)$pdo->lastInsertId();
+            $neu->execute([$rid, 'pate', 'PatB', 'pb@st.invalid', null]);  $pb = (int)$pdo->lastInsertId();
+            $neu->execute([$rid, 'ersti', 'E1', 'e1@st.invalid', $pa]);   $e1 = (int)$pdo->lastInsertId();
+            $neu->execute([$rid, 'ersti', 'E2', 'e2@st.invalid', $pa]);
+            $neu->execute([$rid, 'ersti', 'E3', 'e3@st.invalid', $pb]);
+            $zaehle = function () use ($pdo, $rid): array {
+                $st = $pdo->prepare("SELECT kind || ':' || signup_id FROM pat_mailqueue WHERE round_id = ? AND status = 'queued' ORDER BY 1");
+                $st->execute([$rid]);
+                return $st->fetchAll(PDO::FETCH_COLUMN);
+            };
+            $alle = pat_mail_queue_assignments($rid, 'both');
+            $pdo->prepare("UPDATE pat_mailqueue SET status = 'sent' WHERE round_id = ?")->execute([$rid]);   // „verschickt"
+            $r0 = pat_mail_queue_assignments($rid, 'changed');
+            st_expect($alle['queued'] > 0 && $r0['queued'] === 0 && $zaehle() === [],
+                'Ohne Änderung bereitet „nur an Neue & Geänderte" trotzdem Mails vor');
+            $pdo->prepare('UPDATE pat_signups SET pate_id = ? WHERE id = ?')->execute([$pb, $e1]);       // E1: A → B
+            pat_mail_queue_assignments($rid, 'changed');
+            $soll = ["assign_ersti:$e1", "assign_pate:$pa", "assign_pate:$pb", "group:$pa", "group:$pb"];
+            sort($soll);
+            st_expect($zaehle() === $soll, 'Nach dem Verschieben gehen die Mails nicht genau an Verschobene, alte und neue Pat:in und beide Gruppen ('
+                . implode(' ', $zaehle()) . ')');
+        } finally {
+            $pdo->rollBack();
+        }
+        st_expect(pat_mail_kreis('assign_ersti', 'x@st.invalid', '', 'Deine Pat:in: A (PA@st.invalid), Gruppe: b@st.invalid', ['b@st.invalid'], ['pa@st.invalid'])
+                  === 'pa@st.invalid', 'pat_mail_kreis() liest bei der Ersti-Mail nicht nur die Pat:in heraus');
+        $src = (string)@file_get_contents(dirname(__DIR__) . '/admin/paten-programm.php');
+        st_expect(str_contains($src, 'name="role" value="changed"'), 'Der Knopf „Nur an Neue & Geänderte" fehlt in der Verwaltung');
+        return 'Unverändert: nichts; verschoben: genau die fünf Betroffenen (nichts gespeichert)';
+    });
+    $run('Pat:innenprogramm: Knöpfe und ihre Dialoge stehen im selben Reiter', function () {
+        // Die Verwaltung zeigt je Reiter nur ihren Block (if ($ppTab === '…')). Landet ein Dialog
+        // samt Skript im Block eines ANDEREN Reiters, stehen die Knöpfe ohne ihn da und tun
+        // lautlos nichts – so ging es mit „Verschieben", „Alle aufklappen" und den Absagen.
+        // Geprüft wird über den PHP-Tokenizer: Welche Reiter-Bedingungen sind an der Stelle offen?
+        $src = (string)@file_get_contents(dirname(__DIR__) . '/admin/paten-programm.php');
+        st_expect($src !== '', 'admin/paten-programm.php fehlt');
+        $reiterBei = function (string $marke, int $nr = 1) use ($src): array {
+            $stapel = []; $toks = token_get_all($src); $n = count($toks); $gesehen = 0;
+            for ($i = 0; $i < $n; $i++) {
+                $t = $toks[$i];
+                $text = is_array($t) ? $t[1] : $t;
+                if (str_contains($text, $marke) && ++$gesehen === $nr) {
+                    $reiter = [];
+                    foreach ($stapel as $bed) if (preg_match_all("~\\\$ppTab === '(\w+)'~", $bed, $m)) array_push($reiter, ...$m[1]);
+                    return $reiter;
+                }
+                if (!is_array($t)) continue;
+                if (in_array($t[0], [T_IF, T_FOREACH], true)) {
+                    // Bedingung bis zur passenden Klammer einsammeln, dann: ':' = Template-Schreibweise
+                    $tiefe = 0; $bed = ''; $j = $i + 1;
+                    for (; $j < $n; $j++) {
+                        $x = is_array($toks[$j]) ? $toks[$j][1] : $toks[$j];
+                        if ($x === '(') $tiefe++;
+                        if ($x === ')') { $tiefe--; if ($tiefe === 0) break; }
+                        $bed .= $x;
+                    }
+                    for ($k = $j + 1; $k < $n && is_array($toks[$k]) && $toks[$k][0] === T_WHITESPACE; $k++);
+                    if ($k < $n && $toks[$k] === ':') $stapel[] = $t[0] === T_IF ? $bed : '';
+                } elseif (in_array($t[0], [T_ENDIF, T_ENDFOREACH], true)) {
+                    array_pop($stapel);
+                }
+            }
+            return ['(fehlt)'];
+        };
+        // pat_move_btn: das 1. Vorkommen ist die Funktion selbst, die Aufrufe folgen (Ohne Gruppe, Gruppenliste).
+        foreach ([['id="grpOpenAll"', 1, 'einteilung'], ['pat_move_btn', 2, 'einteilung'], ['pat_move_btn', 3, 'einteilung'],
+                  ['id="moveDlg"', 1, 'einteilung'], ["getElementById('grpOpenAll')", 1, 'einteilung'],
+                  ["getElementById('moveDlg')", 1, 'einteilung'],
+                  ['js-rej', 1, 'mails'], ['id="rejDlg"', 1, 'mails'], ["getElementById('rejDlg')", 1, 'mails']] as [$marke, $nr, $soll]) {
+            $ist = $reiterBei($marke, $nr);
+            st_expect($ist === [$soll], $marke . ' steht im Reiter ' . ($ist ? implode('+', $ist) : 'keinem') . ' statt „' . $soll . '"');
+        }
+        return 'Verschieben, Auf-/Zuklappen und Absagen im richtigen Reiter';
+    });
     $run('Pat:innenprogramm (eigene Datenbank, Semester, Studi-Link)', function () {
         require_once __DIR__ . '/../pat-db.php';
         st_expect(function_exists('pat_db') && function_exists('pat_round_create') && function_exists('pat_round_by_slug'),

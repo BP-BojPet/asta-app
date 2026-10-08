@@ -99,7 +99,7 @@ if ($fragen['gesendet'] || $fragen['fehler'] || pat_messages_open_count()) {
         . $fragen['fehler'] . ' fehlgeschlagen, ' . pat_messages_open_count() . " noch offen\n";
 }
 if ($weg > 0) echo '  · ' . $weg . " alte, erledigte Frage(n) gelöscht\n";
-echo '  · in den letzten 24 h: ' . pat_mail_sent_last24() . ' von ' . $dayCap . " (Kontingent)\n";
+echo '  · in den letzten 24 h: ' . pat_mail_sent_last24() . ' von ' . pat_mail_day_allow($dayCap) . " (Kontingent)\n";
 echo '  · noch in der Warteschlange: ' . $res['left'] . "\n";
 if ($res['left'] > 0 && $limit <= 0) {
     echo "  · Kontingent für dieses 24-Stunden-Fenster aufgebraucht – der nächste Lauf macht weiter.\n";

@@ -83,6 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash($res['error'], 'error');
         } else {
             flash($res['queued'] . ' Mails vorbereitet.'
+                . (($res['unchanged'] ?? 0) > 0 ? ' ' . $res['unchanged'] . ' unverändert – die bekommen nichts Neues.' : '')
                 . ($res['skipped'] > 0 ? ' ' . $res['skipped'] . ' bekommen nichts (ohne Gruppe bzw. leere Gruppe).' : '')
                 . ' Sie gehen erst raus, wenn du unten auf „Senden" klickst.', 'success');
         }
@@ -413,7 +414,10 @@ $rejQ = (int)pat_db()->query("SELECT COUNT(*) FROM pat_mailqueue WHERE round_id 
     ihrer Gruppe, Pat:innen die Liste ihrer Erstsemester. Bei „Alle vorbereiten" kommt je Gruppe
     zusätzlich <strong>eine gemeinsame Kennenlern-Mail</strong> dazu – Pat:in im An-Feld, alle
     Erstis im CC, damit ein „Allen antworten" die ganze Gruppe erreicht. Wer keine Gruppe hat,
-    bekommt nichts. Die Texte pflegst du in der Übersicht
+    bekommt nichts. Sind die Mails schon raus und du hast danach verschoben oder neu eingeteilt,
+    nimm <strong>„Nur an Neue &amp; Geänderte"</strong>: Dann schreibt die App nur den Verschobenen,
+    ihrer alten und neuen Pat:in, den veränderten Gruppen und allen, die noch keine Mail haben –
+    „Alle vorbereiten" schickt dagegen jeder Person ihre Mail noch einmal. Die Texte pflegst du in der Übersicht
     unter <a href="paten.php?t=texte">Texte → „Mails zur Einteilung"</a>.</p>
   <?php if ($rejQ > 0): ?>
     <p class="small muted" style="margin:-.4rem 0 .8rem"><i class="ti ti-mail-x"></i> Darunter sind
@@ -435,10 +439,16 @@ $rejQ = (int)pat_db()->query("SELECT COUNT(*) FROM pat_mailqueue WHERE round_id 
   <?php endif; ?>
 
   <div class="btn-row" style="flex-wrap:wrap;gap:.4rem">
-    <form method="post" data-confirm="Mails für ALLE eingeteilten Personen vorbereiten? Noch wartende Mails dieses Programms werden dabei ersetzt – verschickt wird noch nichts." data-confirm-ok="Vorbereiten">
+    <form method="post" data-confirm="Mails für ALLE eingeteilten Personen vorbereiten?<?= $mq['sent'] > 0 ? ' Achtung: Es sind schon Mails verschickt – damit bekommt JEDE:R ihre Mail noch einmal. Für Nachzügler und Verschobene gibt es „Nur an Neue &amp; Geänderte&quot;.' : '' ?> Noch wartende Mails dieses Programms werden dabei ersetzt – verschickt wird noch nichts." data-confirm-ok="Vorbereiten">
       <?= csrf_field() ?><input type="hidden" name="action" value="mail_queue"><input type="hidden" name="role" value="both">
       <button class="btn secondary" type="submit"><i class="ti ti-stack-push"></i> Alle vorbereiten</button>
     </form>
+    <?php if ($mq['sent'] > 0): ?>
+    <form method="post" data-confirm="Mails nur für Neue und Geänderte vorbereiten? Das sind alle, die noch keine Mail bekommen haben, Verschobene samt alter und neuer Pat:in und die Gruppen-Mail jeder Gruppe, die sich verändert hat. Verschickt wird noch nichts." data-confirm-ok="Vorbereiten">
+      <?= csrf_field() ?><input type="hidden" name="action" value="mail_queue"><input type="hidden" name="role" value="changed">
+      <button class="btn secondary" type="submit"><i class="ti ti-user-plus"></i> Nur an Neue &amp; Geänderte</button>
+    </form>
+    <?php endif; ?>
     <form method="post">
       <?= csrf_field() ?><input type="hidden" name="action" value="mail_queue"><input type="hidden" name="role" value="ersti">
       <button class="btn secondary small" type="submit">nur Erstsemester</button>
@@ -773,8 +783,12 @@ $rejQ = (int)pat_db()->query("SELECT COUNT(*) FROM pat_mailqueue WHERE round_id 
     stammen von Studierenden, die keine Mitglieder sind. Bitte nur für das Pat:innenprogramm
     verwenden und den CSV-Export nicht weitergeben.</p>
 </div>
+<?php endif; ?>
 
-<?php if ($g['groups']): ?>
+<?php // Dialog und Skript gehören zum Reiter „Einteilung & Gruppen" – dort stehen die Knöpfe.
+      // Steht das hier versehentlich in einem anderen Reiter-Block, tun Verschieben, Suche und
+      // „Alle aufklappen" lautlos nichts (so passiert; der Selbsttest wacht darüber). ?>
+<?php if ($ppTab === 'einteilung' && $g['groups']): ?>
 <!-- EIN Dialog für alle Verschiebe-Aktionen: die Gruppenliste steht genau einmal im HTML. -->
 <dialog id="moveDlg" class="pat-move-dlg">
   <form method="post" id="moveForm">
@@ -935,7 +949,6 @@ $rejQ = (int)pat_db()->query("SELECT COUNT(*) FROM pat_mailqueue WHERE round_id 
   dlg.addEventListener('click', function (ev) { if (ev.target === dlg) dlg.close(); });
 })();
 </script>
-<?php endif; ?>
 <?php endif; ?>
 <?php
 page_footer();
