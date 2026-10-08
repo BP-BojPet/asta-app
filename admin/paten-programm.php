@@ -152,9 +152,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'signup_email') {
         $res = pat_signup_set_email((int)($_POST['id'] ?? 0), (string)($_POST['email'] ?? ''));
-        flash($res['ok'] ? 'Adresse geändert. Unter Mails → „Nur an Neue & Geänderte" bekommen die Person und alle, die davon betroffen sind, ihre Mail neu.'
+        flash($res['ok'] ? 'Adresse geändert. Mit ' . (($_POST['zurueck'] ?? '') === 'mails' ? '' : 'Mails → ') . '„Nur an Neue & Geänderte" bekommen die Person und alle, die davon betroffen sind, ihre Mail neu.'
                          : $res['error'], $res['ok'] ? 'success' : 'error');
-        redirect($self . '&t=anmeldungen');
+        redirect($self . '&t=' . (($_POST['zurueck'] ?? '') === 'mails' ? 'mails' : 'anmeldungen'));
     }
 
     if ($action === 'signup_delete') {
@@ -497,10 +497,32 @@ $rejQ = (int)pat_db()->query("SELECT COUNT(*) FROM pat_mailqueue WHERE round_id 
           // man nicht, die korrigiert man; die neue Fassung kommt dann über „Nur an Neue & Geänderte". ?>
     <div class="attention" style="margin-top:.8rem">
       <p class="small" style="margin:0 0 .4rem"><strong>Nicht zugestellt:</strong> Meist ist eine Adresse
-        falsch geschrieben. Dann die Adresse korrigieren und danach „Nur an Neue &amp; Geänderte" –
+        falsch geschrieben. Dann die Adresse hier korrigieren und danach „Nur an Neue &amp; Geänderte" –
         „Erneut versuchen" hilft nur bei vorübergehenden Störungen.</p>
-      <ul class="small" style="margin:0;padding-left:1.1rem">
-      <?php foreach (pat_mail_failed_list($rid) as $fm):
+      <?php
+        // Jede kaputte Adresse EINMAL zum Korrigieren – auch wenn sie in Einzel- und Gruppen-Mail steckt.
+        $fehlListe = pat_mail_failed_list($rid);
+        $kaputtAdr = [];
+        foreach ($fehlListe as $fm) {
+            foreach (array_merge([(string)$fm['to_email']], array_filter(array_map('trim', explode(',', (string)$fm['cc'])))) as $adr) {
+                if (!isset($kaputtAdr[strtolower($adr)]) && pat_mail_domain_fehler($adr) !== '') $kaputtAdr[strtolower($adr)] = $adr;
+            }
+        }
+        $nachAdresse = [];
+        foreach (pat_signups_of($rid) as $sg) $nachAdresse[strtolower((string)$sg['email'])][] = $sg;
+      ?>
+      <?php foreach ($kaputtAdr as $kl => $adr): foreach ($nachAdresse[$kl] ?? [] as $sg): ?>
+        <form method="post" class="btn-row" style="gap:.4rem;margin:.3rem 0;flex-wrap:wrap;align-items:center">
+          <?= csrf_field() ?><input type="hidden" name="action" value="signup_email"><input type="hidden" name="zurueck" value="mails">
+          <input type="hidden" name="id" value="<?= (int)$sg['id'] ?>">
+          <span class="small"><strong><?= h($sg['first_name'] . ' ' . $sg['last_name']) ?></strong>
+            (<?= (string)$sg['role'] === 'pate' ? 'Pat:in' : 'Ersti' ?>) <span class="muted">– <?= h(pat_mail_domain_fehler($adr)) ?></span></span>
+          <input type="email" name="email" value="<?= h($adr) ?>" required aria-label="Richtige Adresse für <?= h($sg['first_name'] . ' ' . $sg['last_name']) ?>" style="min-width:22ch">
+          <button class="btn secondary small" type="submit"><i class="ti ti-device-floppy"></i> Korrigieren</button>
+        </form>
+      <?php endforeach; endforeach; ?>
+      <ul class="small" style="margin:.5rem 0 0;padding-left:1.1rem">
+      <?php foreach ($fehlListe as $fm):
           $art = ['assign_ersti' => 'Mail an Ersti', 'assign_pate' => 'Mail an Pat:in', 'group' => 'Gruppen-Mail',
                   'reject_ersti' => 'Absage an Ersti', 'reject_pate' => 'Absage an Pat:in'][(string)$fm['kind']] ?? (string)$fm['kind'];
           $kaputt = [];

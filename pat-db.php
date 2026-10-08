@@ -1257,16 +1257,18 @@ function pat_round_stats(int $roundId): array
  */
 function pat_mail_domain_ok(string $domain): bool
 {
+    static $schon = [];                                 // je Anfrage nur einmal ins DNS
     $domain = strtolower(trim($domain, " .\t\r\n"));
     if ($domain === '' || str_ends_with($domain, '.invalid')) return $domain !== '';
+    if (isset($schon[$domain])) return $schon[$domain];
     $mx = @dns_get_record($domain, DNS_MX);
-    if ($mx === false) return true;
+    if ($mx === false) return $schon[$domain] = true;
     if ($mx) {
-        foreach ($mx as $r) if (trim((string)($r['target'] ?? ''), '.') !== '') return true;
-        return false;                                   // nur Null-MX
+        foreach ($mx as $r) if (trim((string)($r['target'] ?? ''), '.') !== '') return $schon[$domain] = true;
+        return $schon[$domain] = false;                 // nur Null-MX
     }
     $a = @dns_get_record($domain, DNS_A + DNS_AAAA);
-    return $a === false || (bool)$a;
+    return $schon[$domain] = ($a === false || (bool)$a);
 }
 
 /**

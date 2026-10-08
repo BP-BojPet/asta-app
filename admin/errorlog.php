@@ -5807,7 +5807,8 @@ if ($doTest) {
         preg_match('~function pat_signup_create\(.*?\n\}~s', (string)@file_get_contents(dirname(__DIR__) . '/pat-db.php'), $anlegen);
         st_expect(pat_mail_domain_ok('pat-test.invalid') && str_contains($anlegen[0] ?? '', 'pat_mail_domain_fehler($email)'),
             'Die Anmeldung prüft nicht mehr, ob unter der Adresse überhaupt Post ankommt');
-        st_expect(str_contains($src, 'value="signup_email"') && str_contains($src, 'pat_mail_failed_list($rid)'),
+        st_expect(str_contains($src, 'value="signup_email"') && str_contains($src, 'pat_mail_failed_list($rid)')
+                  && str_contains($src, 'name="zurueck" value="mails"'),
             'In der Verwaltung fehlt das Korrigieren der Adresse oder die Liste der nicht zugestellten Mails');
         return 'Unverändert: nichts; verschoben: genau die fünf Betroffenen (nichts gespeichert)';
     });
