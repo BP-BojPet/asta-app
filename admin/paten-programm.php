@@ -150,6 +150,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect($self . '&t=mails');
     }
 
+    if ($action === 'signup_email') {
+        $res = pat_signup_set_email((int)($_POST['id'] ?? 0), (string)($_POST['email'] ?? ''));
+        flash($res['ok'] ? 'Adresse geändert. Unter Mails → „Nur an Neue & Geänderte" bekommen die Person und alle, die davon betroffen sind, ihre Mail neu.'
+                         : $res['error'], $res['ok'] ? 'success' : 'error');
+        redirect($self . '&t=anmeldungen');
+    }
+
     if ($action === 'signup_delete') {
         $s = pat_signup_get((int)($_POST['id'] ?? 0));
         if ($s && (int)$s['round_id'] === $rid && pat_signup_delete((int)$s['id'])) {
@@ -486,6 +493,27 @@ $rejQ = (int)pat_db()->query("SELECT COUNT(*) FROM pat_mailqueue WHERE round_id 
   <?php endif; ?>
 
   <?php if ($mq['failed'] > 0): ?>
+    <?php // Wer hat nichts bekommen und warum? Meist eine Adresse mit Tippfehler – die wiederholt
+          // man nicht, die korrigiert man; die neue Fassung kommt dann über „Nur an Neue & Geänderte". ?>
+    <div class="attention" style="margin-top:.8rem">
+      <p class="small" style="margin:0 0 .4rem"><strong>Nicht zugestellt:</strong> Meist ist eine Adresse
+        falsch geschrieben. Dann die Adresse korrigieren und danach „Nur an Neue &amp; Geänderte" –
+        „Erneut versuchen" hilft nur bei vorübergehenden Störungen.</p>
+      <ul class="small" style="margin:0;padding-left:1.1rem">
+      <?php foreach (pat_mail_failed_list($rid) as $fm):
+          $art = ['assign_ersti' => 'Mail an Ersti', 'assign_pate' => 'Mail an Pat:in', 'group' => 'Gruppen-Mail',
+                  'reject_ersti' => 'Absage an Ersti', 'reject_pate' => 'Absage an Pat:in'][(string)$fm['kind']] ?? (string)$fm['kind'];
+          $kaputt = [];
+          foreach (array_merge([(string)$fm['to_email']], array_filter(array_map('trim', explode(',', (string)$fm['cc'])))) as $adr) {
+              if (pat_mail_domain_fehler($adr) !== '') $kaputt[] = $adr;
+          } ?>
+        <li><?= h($art) ?><?= $fm['first_name'] !== null ? ' (' . h($fm['first_name'] . ' ' . $fm['last_name']) . ')' : '' ?>
+          an <?= h((string)$fm['to_email']) ?><?= trim((string)$fm['cc']) !== '' ? ' + ' . (substr_count((string)$fm['cc'], ',') + 1) . ' in CC' : '' ?>
+          <?php if ($kaputt): ?> – <strong style="color:var(--red)">keine Post möglich unter: <?= h(implode(', ', $kaputt)) ?></strong>
+          <?php elseif (trim((string)$fm['last_error']) !== ''): ?> – <span class="muted"><?= h((string)$fm['last_error']) ?></span><?php endif; ?></li>
+      <?php endforeach; ?>
+      </ul>
+    </div>
     <form method="post" style="margin-top:.7rem">
       <?= csrf_field() ?><input type="hidden" name="action" value="mail_clear"><input type="hidden" name="what" value="failed">
       <button class="btn secondary small" type="submit"><i class="ti ti-refresh"></i> Fehlgeschlagene erneut versuchen</button>
@@ -755,7 +783,13 @@ $rejQ = (int)pat_db()->query("SELECT COUNT(*) FROM pat_mailqueue WHERE round_id 
                   <p style="margin:.2rem 0 0;white-space:pre-line;max-width:40ch"><?= h((string)$s['about']) ?></p></details>
               <?php endif; ?>
             </td>
-            <td class="small"><a href="mailto:<?= h((string)$s['email']) ?>"><?= h((string)$s['email']) ?></a></td>
+            <td class="small"><a href="mailto:<?= h((string)$s['email']) ?>"><?= h((string)$s['email']) ?></a>
+              <details><summary style="cursor:pointer;color:var(--petrol)">ändern</summary>
+                <form method="post" class="btn-row" style="gap:.3rem;margin:.3rem 0 0;flex-wrap:nowrap">
+                  <?= csrf_field() ?><input type="hidden" name="action" value="signup_email"><input type="hidden" name="id" value="<?= (int)$s['id'] ?>">
+                  <input type="email" name="email" value="<?= h((string)$s['email']) ?>" required aria-label="Neue Adresse" style="min-width:16ch">
+                  <button class="btn secondary small" type="submit"><i class="ti ti-device-floppy"></i></button>
+                </form></details></td>
             <td class="small"><?= h(pat_degrees()[(string)$s['degree']] ?? '') ?><br><?= h((string)$s['course_label']) ?>
               <?php if ($s['course_id'] === null): ?><br><span class="badge badge-draft">frei eingetragen</span><?php endif; ?>
               <?php $sw = pat_signup_extra_labels($s); if ($sw): ?>

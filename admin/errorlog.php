@@ -5785,6 +5785,15 @@ if ($doTest) {
             sort($soll);
             st_expect($zaehle() === $soll, 'Nach dem Verschieben gehen die Mails nicht genau an Verschobene, alte und neue Pat:in und beide Gruppen ('
                 . implode(' ', $zaehle()) . ')');
+            // Eine fehlgeschlagene Mail (etwa Tippfehler in der Adresse) wird von der neuen Fassung
+            // abgelöst – sonst schickte „erneut versuchen" die alte, kaputte Adresse noch einmal los.
+            $pdo->prepare("UPDATE pat_mailqueue SET status = 'failed' WHERE round_id = ? AND kind = 'assign_ersti' AND signup_id = ?")
+                ->execute([$rid, $e1]);
+            pat_mail_queue_assignments($rid, 'changed');
+            $st = $pdo->prepare("SELECT COUNT(*) FROM pat_mailqueue WHERE round_id = ? AND status = 'failed'");
+            $st->execute([$rid]);
+            st_expect((int)$st->fetchColumn() === 0 && in_array("assign_ersti:$e1", $zaehle(), true),
+                'Eine fehlgeschlagene Mail bleibt nach dem Neu-Vorbereiten als „fehlgeschlagen" stehen');
         } finally {
             $pdo->rollBack();
         }
@@ -5792,6 +5801,14 @@ if ($doTest) {
                   === 'pa@st.invalid', 'pat_mail_kreis() liest bei der Ersti-Mail nicht nur die Pat:in heraus');
         $src = (string)@file_get_contents(dirname(__DIR__) . '/admin/paten-programm.php');
         st_expect(str_contains($src, 'name="role" value="changed"'), 'Der Knopf „Nur an Neue & Geänderte" fehlt in der Verwaltung');
+        // Adressen, unter denen keine Post ankommt, schon bei der Anmeldung abweisen – eine
+        // einzige davon reißt die ganze Gruppen-Mail mit (Mittwald lehnt beim Versand ab).
+        // Nur im RUMPF von pat_signup_create suchen – der Name steht weiter unten noch öfter.
+        preg_match('~function pat_signup_create\(.*?\n\}~s', (string)@file_get_contents(dirname(__DIR__) . '/pat-db.php'), $anlegen);
+        st_expect(pat_mail_domain_ok('pat-test.invalid') && str_contains($anlegen[0] ?? '', 'pat_mail_domain_fehler($email)'),
+            'Die Anmeldung prüft nicht mehr, ob unter der Adresse überhaupt Post ankommt');
+        st_expect(str_contains($src, 'value="signup_email"') && str_contains($src, 'pat_mail_failed_list($rid)'),
+            'In der Verwaltung fehlt das Korrigieren der Adresse oder die Liste der nicht zugestellten Mails');
         return 'Unverändert: nichts; verschoben: genau die fünf Betroffenen (nichts gespeichert)';
     });
     $run('Pat:innenprogramm: Knöpfe und ihre Dialoge stehen im selben Reiter', function () {

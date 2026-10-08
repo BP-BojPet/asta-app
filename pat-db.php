@@ -794,6 +794,8 @@ function pat_signup_create(array $d): array
         || preg_match('/[\r\n]/', $email)) {
         return $no('Bitte eine gültige E-Mail-Adresse angeben.');
     }
+    $domFehler = pat_mail_domain_fehler($email);
+    if ($domFehler !== '') return $no($domFehler);
     $about = trim((string)($d['about'] ?? ''));
     if (mb_strlen($about) > 2000) return $no('„Über mich" darf höchstens 2000 Zeichen lang sein.');
     if ($role === 'pate' && $about === '') return $no('Bitte stell dich kurz vor – das Feld „Über mich" gehört bei Pat:innen dazu.');
@@ -1241,6 +1243,85 @@ function pat_round_stats(int $roundId): array
 // ---------------------------------------------------------------------------
 
 /**
+ * Kann unter dieser Adresse überhaupt Post ankommen? Fragt das DNS nach dem Mailserver der
+ * Domain. Ein Tippfehler wie „edu-rptu.de" statt „edu.rptu.de" ist eine formal gültige Adresse –
+ * der Mailserver des Hosters lehnt sie aber beim Versand ab, und mit ihr die GANZE Gruppen-Mail,
+ * in deren CC sie steht. Deshalb schon bei der Anmeldung prüfen.
+ *
+ *   • MX-Eintrag mit Ziel → ok. „MX 0 ." (Null-MX, etwa icloud.de) heißt: nimmt nie Post an.
+ *   • kein MX, aber A/AAAA → ok (der Server nimmt dann direkt an).
+ *   • gar nichts → Domain gibt es nicht.
+ *   • DNS-Abfrage scheitert selbst → durchlassen: lieber eine Mail zu viel versuchen als eine
+ *     echte Anmeldung abweisen.
+ * `.invalid` ist für Tests reserviert (RFC 2606) und läuft durch – der Testdatensatz nutzt sie.
+ */
+function pat_mail_domain_ok(string $domain): bool
+{
+    $domain = strtolower(trim($domain, " .\t\r\n"));
+    if ($domain === '' || str_ends_with($domain, '.invalid')) return $domain !== '';
+    $mx = @dns_get_record($domain, DNS_MX);
+    if ($mx === false) return true;
+    if ($mx) {
+        foreach ($mx as $r) if (trim((string)($r['target'] ?? ''), '.') !== '') return true;
+        return false;                                   // nur Null-MX
+    }
+    $a = @dns_get_record($domain, DNS_A + DNS_AAAA);
+    return $a === false || (bool)$a;
+}
+
+/**
+ * Fehlermeldung für eine Adresse, unter der keine Post ankommt – mit Vorschlag, wenn ein naheliegender
+ * Tippfehler die Lösung ist (Bindestrich statt Punkt, .de statt .com). '' = in Ordnung.
+ */
+function pat_mail_domain_fehler(string $email): string
+{
+    $at = strrpos($email, '@');
+    if ($at === false) return '';
+    $lokal = substr($email, 0, $at);
+    $dom = strtolower(substr($email, $at + 1));
+    if (pat_mail_domain_ok($dom)) return '';
+    $kandidaten = [];
+    foreach (array_keys(array_filter(str_split($dom), static fn ($z) => $z === '-')) as $pos) {
+        $kandidaten[] = substr_replace($dom, '.', $pos, 1);
+    }
+    if (str_ends_with($dom, '.de'))  $kandidaten[] = substr($dom, 0, -3) . '.com';
+    if (str_ends_with($dom, '.com')) $kandidaten[] = substr($dom, 0, -4) . '.de';
+    foreach ($kandidaten as $k) {
+        if (pat_mail_domain_ok($k)) {
+            return 'Unter „@' . $dom . '" kommen keine Mails an. Meintest du ' . $lokal . '@' . $k . '?';
+        }
+    }
+    return 'Unter „@' . $dom . '" kommen keine Mails an – bitte prüf die Schreibweise hinter dem @.';
+}
+
+/**
+ * Adresse einer Anmeldung korrigieren (Verwaltung). Dieselben Prüfungen wie beim Anmelden.
+ * Gibt ['ok','error'] zurück.
+ */
+function pat_signup_set_email(int $signupId, string $email): array
+{
+    $email = trim($email);
+    if ($email === '' || mb_strlen($email) > 190 || !filter_var($email, FILTER_VALIDATE_EMAIL) || preg_match('/[\r\n]/', $email)) {
+        return ['ok' => false, 'error' => 'Das ist keine gültige E-Mail-Adresse.'];
+    }
+    $f = pat_mail_domain_fehler($email);
+    if ($f !== '') return ['ok' => false, 'error' => $f];
+    $st = pat_db()->prepare('UPDATE pat_signups SET email = ? WHERE id = ?');
+    $st->execute([$email, $signupId]);
+    return $st->rowCount() > 0 ? ['ok' => true, 'error' => ''] : ['ok' => false, 'error' => 'Anmeldung nicht gefunden.'];
+}
+
+/** Fehlgeschlagene Mails eines Programms mit Grund – damit man sieht, WER nichts bekommen hat. */
+function pat_mail_failed_list(int $roundId): array
+{
+    $st = pat_db()->prepare("SELECT q.id, q.kind, q.to_email, q.cc, q.last_error, s.first_name, s.last_name
+                             FROM pat_mailqueue q LEFT JOIN pat_signups s ON s.id = q.signup_id
+                             WHERE q.round_id = ? AND q.status = 'failed' ORDER BY q.id");
+    $st->execute([$roundId]);
+    return $st->fetchAll();
+}
+
+/**
  * Wen eine Einteilungs-Mail betrifft – abgelesen an den Adressen, die darin stehen. Damit
  * erkennt „nur an Neue und Geänderte", ob sich für diese Mail etwas geändert hat, auch bei
  * Mails, die verschickt wurden, bevor es diese Funktion gab (gespeichert wird nichts extra).
@@ -1294,8 +1375,14 @@ function pat_mail_queue_assignments(int $roundId, string $role = 'both'): array
 
     // Die Gruppen-Mail (EINE je Gruppe, alle im An/CC) hängt an 'both': Wer gezielt nur eine
     // Rolle neu einreiht, wiederholt damit nicht ungefragt die gemeinsame Kennenlern-Mail.
-    pat_mail_forget_queued($roundId, $role === 'both' ? ['assign_pate', 'assign_ersti', 'group']
-        : ($role === 'pate' ? ['assign_pate'] : ['assign_ersti']));
+    $arten = $role === 'both' ? ['assign_pate', 'assign_ersti', 'group'] : ($role === 'pate' ? ['assign_pate'] : ['assign_ersti']);
+    pat_mail_forget_queued($roundId, $arten);
+    // Fehlgeschlagene derselben Arten sind damit überholt: Die neue Fassung trägt die aktuellen
+    // Adressen (etwa nach einer Korrektur). Blieben sie stehen, schickte „erneut versuchen" die
+    // alte, kaputte Fassung noch einmal los.
+    $in = implode(',', array_fill(0, count($arten), '?'));
+    pat_db()->prepare("DELETE FROM pat_mailqueue WHERE round_id = ? AND status = 'failed' AND kind IN ($in)")
+        ->execute(array_merge([$roundId], $arten));
     $insert = pat_db()->prepare('INSERT INTO pat_mailqueue(round_id, signup_id, kind, to_email, cc, subject, body) VALUES(?,?,?,?,?,?,?)');
     $queued = 0; $skipped = count($g['free']); $unchanged = 0;
 
@@ -1607,6 +1694,8 @@ function pat_mail_run(int $limit, callable $sender, ?int $roundId = null, int $m
         $claim->execute([(int)$m['id']]);
         if ($claim->rowCount() !== 1) continue;
         $good = false;
+        $grund = '';
+        error_clear_last();
         try {
             // 4. Argument: CC der Gruppen-Mail (bei allen anderen Arten leer). PHP ignoriert
             // überzählige Argumente an eigene Funktionen – ältere Sender mit drei Parametern
@@ -1615,7 +1704,11 @@ function pat_mail_run(int $limit, callable $sender, ?int $roundId = null, int $m
                 (string)($m['cc'] ?? ''));
         } catch (\Throwable $e) {
             $good = false;
+            $grund = $e->getMessage();
         }
+        // Den echten Grund festhalten statt nur „fehlgeschlagen": mail() meldet ihn als
+        // (unterdrückte) Warnung, die error_get_last() noch kennt.
+        if (!$good && $grund === '') $grund = (string)(error_get_last()['message'] ?? '');
         // tries wurde beim Beanspruchen schon erhöht
         $tries = (int)$m['tries'] + 1;
         if ($good) {
@@ -1624,7 +1717,8 @@ function pat_mail_run(int $limit, callable $sender, ?int $roundId = null, int $m
             $ok++;
         } else {
             pat_db()->prepare('UPDATE pat_mailqueue SET status=?, last_error=?, claimed_at=NULL WHERE id=?')
-                ->execute([$tries >= 3 ? 'failed' : 'queued', 'Versand fehlgeschlagen', (int)$m['id']]);
+                ->execute([$tries >= 3 ? 'failed' : 'queued',
+                    mb_substr('Versand fehlgeschlagen' . ($grund !== '' ? ': ' . $grund : ''), 0, 500), (int)$m['id']]);
             $bad++;
         }
     }
