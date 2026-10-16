@@ -81,7 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         case 'del_swaps':
             $d->exec('DELETE FROM swap_proposals');
             $d->exec('DELETE FROM shift_swaps');   // Angebote, Vorschläge & Tausch-Historie (Einteilung bleibt)
-            flash('Schichtbörse zurückgesetzt: Angebote, Vorschläge und Tausch-Historie gelöscht. Die Einteilung bleibt unverändert; die (wertlosen) Depots stehen damit wieder bei 0.', 'success');
+            flash('Schichtbörse zurückgesetzt: Angebote, Vorschläge und Tausch-Historie gelöscht. Die Einteilung bleibt unverändert; der AsT-Zuschlag für schon übernommene Schichten entfällt damit.', 'success');
             break;
         case 'del_gettogethers':
             $d->exec('DELETE FROM gettogethers');  // gettogether_rsvp per Cascade
@@ -264,7 +264,7 @@ page_header('Daten löschen', true);
     del_button('del_members', 'Alle Mitglieder', 'Wirklich ALLE Mitglieder löschen? Damit kann sich niemand mehr per Login-Link anmelden, bis du neue anlegst. Der Technik-Login bleibt.');
     del_button('del_bugs', 'Alle Bug-Reports', 'Wirklich ALLE Bug-Reports inkl. Kommentare löschen?');
     del_button('del_feedback', 'Alle Rückmeldungen (Feedback)', 'Wirklich ALLE Feedback-Rückmeldungen inkl. Verlauf löschen?');
-    del_button('del_swaps', 'Schichtbörse & Depots', 'Wirklich ALLE Börsen-Angebote, Tausch-Vorschläge und die Tausch-Historie löschen? Die Einteilung bleibt unverändert; die (wertlosen) Depot-Werte stehen danach wieder bei 0.');
+    del_button('del_swaps', 'Schichtbörse', 'Wirklich ALLE Börsen-Angebote, Tausch-Vorschläge und die Tausch-Historie löschen? Die Einteilung bleibt unverändert, aber der AsT-Zuschlag für schon aus der Börse übernommene Schichten entfällt danach.');
     del_button('del_gettogethers', 'Alle Get-Togethers', 'Wirklich ALLE AStA Get-Togethers inkl. aller Ja/Nein-Rückmeldungen löschen?');
     ?>
   </div>

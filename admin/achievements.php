@@ -113,7 +113,7 @@ page_header('Achievements-Übersicht', true);
 
 <div class="card" id="ast">
   <div class="section-title" style="margin-top:0"><i class="ti ti-coin"></i> AsT verschenken</div>
-  <p class="small muted" style="margin-top:0">Legt der Person AsT ins <a href="../tauschboerse.php#depot">Schicht-Depot</a> – als Anerkennung, Preis oder einfach so. Sie bekommt eine <strong>Feier-Nachricht</strong> auf ihr Dashboard (mit deinem Namen und dem Anlass) und kann sich damit im Belohnungs-Locker etwas gönnen.</p>
+  <p class="small muted" style="margin-top:0">Schreibt der Person AsT auf ihr <a href="../tauschboerse.php#guthaben">Guthaben</a> – als Anerkennung, Preis oder einfach so. Sie bekommt eine <strong>Feier-Nachricht</strong> auf ihr Dashboard (mit deinem Namen und dem Anlass) und kann sich damit im Belohnungs-Locker etwas gönnen.</p>
   <form method="post">
     <?= csrf_field() ?>
     <input type="hidden" name="action" value="ast_grant">

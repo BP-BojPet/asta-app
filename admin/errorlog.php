@@ -1545,10 +1545,9 @@ if ($doTest) {
         }
         // Leser-Funktionen dürfen auch ohne echtes Mitglied nicht fatal werden
         member_achievement_codes(0); member_reward_decos(0); member_reward_skins(0); member_equipped_decos(0);
-        // AsT-Markt: kaufbarer Schmuck OHNE Achievement. Währung ist der
-        // DEPOTWERT des Schicht-Depots in AsT (Satire wird ernst; Guthaben wird gerechnet,
-        // nie gespeichert); Royals beschlagnahmen alle 3 Monate ein Stück kostenlos
-        // (Status live geprüft).
+        // AsT-Markt: kaufbarer Schmuck OHNE Achievement. Bezahlt wird mit AsT, verdient mit
+        // Schichten (Guthaben wird gerechnet, nie gespeichert); Royals beschlagnahmen alle
+        // 3 Monate ein Stück kostenlos (Status live geprüft).
         $rwKeys = [];
         foreach ($cat as $a2) {
             $rs2 = (array)($a2['rewards'] ?? []); if (!empty($a2['reward'])) $rs2[] = $a2['reward'];
@@ -1851,7 +1850,7 @@ if ($doTest) {
         $fremd = (int)db()->query("SELECT COUNT(*) FROM members WHERE flame_style NOT IN ('"
             . implode("','", array_map(static fn ($s) => str_replace("'", "''", (string)$s), $bekannt)) . "')")->fetchColumn();
         st_expect($fremd === 0, $fremd . ' Mitglied(er) tragen einen Streak-Stil, den es nicht (mehr) gibt');
-        st_expect(ast_balance(0) === 0 && ast_depot(0) === 0 && shop_owned(0) === [] && royal_claim_last(0) === '',
+        st_expect(ast_balance(0) === 0 && ast_verdienst(0)['summe'] === 0 && shop_owned(0) === [] && royal_claim_last(0) === '',
             'AsT-Markt: Leser ohne Mitglied müssen 0/leer liefern');
         st_expect(!shop_buy(0, 'zwille')['ok'] && !shop_buy(1, 'gibtsnicht')['ok'],
             'AsT-Markt: Kauf ohne Mitglied bzw. mit unbekanntem Stück muss ablehnen');
@@ -1862,17 +1861,6 @@ if ($doTest) {
         // Bubble aus (wie bei der aufgehenden Sonne) + eigene Größenregel im CSS – ohne die
         // Regel sprengte das SVG die Locker-Kachel (schon passiert).
         st_expect(str_contains(avatar_deco_svg('baum'), 'mask'), 'der Hausbaum hat seine Ausstanz-Maske verloren – er stünde VOR dem Avatar');
-        // ETF-Sparpläne des Schicht-Depots: deterministisch gewürfelt, drei Risikostufen,
-        // Leser ohne Mitglied bleiben folgenlos. (Verfügbar = Depot − Käufe − etf_flow.)
-        st_expect(count(etf_plans()) === 3, 'es müssen genau drei Sparpläne sein (niedrig/mittel/hoch)');
-        $etfVols = array_values(array_column(etf_plans(), 'vol'));
-        st_expect($etfVols[0] < $etfVols[1] && $etfVols[1] < $etfVols[2], 'die Sparplan-Risiken müssen aufsteigend sortiert sein');
-        st_expect(abs(etf_index('defensiv') - etf_index('defensiv')) < 0.0001 && etf_index('defensiv') > 0,
-            'etf_index() muss deterministisch und positiv sein');
-        st_expect(etf_index('gibtsnicht') === 100.0, 'ein unbekannter Sparplan muss neutral (100,00) bleiben');
-        st_expect(etf_flow(0) === 0 && !etf_invest(0, 'defensiv', 100)['ok']
-            && !etf_invest(1, 'defensiv', 10)['ok'] && !etf_sell(0, 'defensiv')['ok'],
-            'Sparpläne: ohne Mitglied bzw. unter der Mindestanlage muss abgelehnt werden');
         $qCss2 = (string)@file_get_contents(__DIR__ . '/../assets/style.css');
         foreach (['baum', 'vogelnest', 'zwille', 'wanderstock', 'bernstein'] as $dk2) {
             st_expect(str_contains($qCss2, '.acc-k-' . $dk2), "style.css: Größenregel für das Kauf-Stück $dk2 fehlt");
@@ -5205,7 +5193,7 @@ if ($doTest) {
             st_expect(swap_market_open(['plan_locked' => 1, 'closed' => 0, 'swap_force_open' => 0, 'starts_at' => '2000-01-01 00:00']) === false, 'ohne Force muss ein vergangenes Event geschlossen sein');
             event_start_ts($ev); swap_market_open($ev); shift_swaps_open($sampleEvent); member_assigned_slots($sampleEvent, 0); member_swap_events(0);
             $open = event_open_slots($sampleEvent); foreach ($open as $os) { slot_open_remaining($os, 0); member_time_conflict(0, $os); }
-            member_open_slot_events(0); swap_proposals_by_member(0); swap_proposals_for_offer(0); swap_proposal_get(0); swap_market_stats(0);
+            member_open_slot_events(0); swap_proposals_by_member(0); swap_proposals_for_offer(0); swap_proposal_get(0); ast_verdienst(0);
             swap_invalidate_orphaned(0); // nebenwirkungsfrei (eventId 0 → nichts zu tun)
             plan_overlaps($sampleEvent); plan_overlaps(0); // Arbeitsplan-Überschneidungen (Orga)
         });
@@ -5753,6 +5741,49 @@ if ($doTest) {
         st_expect(function_exists('file_delivery_headers'), 'zentraler Datei-Header-Helfer muss vorhanden sein (ersetzt no-store der Session – sonst weiße Quick-Look-Seite auf iOS)');
     });
 
+    $run('AsT: verdient mit Schichten, Zuschlag fürs Übernehmen', function () {
+        // In einer Transaktion, die am Ende zurückgenommen wird – keine Spur im Live-Betrieb.
+        // Nachgespielt: geleistete, übernommene, eingesprungene, abgegebene und künftige Schicht.
+        $pdo = db();
+        st_expect(trim((string)setting_get('ast_umstellung', '')) !== '', 'Die einmalige Umstellung der AsT ist nicht gelaufen (Einstellung ast_umstellung fehlt)');
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare("INSERT OR REPLACE INTO settings(key, value) VALUES('ast_umstellung', ?)")->execute(['2000-01-01 00:00:00']);
+            $pdo->prepare("INSERT INTO members(name, active) VALUES('Selbsttest Schicht', 1)")->execute();  $a = (int)$pdo->lastInsertId();
+            $pdo->prepare("INSERT INTO members(name, active) VALUES('Selbsttest Abgabe', 1)")->execute();   $b = (int)$pdo->lastInsertId();
+            $pdo->prepare("INSERT INTO events(title, draft) VALUES('Selbsttest-Event', 0)")->execute();     $ev = (int)$pdo->lastInsertId();
+            $slot = $pdo->prepare('INSERT INTO event_slots(event_id, starts_at, ends_at) VALUES(?, ?, ?)');
+            $gestern = date('Y-m-d', strtotime('-1 day')); $morgen = date('Y-m-d', strtotime('+1 day'));
+            $ids = [];
+            foreach (['normal' => $gestern, 'abgenommen' => $gestern, 'eingesprungen' => $gestern, 'abgegeben' => $gestern, 'kuenftig' => $morgen] as $k => $tag) {
+                $slot->execute([$ev, $tag . ' 10:00', $tag . ' 12:00']); $ids[$k] = (int)$pdo->lastInsertId();
+            }
+            $as = $pdo->prepare('INSERT INTO assignments(slot_id, member_id, self_claimed) VALUES(?, ?, ?)');
+            $as->execute([$ids['normal'], $a, 0]);
+            $as->execute([$ids['abgenommen'], $a, 0]);
+            $as->execute([$ids['eingesprungen'], $a, 1]);
+            $as->execute([$ids['abgegeben'], $b, 0]);        // a hat sie abgegeben, b hat sie jetzt
+            $as->execute([$ids['kuenftig'], $a, 0]);
+            $sw = $pdo->prepare("INSERT INTO shift_swaps(event_id, slot_id, offered_by, status, mode, taken_by) VALUES(?, ?, ?, 'done', 'giveaway', ?)");
+            $sw->execute([$ev, $ids['abgenommen'], $b, $a]);   // a hat b eine Schicht ohne Tausch abgenommen
+            $sw->execute([$ev, $ids['abgegeben'], $a, $b]);    // b hat a eine abgenommen
+            $v = ast_verdienst($a);
+            st_expect($v['schichten'] === 3 && $v['abnahmen'] === 1 && $v['einspringen'] === 1,
+                'ast_verdienst() zählt falsch (' . json_encode($v) . ' statt 3 Schichten, 1 Abnahme, 1 Einspringen)');
+            st_expect($v['summe'] === 3 * AST_JE_SCHICHT + AST_BONUS_ABNAHME + AST_BONUS_EINSPRINGEN,
+                'Die Summe der verdienten AsT stimmt nicht');
+            st_expect(ast_balance($a) === AST_STARTGUTHABEN + $v['summe'], 'ast_balance() rechnet den Schicht-Verdienst nicht richtig ein');
+            st_expect(ast_verdienst($b)['abnahmen'] === 1 && ast_verdienst($b)['schichten'] === 1,
+                'Wer abgibt, bekommt etwas – oder wer übernimmt, nicht');
+        } finally {
+            $pdo->rollBack();
+        }
+        // Die Börsen-Satire (Aktien, Kurs, Sparpläne) ist abgeschafft und darf nicht zurückkommen.
+        $seite = (string)@file_get_contents(dirname(__DIR__) . '/tauschboerse.php');
+        st_expect(!preg_match('~etf_|swap_market_stats|depot-card|boerse-ticker~', $seite) && !function_exists('etf_invest')
+                  && !function_exists('swap_market_stats'), 'Die Börsen-Satire (Depot, Kurs, Sparpläne) ist wieder in der Schichtbörse');
+        return 'Schicht, Abnahme, Einspringen, Abgabe und künftige Schicht richtig gezählt (nichts gespeichert)';
+    });
     $run('Pat:innenprogramm: Mails nur an Neue und Geänderte', function () {
         // In einer Transaktion der Pat-Datenbank, die am Ende zurückgenommen wird: keine Spur im
         // laufenden Programm. Nachgespielt: Mails sind raus, dann wird eine Person verschoben.

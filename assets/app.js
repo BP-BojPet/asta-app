@@ -331,7 +331,7 @@
       message: knoepfe.length > 1
         ? 'Wie möchtest du das bezahlen?'
         : 'Dafür fehlen dir noch ' + Math.max(0, (d.preis || 0) - (d.ast || 0)).toLocaleString('de-DE')
-          + ' AsT. Dein Depot wächst mit jedem Tausch in der Börse – oder du sammelst ' + d.propsPreis + ' Props.',
+          + ' AsT. AsT gibt es für jede geleistete Schicht, am meisten fürs Übernehmen aus der Schichtbörse – oder du sammelst ' + d.propsPreis + ' Props.',
       buttons: knoepfe
     });
   }, true);

@@ -378,8 +378,8 @@ function migrate_schema(PDO $pdo): void
     )");
     // Merker: Glückwunsch-Nachricht zur Spitzenklasse schon zugestellt? (wird beim Verlust zurückgesetzt)
     if (!in_array('spitze_greeted', $cols('members'), true)) $pdo->exec('ALTER TABLE members ADD COLUMN spitze_greeted INTEGER NOT NULL DEFAULT 0');
-    // Ast-Markt: Käufe aus dem Belohnungs-Laden. Das GUTHABEN wird nicht gespeichert, sondern
-    // gerechnet (1 Ast je übernommene Börsen-Schicht, minus Summe der Käufe – siehe ast_balance()).
+    // AsT-Markt: Käufe aus dem Belohnungs-Laden. Das GUTHABEN wird nicht gespeichert, sondern
+    // gerechnet (Schicht-Verdienst plus Gutschriften minus Käufe – siehe ast_balance()).
     // royal=1 heißt „beschlagnahmt": kostenlose Royal-Entnahme, höchstens alle 3 Monate eine.
     $pdo->exec("CREATE TABLE IF NOT EXISTS shop_purchases (
         id         INTEGER PRIMARY KEY,
@@ -418,9 +418,8 @@ function migrate_schema(PDO $pdo): void
         granted_by INTEGER,
         created_at TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
     )");
-    // ETF-Sparpläne des Schicht-Depots: angelegte AsT je Plan. Nur die KÄUFE stehen in der
-    // Tabelle – der aktuelle Wert wird aus der deterministischen Kursreihe gerechnet
-    // (etf_index); ein Verkauf trägt sold_on/sold_value ein und macht den Erlös verfügbar.
+    // Früher: Sparpläne des Börsen-Depots. Die Tabelle bleibt nur als Quelle für die einmalige
+    // Umstellung unten stehen; neu angelegt wird darin nichts mehr.
     $pdo->exec("CREATE TABLE IF NOT EXISTS ast_invest (
         id         INTEGER PRIMARY KEY,
         member_id  INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
@@ -430,6 +429,58 @@ function migrate_schema(PDO $pdo): void
         sold_on    TEXT,
         sold_value INTEGER
     )");
+    // Einmalige Umstellung der AsT: Früher kamen sie aus einem Börsen-Depot (Aktien je Tausch,
+    // steigender Kurs, dazu Sparpläne). Jetzt verdient man sie mit Schichten (ast_verdienst).
+    // Damit niemand etwas verliert, wird das bisherige Guthaben aus Depot und Sparplänen EINMAL als
+    // feste Gutschrift eingetragen – offene Sparpläne zum heutigen Wert ausgezahlt. Die alte Formel
+    // steht deshalb nur noch hier. Unter IMMEDIATE, damit zwei gleichzeitige Aufrufe nicht doppelt
+    // buchen; der Zeitpunkt in `ast_umstellung` ist zugleich der Start für ast_verdienst().
+    $umgestellt = $pdo->query("SELECT value FROM settings WHERE key = 'ast_umstellung'")->fetchColumn();
+    if ($umgestellt === false || (string)$umgestellt === '') {
+        $pdo->exec('BEGIN IMMEDIATE');
+        try {
+            $nochmal = $pdo->query("SELECT value FROM settings WHERE key = 'ast_umstellung'")->fetchColumn();
+            if ($nochmal === false || (string)$nochmal === '') {
+                $alleTausche = (int)$pdo->query("SELECT COUNT(*) FROM shift_swaps WHERE status = 'done'")->fetchColumn();
+                $kurs = 42.00 + $alleTausche * 1.37;
+                $plaene = ['defensiv' => [0.0005, 0.004], 'balance' => [0.0012, 0.02], 'turbo' => [0.002, 0.06]];
+                $idxCache = [];
+                $index = function (string $plan, string $tag) use ($plaene, &$idxCache): float {
+                    if (!isset($plaene[$plan])) return 100.0;
+                    if ($tag < '2026-08-01') $tag = '2026-08-01';
+                    if (isset($idxCache[$plan . $tag])) return $idxCache[$plan . $tag];
+                    [$drift, $vol] = $plaene[$plan];
+                    $idx = 100.0;
+                    for ($d = new DateTime('2026-08-01'), $ende = new DateTime($tag); $d <= $ende; $d->modify('+1 day')) {
+                        $u = ((int)abs(crc32($plan . '|' . $d->format('Y-m-d'))) % 20001) / 10000 - 1.0;
+                        $idx = max(1.0, $idx * (1 + $drift + $vol * $u));
+                    }
+                    return $idxCache[$plan . $tag] = $idx;
+                };
+                $heute = date('Y-m-d');
+                $gut = $pdo->prepare('INSERT INTO ast_grants(member_id, amount, reason, granted_by) VALUES(?,?,?,NULL)');
+                foreach ($pdo->query('SELECT id FROM members')->fetchAll(PDO::FETCH_COLUMN) as $mid) {
+                    $mid = (int)$mid;
+                    $t = $pdo->prepare("SELECT COUNT(*) FROM shift_swaps WHERE status = 'done' AND (offered_by = ? OR taken_by = ?)");
+                    $t->execute([$mid, $mid]);
+                    $betrag = floor((int)$t->fetchColumn() * 100 * $kurs);          // alter Depotwert
+                    $iv = $pdo->prepare('SELECT plan, amount, bought_on, sold_on, sold_value FROM ast_invest WHERE member_id = ?');
+                    $iv->execute([$mid]);
+                    foreach ($iv->fetchAll() as $r) {
+                        $betrag -= (int)$r['amount'];                                    // war gebunden …
+                        $betrag += $r['sold_on'] !== null ? (int)$r['sold_value']        // … verkauft: Erlös
+                            : (int)round((int)$r['amount'] * $index((string)$r['plan'], $heute) / $index((string)$r['plan'], (string)$r['bought_on']));
+                    }
+                    if ($betrag >= 1) $gut->execute([$mid, (int)$betrag, AST_ALTBESTAND_GRUND]);
+                }
+                $pdo->prepare("INSERT OR REPLACE INTO settings(key, value) VALUES('ast_umstellung', ?)")->execute([date('Y-m-d H:i:s')]);
+            }
+            $pdo->exec('COMMIT');
+        } catch (\Throwable $e) {
+            try { $pdo->exec('ROLLBACK'); } catch (\Throwable $egal) { /* schon beendet */ }
+            throw $e;
+        }
+    }
     // Wichtige Informationen: optional nur für ein bestimmtes Referat sichtbar (leer = alle)
     if (!in_array('referat', $cols('infos'), true)) $pdo->exec("ALTER TABLE infos ADD COLUMN referat TEXT NOT NULL DEFAULT ''");
     // Sitzungs-Rückmeldung: Grund (wird nur dem Vorsitz weitergeleitet)
@@ -7323,13 +7374,12 @@ function member_granted_skins(int $memberId): array
 // ---------------------------------------------------------------------------
 // AsT-Markt: kaufbarer Avatar-Schmuck jenseits der Achievements.
 //
-// Die Währung ist der AsT (AStA-Taler) – und zwar der DEPOTWERT des Schicht-Depots aus
-// der Tauschbörse (swap_market_stats): Jeder vollzogene Tausch bringt 100 ASX-„Aktien",
-// der Kurs steigt mit jedem Handel am Markt. Das Depot ist als Satire angelegt, hat mit dem
-// AsT-Markt aber eine Funktion: Der Depotwert lässt sich hier ausgeben. Das Guthaben wird
-// bewusst NICHT
-// gespeichert, sondern gerechnet (Depotwert minus Summe der Käufe) – nichts zu pflegen,
-// und wer je getauscht hat, steht rückwirkend im Plus. Gekauftes bleibt für immer.
+// Die Währung ist der AsT (AStA-Taler). Verdient wird er mit Schichten: jede geleistete Schicht
+// bringt etwas, und wer eine abgegebene Schicht aus der Schichtbörse OHNE Gegen-Schicht abnimmt
+// oder kurzfristig in eine offene Schicht einspringt, bekommt deutlich mehr – genau das ist
+// die Hilfe, die der Orga sonst fehlt. Ein 1:1-Tausch bringt nichts: Man arbeitet gleich viel.
+// Das Guthaben wird NICHT gespeichert, sondern gerechnet (ast_balance) – nichts zu pflegen.
+// Gekauftes bleibt für immer.
 //
 // Royals (Spitzenklasse) dürfen alle 3 Monate EIN Stück kostenlos BESCHLAGNAHMEN. Der
 // Status wird im Moment der Beschlagnahme live geprüft (royal_unlocked – er kann ja
@@ -7337,10 +7387,10 @@ function member_granted_skins(int $memberId): array
 // Krone verliert und wiedergewinnt, wartet trotzdem seine 3 Monate ab.
 // ---------------------------------------------------------------------------
 
-/** Registry des AsT-Markts: key => Label + Preis in AsT (Börsen-Größenordnung: EIN Tausch
- *  bringt beim Startkurs ~4.200 AsT Depotwert). Bewusst NICHT an Achievements gebunden;
+/** Registry des AsT-Markts: key => Label + Preis in AsT (Größenordnung: eine geleistete Schicht
+ *  bringt AST_JE_SCHICHT, eine Abnahme aus der Börse deutlich mehr). Bewusst NICHT an Achievements gebunden;
  *  jedes Stück braucht ein SVG (avatar_deco_svg) und einen Slot (avatar_deco_slot).
- *  Die Sortimentslinie ist Absicht: Ein Depot investiert selbstverständlich in Sachwerte – Holz. */
+ */
 function shop_items(): array
 {
     return [
@@ -7373,15 +7423,56 @@ function shop_items(): array
 }
 
 /** Startguthaben in AsT – für ALLE, auch künftige Neulinge: als Konstante gerechnet, nie
- *  gespeichert. Reicht bewusst knapp für nichts – wer mehr will, tauscht oder legt es an. */
+ *  gespeichert. Reicht bewusst knapp für nichts – wer mehr will, übernimmt Schichten. */
 const AST_STARTGUTHABEN = 4000;
 
-/** Depotwert in AsT (abgerundet): Aktien × Kurs aus dem Schicht-Depot der Tauschbörse. */
-function ast_depot(int $memberId): int
+/** AsT je geleisteter Schicht. */
+const AST_JE_SCHICHT = 500;
+/** Zusätzlich, wenn die Schicht OHNE Gegen-Schicht aus der Börse abgenommen wurde. */
+const AST_BONUS_ABNAHME = 2000;
+/** Zusätzlich, wenn man kurzfristig selbst in eine offene Schicht eingesprungen ist. */
+const AST_BONUS_EINSPRINGEN = 2000;
+/** Grund der einmaligen Gutschrift, mit der das Guthaben aus dem alten Börsen-Depot übernommen wurde. */
+const AST_ALTBESTAND_GRUND = 'Guthaben aus der alten Schichtbörse übernommen';
+
+/**
+ * Mit Schichten verdiente AsT. Gezählt wird eine Schicht erst, wenn sie VORBEI ist und man da
+ * noch eingeteilt war – wer eine Schicht annimmt und wieder abgibt, bekommt nichts. Und nur
+ * Schichten, die nach der Umstellung endeten (Einstellung `ast_umstellung`); was davor lag,
+ * steckt im übernommenen Altbestand (AST_ALTBESTAND_GRUND).
+ *   • jede geleistete Schicht: AST_JE_SCHICHT
+ *   • aus der Börse ohne Tausch abgenommen: zusätzlich AST_BONUS_ABNAHME
+ *   • kurzfristig eingesprungen (self_claimed): zusätzlich AST_BONUS_EINSPRINGEN
+ *   (eine Schicht bekommt höchstens einen der beiden Zuschläge)
+ * Rückgabe: ['schichten','abnahmen','einspringen','summe'].
+ */
+function ast_verdienst(int $memberId): array
 {
-    if ($memberId <= 0) return 0;
-    try { return (int)floor((float)swap_market_stats($memberId)['depot']); }
-    catch (\Throwable $e) { return 0; }
+    $out = ['schichten' => 0, 'abnahmen' => 0, 'einspringen' => 0, 'summe' => 0];
+    if ($memberId <= 0) return $out;
+    static $memo = [];
+    if (isset($memo[$memberId])) return $memo[$memberId];
+    try {
+        $ab = strtotime((string)setting_get('ast_umstellung', '')) ?: time();
+        $jetzt = time();
+        $st = db()->prepare("SELECT slot_id FROM shift_swaps WHERE mode = 'giveaway' AND status = 'done' AND taken_by = ?");
+        $st->execute([$memberId]);
+        $abgenommen = array_flip(array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN)));
+        $st = db()->prepare('SELECT s.id, s.starts_at, s.ends_at, a.self_claimed FROM assignments a
+                             JOIN event_slots s ON s.id = a.slot_id JOIN events e ON e.id = s.event_id
+                             WHERE a.member_id = ? AND e.draft = 0');
+        $st->execute([$memberId]);
+        foreach ($st->fetchAll() as $s) {
+            $ende = slot_interval($s)[1];
+            if ($ende <= $ab || $ende > $jetzt) continue;
+            $out['schichten']++;
+            if (isset($abgenommen[(int)$s['id']])) $out['abnahmen']++;
+            elseif (!empty($s['self_claimed'])) $out['einspringen']++;
+        }
+    } catch (\Throwable $e) { return $out; }
+    $out['summe'] = $out['schichten'] * AST_JE_SCHICHT + $out['abnahmen'] * AST_BONUS_ABNAHME
+                  + $out['einspringen'] * AST_BONUS_EINSPRINGEN;
+    return $memo[$memberId] = $out;
 }
 
 /** Ausgegebene AsT (Beschlagnahmen kosten 0 und tauchen hier nicht auf). */
@@ -7421,126 +7512,16 @@ function ast_grant(int $memberId, int $amount, string $reason, int $byId): bool
     $wer = ($by = $byId ? member_get($byId) : null) ? short_name((string)$by['name']) : 'dem Vorsitz';
     dm_send($memberId, 'Tauschbörse',
         '🎉🪙 Überraschung: Du hast von ' . $wer . ' ' . number_format($amount, 0, ',', '.') . ' AsT geschenkt bekommen'
-        . ($reason !== '' ? ' – ' . $reason : '') . '. Sie liegen schon in deinem Depot: Gönn dir was im Belohnungs-Locker!',
-        null, false, true, 'dm_vorsitz', 'tauschboerse.php#depot');
+        . ($reason !== '' ? ' – ' . $reason : '') . '. Sie sind schon auf deinem Konto: Gönn dir was im Belohnungs-Locker!',
+        null, false, true, 'dm_vorsitz', 'tauschboerse.php#guthaben');
     return true;
 }
 
+/** Verfügbar = Startguthaben plus Schicht-Verdienst plus Gutschriften (Geschenke, Altbestand) minus Käufe. */
 function ast_balance(int $memberId): int
 {
     if ($memberId <= 0) return 0;
-    // Verfügbar = Startguthaben plus Depotwert plus Geschenke minus Käufe minus gebundene
-    // Sparplan-Einlagen plus realisierte Verkaufserlöse (etf_flow rechnet die letzten beiden zusammen).
-    return max(0, AST_STARTGUTHABEN + ast_depot($memberId) + ast_granted($memberId) - ast_spent($memberId) - etf_flow($memberId));
-}
-
-// ---- ETF-Sparpläne des Schicht-Depots (Satire wie das Depot selbst) -----------------------
-
-/** Die drei Sparpläne: niedriges/mittleres/hohes Risiko mit entsprechender Tages-Drift und
- *  -Schwankung. Die „zufällige" Entwicklung ist deterministisch aus dem Datum gewürfelt
- *  (etf_index) – gleicher Tag, gleicher Kurs, für alle, ohne Cron und ohne Speicherung. */
-function etf_plans(): array
-{
-    return [
-        'defensiv' => ['label' => 'ASX Solide Defensiv',    'risk' => 'niedriges Risiko', 'drift' => 0.0005, 'vol' => 0.004],
-        'balance'  => ['label' => 'ASX Balance Global',     'risk' => 'mittleres Risiko', 'drift' => 0.0012, 'vol' => 0.02],
-        'turbo'    => ['label' => 'ASX Turbo Opportunities', 'risk' => 'hohes Risiko',    'drift' => 0.002,  'vol' => 0.06],
-    ];
-}
-
-/** Kursindex eines Sparplans am Tag $tag (Start 100,00). Deterministisch:
- *  je Tag ein Pseudo-Zufallsschritt aus crc32(plan|datum) – reproduzierbar ohne Tabelle. */
-function etf_index(string $plan, string $tag = ''): float
-{
-    $p = etf_plans()[$plan] ?? null;
-    if (!$p) return 100.0;
-    $tag = $tag !== '' ? $tag : date('Y-m-d');
-    if ($tag < '2026-08-01') $tag = '2026-08-01';
-    static $cache = [];
-    if (isset($cache[$plan . $tag])) return $cache[$plan . $tag];
-    $idx = 100.0;
-    $d = new DateTime('2026-08-01');
-    $ende = new DateTime($tag);
-    while ($d <= $ende) {
-        $u = ((int)abs(crc32($plan . '|' . $d->format('Y-m-d'))) % 20001) / 10000 - 1.0; // -1..1
-        $idx *= 1 + (float)$p['drift'] + (float)$p['vol'] * $u;
-        if ($idx < 1.0) $idx = 1.0; // ein Totalverlust wäre nicht mehr witzig
-        $d->modify('+1 day');
-    }
-    return $cache[$plan . $tag] = $idx;
-}
-
-/** Aktive Positionen je Plan: ['einzahlung' => AsT, 'wert' => AsT (heutiger Kurs)]. */
-function etf_positions(int $memberId): array
-{
-    $out = [];
-    foreach (array_keys(etf_plans()) as $pk) $out[$pk] = ['einzahlung' => 0, 'wert' => 0];
-    if ($memberId <= 0) return $out;
-    try {
-        $s = db()->prepare('SELECT plan, amount, bought_on FROM ast_invest WHERE member_id = ? AND sold_on IS NULL');
-        $s->execute([$memberId]);
-        foreach ($s->fetchAll() as $r) {
-            $pk = (string)$r['plan'];
-            if (!isset($out[$pk])) continue;
-            $out[$pk]['einzahlung'] += (int)$r['amount'];
-            $out[$pk]['wert'] += (int)round((int)$r['amount'] * etf_index($pk) / etf_index($pk, (string)$r['bought_on']));
-        }
-    } catch (\Throwable $e) {}
-    return $out;
-}
-
-/** Gebundene AsT: Summe aller Einlagen minus realisierte Verkaufserlöse. */
-function etf_flow(int $memberId): int
-{
-    if ($memberId <= 0) return 0;
-    try {
-        $s = db()->prepare('SELECT COALESCE(SUM(amount), 0) - COALESCE(SUM(sold_value), 0) FROM ast_invest WHERE member_id = ?');
-        $s->execute([$memberId]);
-        return (int)$s->fetchColumn();
-    } catch (\Throwable $e) { return 0; }
-}
-
-/** AsT in einen Sparplan legen (gegen das verfügbare Guthaben). */
-function etf_invest(int $memberId, string $plan, int $amount): array
-{
-    $p = etf_plans()[$plan] ?? null;
-    if ($memberId <= 0 || !$p) return ['ok' => false, 'msg' => 'Diesen Sparplan gibt es nicht.'];
-    if ($amount < 100) return ['ok' => false, 'msg' => 'Mindestanlage: 100 AsT.'];
-    $frei = ast_balance($memberId);
-    if ($amount > $frei) {
-        return ['ok' => false, 'msg' => 'So viel ist nicht frei – verfügbar sind ' . number_format($frei, 0, ',', '.') . ' AsT.'];
-    }
-    try {
-        db()->prepare('INSERT INTO ast_invest(member_id, plan, amount) VALUES(?,?,?)')->execute([$memberId, $plan, $amount]);
-    } catch (\Throwable $e) {
-        return ['ok' => false, 'msg' => 'Das hat gerade nicht geklappt.'];
-    }
-    return ['ok' => true, 'msg' => number_format($amount, 0, ',', '.') . ' AsT in „' . $p['label'] . '" angelegt.'];
-}
-
-/** ALLE aktiven Positionen eines Plans zum heutigen Kurs verkaufen (realisiert Gewinn/Verlust). */
-function etf_sell(int $memberId, string $plan): array
-{
-    $p = etf_plans()[$plan] ?? null;
-    if ($memberId <= 0 || !$p) return ['ok' => false, 'msg' => 'Diesen Sparplan gibt es nicht.'];
-    try {
-        $s = db()->prepare('SELECT id, amount, bought_on FROM ast_invest WHERE member_id = ? AND plan = ? AND sold_on IS NULL');
-        $s->execute([$memberId, $plan]);
-        $rows = $s->fetchAll();
-        if (!$rows) return ['ok' => false, 'msg' => 'In diesem Sparplan liegt gerade nichts.'];
-        $erloes = 0; $einlage = 0;
-        $upd = db()->prepare("UPDATE ast_invest SET sold_on = date('now','localtime'), sold_value = ? WHERE id = ? AND sold_on IS NULL");
-        foreach ($rows as $r) {
-            $wert = (int)round((int)$r['amount'] * etf_index($plan) / etf_index($plan, (string)$r['bought_on']));
-            $upd->execute([$wert, (int)$r['id']]);
-            if ($upd->rowCount() === 1) { $erloes += $wert; $einlage += (int)$r['amount']; }
-        }
-        $gv = $erloes - $einlage;
-        return ['ok' => true, 'msg' => '„' . $p['label'] . '" verkauft: ' . number_format($erloes, 0, ',', '.') . ' AsT zurück ('
-            . ($gv >= 0 ? '+' : '−') . number_format(abs($gv), 0, ',', '.') . ' AsT).'];
-    } catch (\Throwable $e) {
-        return ['ok' => false, 'msg' => 'Das hat gerade nicht geklappt.'];
-    }
+    return max(0, AST_STARTGUTHABEN + ast_verdienst($memberId)['summe'] + ast_granted($memberId) - ast_spent($memberId));
 }
 
 /** Gekaufte/beschlagnahmte Stücke: item => Zeile. */
@@ -7580,7 +7561,7 @@ function shop_buy(int $memberId, string $item): array
     $konto = ast_balance($memberId);
     if ($konto < $preis) {
         return ['ok' => false, 'msg' => 'Dafür fehlen dir noch ' . number_format($preis - $konto, 0, ',', '.')
-            . ' AsT – handle in der Tauschbörse: Jeder Tausch bringt Aktien, und der Kurs steigt.'];
+            . ' AsT – AsT verdienst du mit Schichten, am meisten, wenn du in der Schichtbörse eine abgegebene Schicht übernimmst.'];
     }
     try {
         db()->prepare('INSERT INTO shop_purchases(member_id, item, price, royal) VALUES(?,?,?,0)')
@@ -11277,52 +11258,6 @@ function member_swap_events(int $memberId): array
     }
     usort($out, fn($a, $b) => (event_start_ts($a) ?? PHP_INT_MAX) <=> (event_start_ts($b) ?? PHP_INT_MAX));
     return $out;
-}
-
-/**
- * SATIRE / Spaßfunktion: Das „Schicht-Depot". Jeder vollzogene Tausch bringt den
- * Beteiligten ASX-„Aktien"; der Kurs steigt mit der Gesamtzahl aller Tausche. Mehr
- * Aktien × höherer Kurs = höherer (fiktiver) Depotwert. Alles deterministisch aus der
- * Tausch-Historie abgeleitet – keine eigene Tabelle. Der Depotwert ist am AsT-Markt als
- * Guthaben ausgebbar (ast_depot/ast_balance).
- */
-const ASX_BASE = 42.00;   // Startkurs in „AStA-Talern" (AsT)
-const ASX_STEP = 1.37;    // Kursaufschlag je vollzogenem Tausch (marktweit)
-const ASX_PER_TRADE = 100; // „Aktien" pro eigenem Tausch
-
-function swap_market_stats(int $memberId): array
-{
-    $totalTrades = (int)db()->query("SELECT COUNT(*) FROM shift_swaps WHERE status = 'done'")->fetchColumn();
-    $myTrades = 0;
-    if ($memberId > 0) {
-        $st = db()->prepare("SELECT COUNT(*) FROM shift_swaps WHERE status = 'done' AND (offered_by = ? OR taken_by = ?)");
-        $st->execute([$memberId, $memberId]);
-        $myTrades = (int)$st->fetchColumn();
-    }
-    $kurs   = ASX_BASE + $totalTrades * ASX_STEP;
-    $shares = $myTrades * ASX_PER_TRADE;
-    $depot  = $shares * $kurs;
-
-    // Deterministische „historische" Kursreihe (Seed = Gesamttausche), damit der Chart seriös aussieht.
-    $n = 32; $series = [];
-    for ($i = 0; $i < $n; $i++) {
-        $t = $n > 1 ? $i / ($n - 1) : 1.0;
-        $trend = ASX_BASE + ($kurs - ASX_BASE) * $t;                       // Aufwärtstrend bis zum aktuellen Kurs
-        $wig = sin(($i + 1) * 1.7 + $totalTrades * 0.9) * (ASX_BASE * 0.05)
-             + cos(($i + 1) * 0.55 + $totalTrades) * (ASX_BASE * 0.025);   // deterministisches Wackeln
-        $series[] = round(max(1.0, $trend + $wig), 2);
-    }
-    $series[$n - 1] = round($kurs, 2);                                     // letzter Punkt = aktueller Kurs
-    $prev = $series[$n - 2] ?? $kurs;
-    $changePct = $prev > 0 ? round(($kurs - $prev) / $prev * 100, 2) : 0.0;
-    $gvPct = ASX_BASE > 0 ? round(($kurs - ASX_BASE) / ASX_BASE * 100, 2) : 0.0; // „Gewinn/Verlust" gg. Startkurs
-
-    return [
-        'totalTrades' => $totalTrades, 'myTrades' => $myTrades,
-        'shares' => $shares, 'kurs' => $kurs, 'depot' => $depot,
-        'changePct' => $changePct, 'gvPct' => $gvPct,
-        'high' => max($series), 'low' => min($series), 'series' => $series,
-    ];
 }
 
 /* ===================== Offene Schichten: selbst einspringen ===================== *

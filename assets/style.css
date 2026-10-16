@@ -2015,32 +2015,6 @@ html[data-theme="dark"] .flatpickr-time input, html[data-theme="dark"] .flatpick
 .boerse-hint-txt { flex: 1 1 auto; }
 .boerse-hint-go { white-space: nowrap; font-weight: 700; color: var(--green); }
 
-/* Hero mit Chart + Lauftext */
-.boerse-hero { position: relative; overflow: hidden; padding: 0; border: none;
-  /* feste dunkle Töne (nicht --petrol-dark, das in Dark/Royal/TrueBlack hell wird und den weißen Text unlesbar macht) */
-  background: linear-gradient(135deg, #0a3d4c, #0e5c73 60%, #15748f); color: #eaf4f7; }
-.boerse-chart { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .5; }
-.boerse-chart .bc-line { stroke: #aee9c6; stroke-width: 2; vector-effect: non-scaling-stroke; }
-.boerse-chart .bc-sticks line { stroke: rgba(255,255,255,.55); stroke-width: 2; vector-effect: non-scaling-stroke; }
-.boerse-chart .bc-sticks rect { fill: #6fd79a; }
-.boerse-chart .bc-sticks rect.bc-down { fill: #f0a3a3; }
-.boerse-hero-in { position: relative; padding: 1.5rem 1.4rem 1.2rem; max-width: 40rem; }
-.boerse-kicker { display: inline-flex; align-items: center; gap: .35rem; font-weight: 700; letter-spacing: .04em;
-  text-transform: uppercase; font-size: .76rem; background: rgba(255,255,255,.16); padding: .2rem .6rem; border-radius: 999px; }
-.boerse-hero h1 { margin: .55rem 0 .35rem; color: #fff; font-size: 1.7rem; }
-.boerse-hero p { margin: 0; color: #d4e8ee; max-width: 34rem; }
-.boerse-hero strong { color: #fff; }
-.boerse-ticker { position: relative; background: rgba(7,40,50,.55); border-top: 1px solid rgba(255,255,255,.12);
-  overflow: hidden; white-space: nowrap; }
-.boerse-ticker-track { display: inline-block; padding: .5rem 0; will-change: transform; animation: boerse-scroll 38s linear infinite; }
-.boerse-ticker:hover .boerse-ticker-track { animation-play-state: paused; }
-.tk-item { display: inline-block; margin: 0 1.3rem; font-size: .85rem; font-variant-numeric: tabular-nums; color: #d8eef3; }
-.tk-item b { color: #fff; letter-spacing: .03em; }
-.tk-up { color: #74e6a1; } .tk-flat { color: #cdb56b; }
-.tk-tag { font-size: .68rem; font-weight: 700; letter-spacing: .05em; background: rgba(116,230,161,.18);
-  color: #9af0c0; padding: .05rem .4rem; border-radius: 4px; margin-left: .2rem; }
-@keyframes boerse-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-@media (prefers-reduced-motion: reduce) { .boerse-ticker-track { animation: none; } }
 
 /* Kennzahlen-Leiste */
 .boerse-stats { display: flex; gap: .6rem; flex-wrap: wrap; margin: .9rem 0 1.2rem; }
@@ -2056,54 +2030,26 @@ html[data-theme="dark"] .flatpickr-time input, html[data-theme="dark"] .flatpick
 .swap-requests-h .sr-count { font-size: .75rem; font-weight: 700; color: #fff; background: var(--green); border-radius: 999px; padding: .05rem .5rem; }
 .swap-requests .boerse-row { background: var(--white); }
 
-/* Satire: Schicht-Depot – seriöser Börsen-Look */
-.bstat-depot { text-decoration: none; display: block; }
-.bstat-depot .bstat-n { font-variant-numeric: tabular-nums; font-size: 1.15rem; }
-.bstat-depot:hover { border-color: var(--petrol); box-shadow: var(--shadow); }
-.bstat-chg { font-size: .72rem; font-weight: 800; }
-.bstat-chg.up { color: var(--green); } .bstat-chg.down { color: var(--red); }
-.depot-card { --acc: var(--green); }
-.depot-card.depot-down { --acc: var(--red); }
-.depot-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-.depot-id { display: flex; align-items: center; gap: .6rem; }
-.depot-ticker { font-weight: 800; letter-spacing: .08em; background: var(--ink); color: #fff; padding: .3rem .55rem; border-radius: 7px; font-size: .95rem; }
-.depot-name { font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: .5rem; }
-.depot-sub { font-size: .76rem; color: var(--muted); }
-.depot-live { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--acc); display: inline-flex; align-items: center; gap: .25rem; }
-.dl-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--acc); display: inline-block; animation: depot-pulse 1.6s ease-in-out infinite; }
-@keyframes depot-pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
-@media (prefers-reduced-motion: reduce) { .dl-dot { animation: none; } }
-.depot-price { text-align: right; }
-.depot-kurs { font-size: 1.9rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; color: var(--ink); }
-.depot-cur { font-size: .9rem; font-weight: 600; color: var(--muted); }
-.depot-chg { font-weight: 800; font-variant-numeric: tabular-nums; margin-top: .2rem; }
-.depot-chg.up, .dkpi-v.up, .depot-holdings .up { color: var(--green); }
-.depot-chg.down, .dkpi-v.down, .depot-holdings .down { color: var(--red); }
-.depot-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: .6rem; margin: 1rem 0; }
-.dkpi { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: .55rem .7rem; }
-.dkpi-l { display: block; font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
-.dkpi-v { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--ink); }
-.depot-chartwrap { margin: .2rem 0 .4rem; }
-.depot-chart { width: 100%; height: auto; display: block; }
-.depot-chart .dc-grid { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.depot-chart .dc-axis { fill: var(--muted); font-size: 11px; font-family: inherit; font-variant-numeric: tabular-nums; }
-.depot-chart .dc-line { stroke: var(--acc); stroke-width: 2; vector-effect: non-scaling-stroke; }
-.depot-chart .dc-dot { fill: var(--acc); }
-.depot-chart .df-top { stop-color: var(--acc); stop-opacity: .28; }
-.depot-chart .df-bot { stop-color: var(--acc); stop-opacity: 0; }
-.depot-xaxis { display: flex; justify-content: space-between; font-size: .7rem; color: var(--muted); font-variant-numeric: tabular-nums; padding: 0 .5rem 0 58px; }
-.depot-holdings { margin: 1rem 0 .6rem; font-variant-numeric: tabular-nums; }
-.depot-holdings th:not(:first-child), .depot-holdings td:not(:first-child) { text-align: right; }
-.depot-disclaimer { font-size: .72rem; color: var(--muted); line-height: 1.5; margin: 0; border-top: 1px dashed var(--line); padding-top: .6rem; }
-@media (max-width: 560px) { .depot-kpis { grid-template-columns: repeat(2, 1fr); } .depot-kurs { font-size: 1.5rem; } }
-html[data-theme="dark"] .depot-ticker { background: #0c1418; }
 
-/* „Handelsraum" je Event */
+/* Erklärung oben: die drei Wege */
+.boerse-wege { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+.boerse-wege li { display: flex; gap: .6rem; align-items: flex-start; line-height: 1.45; }
+.boerse-wege .ti { flex: none; font-size: 1.15rem; color: var(--petrol); margin-top: .1rem; }
+.bstat-link { text-decoration: none; display: block; }
+.bstat-link .bstat-n { font-variant-numeric: tabular-nums; font-size: 1.15rem; }
+.bstat-link:hover { border-color: var(--petrol); box-shadow: var(--shadow); }
+
+/* Guthaben: Summe oben, darunter woher die AsT kommen */
+.ast-konto-summe { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; margin: 0 0 .7rem; color: var(--muted); }
+.ast-konto-summe span { font-size: 1.6rem; font-weight: 800; color: var(--petrol); font-variant-numeric: tabular-nums; }
+.ast-konto-summe .btn { margin-left: auto; }
+.ast-konto-tab td:last-child { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* Je Event ein Block */
 .boerse-floor { background: var(--white); border: 1px solid var(--line); border-radius: var(--radius);
   box-shadow: var(--shadow); margin: 0 0 1.1rem; overflow: hidden; }
 .floor-head { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; padding: .7rem .9rem;
   background: var(--petrol-soft); border-bottom: 1px solid var(--line); }
-.floor-sym { font-weight: 800; letter-spacing: .06em; background: var(--petrol); color: #fff; padding: .2rem .5rem; border-radius: 7px; font-size: .82rem; }
 .floor-name { font-weight: 700; color: var(--ink); text-decoration: none; }
 .floor-name:hover { color: var(--petrol); text-decoration: underline; }
 .floor-date { margin-left: auto; color: var(--muted); font-size: .85rem; display: inline-flex; align-items: center; gap: .3rem; }
@@ -2116,7 +2062,6 @@ html[data-theme="dark"] .depot-ticker { background: #0c1418; }
   border: 1px solid var(--line); border-radius: 10px; padding: .45rem .6rem; }
 .boerse-row.offer { border-left: 3px solid var(--green); }
 .brow-when { flex: 1 1 60%; min-width: 0; font-size: .9rem; } /* min-width:0 = darf schrumpfen, sonst schiebt es die Buttons aus der Karte (overflow:hidden schneidet sie ab) */
-.brow-arrow { color: var(--green); font-weight: 800; }
 .brow-act { display: inline-flex; align-items: center; gap: .4rem; margin: 0; flex-wrap: wrap; }
 .brow-give { margin: 0; font-weight: 500; font-size: .82rem; color: var(--muted); display: inline-flex; align-items: center; gap: .3rem; }
 .brow-give select { width: auto; min-width: 8rem; padding: .28rem .45rem; font-size: .85rem; }
@@ -2131,7 +2076,6 @@ html[data-theme="dark"] .depot-ticker { background: #0c1418; }
 @media (max-width: 640px) {
   .floor-cols { grid-template-columns: 1fr; }
   .floor-col:first-child { border-right: none; border-bottom: 1px solid var(--line); }
-  .boerse-hero h1 { font-size: 1.4rem; }
   /* Börsen-Zeilen stapeln: Beschreibung oben, Aktions-Buttons darunter voll sichtbar (nicht abgeschnitten) */
   .boerse-row { flex-direction: column; align-items: stretch; }
   .brow-act { flex-wrap: wrap; }
@@ -4259,33 +4203,10 @@ a.ach-konto-teil:hover { color: var(--ink); }
   filter: drop-shadow(0 1px 2px rgba(0,0,0,.25)); }
 .acc-k-baum svg { width: 100%; height: 100%; }
 
-/* Schicht-Depot am Handy: Die Positionen-Tabellen laufen sonst rechts aus der Karte. Unter 560px
-   fallen die Spalten „Ø-Kauf" und „Wert" (ASX) bzw. „Angelegt" (Sparpläne) weg – Wert bzw.
-   Einzahlung stehen ohnehin in den KPIs bzw. ergeben sich aus Wert und G/V. */
-.depot-etf-aktion form { display: inline-flex; gap: .3rem; align-items: center; margin: .1rem 0; }
-.depot-etf-aktion input[type="number"] { width: 5.2rem; }
-@media (max-width: 560px) {
-  .depot-holdings { font-size: .85rem; }
-  .depot-holdings:not(.depot-etfs) th:nth-child(3), .depot-holdings:not(.depot-etfs) td:nth-child(3),
-  .depot-holdings:not(.depot-etfs) th:nth-child(5), .depot-holdings:not(.depot-etfs) td:nth-child(5) { display: none; }
-  /* Sparplan-Tabelle: am Handy je Plan ein kompakter BLOCK statt sechs Spalten. Name und
-     Aktionen stehen als eigene Zeilen, die Zahlen (Kurs/Angelegt/Wert/G-V) fließen dazwischen
-     als EINE umbrechende Reihe mit Mini-Labels (data-l) – linksbündig, ohne Flatterrand. */
-  .depot-etfs thead { display: none; }
-  .depot-etfs, .depot-etfs tbody, .depot-etfs tr { display: block; width: 100%; }
-  .depot-etfs tr { border-top: 1px solid var(--line); padding: .55rem 0; }
-  .depot-etfs td { display: inline-block; width: auto; border: 0; padding: .05rem 1rem .05rem 0;
-    text-align: left; vertical-align: baseline; }
-  .depot-etfs td:first-child { display: block; width: 100%; padding: 0 0 .15rem; }
-  .depot-etfs td[data-l]::before { content: attr(data-l) ': '; color: var(--muted); font-size: .78rem; }
-  .depot-etfs td.etf-leer { display: none; }
-  .depot-etfs td.depot-etf-aktion { display: flex; width: 100%; flex-wrap: wrap; gap: .4rem; padding: .35rem 0 0; }
-  .depot-etf-aktion form { display: inline-flex; margin: 0; }
-}
 
 /* =========================================================================
    Kaufbare Avatar-Farben (AsT-Sortiment): animiert wie die verdienten –
-   mit Börsen-AsT bezahlt ist schließlich auch verdient.
+   mit Schicht-AsT bezahlt ist schließlich auch verdient.
    ========================================================================= */
 /* Bulle & Bär: der Verlauf pendelt langsam zwischen Grün- und Rot-Übergewicht */
 .pal-bulle { background-size: 300% 300% !important; animation: pal-bulle 9s ease-in-out infinite alternate; }

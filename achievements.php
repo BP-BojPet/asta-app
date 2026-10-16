@@ -55,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'flame
     redirect('achievements.php');
 }
 
-// Kaufbarer Schmuck: kaufen (AsT aus dem Schicht-Depot) oder als Royal beschlagnahmen (alle 3 Monate eine Sache).
+// Kaufbarer Schmuck: kaufen (mit AsT aus Schichten) oder als Royal beschlagnahmen (alle 3 Monate eine Sache).
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['action'] ?? '', ['shop_buy', 'shop_claim'], true)) {
     check_csrf();
     $item = trim((string)($_POST['item'] ?? ''));
@@ -128,7 +128,7 @@ $inkVar    = fn(string $k) => $k !== '' && isset(avatar_inks()[$k]) ? ';--av-ink
 // Kachel zeigt ja eine ANDERE Kandidatin, meine Verlaufs-Schrift würde alle Vorschauen überdecken.
 $palOnlyClass = member_avatar_class(['avatar_palette' => $myPalette]);
 $inkClass  = fn(string $k) => !empty(avatar_inks()[$k]['grad']) ? ' ink-' . $k : '';
-// Kaufbarer Schmuck: bezahlt mit dem Depotwert (AsT) des Schicht-Depots aus der Tauschbörse.
+// Kaufbarer Schmuck: bezahlt mit AsT, verdient mit Schichten (ast_balance).
 // Die Stücke stehen ganz normal im Avatar-Schmuck-Locker, nur eben mit Preisschild.
 $astKonto   = ast_balance($meId);
 $propsFrei  = props_available($meId);   // erhaltene minus schon eingelöste Props
@@ -337,10 +337,10 @@ page_header('Achievements');
 
 <?php /* Der Kontostand gehört in die Überschrift: Seit man mit AsT UND mit Props kaufen kann,
          ist die erste Frage vor jedem Klick „habe ich genug?" – die Antwort soll man sehen,
-         ohne erst den Fließtext zu lesen oder in die Tauschbörse zu wechseln. */ ?>
+         ohne erst den Fließtext zu lesen oder in die Schichtbörse zu wechseln. */ ?>
 <div class="section-title"><i class="ti ti-sparkles"></i> Belohnungen
   <span class="ach-konto">
-    <a class="ach-konto-teil" href="tauschboerse.php#depot" title="Dein Schicht-Depot in der Tauschbörse"><i class="ti ti-coins"></i> <strong><?= h($asTaler($astKonto)) ?></strong></a>
+    <a class="ach-konto-teil" href="tauschboerse.php#guthaben" title="Dein Guthaben – woher es kommt, steht in der Schichtbörse"><i class="ti ti-coins"></i> <strong><?= h($asTaler($astKonto)) ?></strong></a>
     <span class="ach-konto-teil<?= $propsFrei >= PROPS_PREIS ? ' ach-konto-an' : '' ?>" title="Je <?= PROPS_PREIS ?> Props kannst du gegen ein beliebiges Stück eintauschen"><span aria-hidden="true">🙌</span> <strong><?= (int)$propsFrei ?></strong> Props<span class="ach-konto-klein"> (<?= PROPS_PREIS ?> = 1 Stück)</span></span>
   </span>
 </div>
@@ -356,7 +356,7 @@ page_header('Achievements');
 <div class="card" id="locker" style="scroll-margin-top:80px"><!-- Anker-Ziel des „Anpassen"-Buttons; scroll-margin hält Abstand zur fixen Topbar -->
   <div class="section-title" style="margin-top:0;font-size:1.02rem"><i class="ti ti-mood-smile"></i> Avatar-Schmuck</div>
   <p class="small muted" style="margin-top:0">Rüste freigeschaltete Schmuckstücke aus – je Trage-Position eins (Kopf, Hand, Hals, Gesicht – besondere Stücke sitzen „Hinter dir" oder „Unter dir"), und die Positionen lassen sich <strong>kombinieren</strong>. Erneuter Klick legt ein Stück wieder ab. Dein Kopf-Accessoire trägt übrigens auch das AStA-Logo oben links. 🎀
-    Alles mit <strong>Preisschild</strong> (auch unten bei Farben und Streak-Stilen) kannst du kaufen – ein Klick auf die Kachel fragt, womit: in AsT aus deinem <a href="tauschboerse.php#depot">Schicht-Depot</a> (<?= h($asTaler($astKonto)) ?> verfügbar)<?php if ($propsFrei >= PROPS_PREIS): ?>, oder für <strong><?= PROPS_PREIS ?> Props</strong> 🙌 – du hast <?= (int)$propsFrei ?><?php endif; ?>.<?php if ($royalJetzt): ?> Als Royal darfst du alle 3 Monate ein Stück kostenlos <strong>beschlagnahmen</strong><?= $claimFrei ? ' – die Krone an der Kachel zeigt, wo das geht.' : ' – die nächste ab dem ' . h($claimAb) . '.' ?><?php endif; ?></p>
+    Alles mit <strong>Preisschild</strong> (auch unten bei Farben und Streak-Stilen) kannst du kaufen – ein Klick auf die Kachel fragt, womit: in AsT, die du mit Schichten verdienst (<a href="tauschboerse.php#guthaben"><?= h($asTaler($astKonto)) ?> verfügbar</a>)<?php if ($propsFrei >= PROPS_PREIS): ?>, oder für <strong><?= PROPS_PREIS ?> Props</strong> 🙌 – du hast <?= (int)$propsFrei ?><?php endif; ?>.<?php if ($royalJetzt): ?> Als Royal darfst du alle 3 Monate ein Stück kostenlos <strong>beschlagnahmen</strong><?= $claimFrei ? ' – die Krone an der Kachel zeigt, wo das geht.' : ' – die nächste ab dem ' . h($claimAb) . '.' ?><?php endif; ?></p>
   <div class="deco-locker">
     <!-- „Keins" -->
     <form method="post" action="achievements.php" class="deco-opt<?= !$equipped ? ' active' : '' ?>">
