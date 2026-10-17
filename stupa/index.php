@@ -1,6 +1,6 @@
 <?php
 /**
- * Auszahlungsaufforderungen des StuPa-Präsidiums – die einzige Seite dieses Bereichs.
+ * Auszahlungsaufforderungen des StuPa-Präsidiums (daneben gibt es raeume.php und umlauf.php).
  *
  * Eigener Zugang, eigene Session, KEIN Eintrag in der Mitgliedertabelle (Begründung in
  * stupa-lib.php). Die Aufforderungen landen in derselben Datenbank, damit Finanzen sie

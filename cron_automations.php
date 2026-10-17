@@ -37,9 +37,23 @@ $protoAttached = protocol_sync_pending_votes();
 // Wartebank: TOPs und Berichte gelöschter Sitzungen in eine inzwischen angelegte Sitzung holen.
 $geparkt = meeting_sync_parked();
 
+// Umlaufverfahren des StuPa (eigene Datenbank, siehe stupa-umlauf-db.php): abgelaufene auswerten,
+// Säumige 24 Stunden vor der Frist erinnern. Gibt es die Datenbank noch nicht, passiert nichts.
+$stupaUmlauf = ['ausgewertet' => 0, 'erinnert' => 0];
+try {
+    require_once __DIR__ . '/stupa-umlauf-db.php';
+    mail_from(); mail_rahmen_app();              // Absender + Rahmen spiegeln (siehe stupa/umlauf.php)
+    $stupaUmlauf = su_maintain();
+} catch (\Throwable $e) {
+    app_log_error('StuPa-Umlaufverfahren (Cron): ' . $e->getMessage());
+}
+
 cron_stamp('automations'); // Herzschlag: Selbsttest/Dashboard warnen, wenn dieser Stempel >26 h alt ist
 
 echo date('Y-m-d H:i') . ' · Berichte-Dok-Automation: ' . $res['count'] . " hochgeladen.\n";
 foreach ($res['lines'] as $l) echo '  - ' . $l . "\n";
 echo '  · Protokoll-Abstimmungen angelegt oder umgehängt: ' . $protoAttached . "\n";
 echo '  · Wartende TOPs/Abstimmungsgegenstände/Berichte übernommen: ' . ($geparkt['tops'] + $geparkt['votes'] + $geparkt['reports']) . "\n";
+if ($stupaUmlauf['ausgewertet'] || $stupaUmlauf['erinnert']) {
+    echo '  · StuPa-Umläufe ausgewertet: ' . $stupaUmlauf['ausgewertet'] . ', Erinnerungen verschickt: ' . $stupaUmlauf['erinnert'] . "\n";
+}

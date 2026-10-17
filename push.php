@@ -30,6 +30,12 @@ if ($action === 'unsubscribe') {
     echo json_encode(['ok' => true]);
     exit;
 }
+if ($action === 'news_seen') {
+    // „Neu in der App" gesehen (Splash geschlossen oder einem seiner Links gefolgt)
+    app_neuigkeiten_gesehen((int)$me['id'], ($_POST['geraet'] ?? '') === 'mobil' ? 'mobil' : 'desktop');
+    echo json_encode(['ok' => true]);
+    exit;
+}
 if ($action === 'app_open') {
     // App geöffnet – zählt für die Öffnungs-Serie; n = gesammelte Öffnungen aus der Client-Warteschlange
     member_count_app_open((int)$me['id'], (int)($_POST['n'] ?? 1));

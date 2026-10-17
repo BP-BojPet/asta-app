@@ -4950,3 +4950,163 @@ a.ach-konto-teil:hover { color: var(--ink); }
 .zust-modus .wl-chk span { font-weight: 600; }
 .zust-liste { padding-top: .1rem; }
 .zust-wahl .zust-pers .wl-chk span { font-weight: 400; }
+
+/* -----------------------------------------------------------------------------------------
+   Raumbelegung (raeume.php, stupa/raeume.php – Markup aus raum_wochenansicht in lib.php)
+   Je Raum eine Karte mit sieben Tageszeilen; auf breiten Schirmen stehen die Räume
+   nebeneinander, am Handy untereinander. Belegt ist farbig, frei bleibt ruhig.
+   ----------------------------------------------------------------------------------------- */
+.raum-woche-nav { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin: 0 0 .9rem; }
+.raum-woche-nav strong { font-variant-numeric: tabular-nums; }
+.raum-raster { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: .9rem; }
+.raum-karte { margin: 0; }
+.raum-name { margin: 0 0 .2rem; font-size: 1.05rem; color: var(--petrol-dark); display: flex; align-items: center; gap: .4rem; }
+.raum-info { margin: 0 0 .5rem; }
+.raum-tage { list-style: none; margin: .4rem 0 0; padding: 0; }
+.raum-tag { display: grid; grid-template-columns: 4.6rem 1fr; gap: .5rem; align-items: start; padding: .4rem 0; border-top: 1px solid var(--line); }
+.raum-tag.ist-heute .raum-tag-name { color: var(--petrol); font-weight: 800; }
+.raum-tag.ist-vorbei { opacity: .55; }
+.raum-tag-name { font-size: .85rem; color: var(--muted); font-variant-numeric: tabular-nums; padding-top: .1rem; }
+.raum-frei { font-size: .85rem; color: var(--muted); padding-top: .1rem; }
+.raum-belegt { display: flex; flex-direction: column; gap: .3rem; }
+.raum-eintrag { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; font-size: .88rem; line-height: 1.35;
+  background: var(--petrol-soft); border-radius: 8px; padding: .3rem .5rem; }
+.raum-eintrag strong { font-variant-numeric: tabular-nums; }
+.raum-eintrag.raum-serie, .raum-eintrag.raum-fest { background: var(--bg); border: 1px solid var(--line); }
+.raum-eintrag.raum-stupa { background: rgba(79, 70, 229, .10); }
+.raum-chip { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.raum-x { display: inline; margin: 0 0 0 auto; }
+.raum-x-btn { background: none; border: 0; padding: .1rem .25rem; color: var(--muted); cursor: pointer; border-radius: 6px; }
+.raum-x-btn:hover, .raum-x-btn:focus-visible { color: var(--red); background: var(--white); }
+.raum-formular { display: flex; flex-wrap: wrap; gap: .5rem .7rem; align-items: flex-end; margin: 0 0 .4rem; }
+.raum-formular label { display: flex; flex-direction: column; gap: .2rem; font-size: .85rem; margin: 0; flex: 0 1 9rem; }
+.raum-formular label.raum-anlass { flex: 1 1 14rem; }
+.raum-formular label.raum-fest { flex-direction: row; align-items: center; gap: .35rem; flex: 0 0 auto; padding-bottom: .55rem; }
+.raum-formular input, .raum-formular select { width: 100%; }
+.raum-formular input[type="checkbox"] { width: auto; }
+.raum-loeschen { margin: 0 0 1rem; }
+.raum-h3 { font-size: .95rem; margin: .4rem 0 .6rem; color: var(--petrol-dark); }
+.raum-serien { list-style: none; margin: 0 0 .8rem; padding: 0; display: flex; flex-direction: column; gap: .35rem; font-size: .9rem; }
+.raum-serien li { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
+html[data-theme="dark"] .raum-eintrag.raum-stupa { background: rgba(129, 140, 248, .16); }
+
+/* -----------------------------------------------------------------------------------------
+   „Neu in der App" – Splash nach einem Update (app_neuigkeiten_html in lib.php, app.js).
+   Kopf in festen dunklen Petroltönen (nicht --petrol-dark: das wird in dunklen Skins hell und
+   der weiße Text unlesbar), darunter die Punkte als ruhige Liste. Die Bewegung ist EIN Auftritt:
+   der Dialog hebt sich, die Punkte folgen gestaffelt – danach steht alles still.
+   ----------------------------------------------------------------------------------------- */
+.neu-splash { border: 0; padding: 0; width: min(94vw, 560px); max-height: min(90vh, 760px); border-radius: 20px;
+  background: var(--white); color: var(--ink); box-shadow: 0 24px 70px rgba(4, 30, 38, .38); overflow: hidden;
+  display: none; flex-direction: column; }
+.neu-splash[open] { display: flex; animation: neu-auf .42s cubic-bezier(.2, .9, .25, 1.15) both; }
+.neu-splash::backdrop { background: rgba(6, 28, 35, .55); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); animation: neu-hg .3s ease both; }
+.neu-splash.ist-zu { animation: neu-ab .18s ease both; }
+@keyframes neu-auf { from { opacity: 0; transform: translateY(18px) scale(.94); } to { opacity: 1; transform: none; } }
+@keyframes neu-ab  { to { opacity: 0; transform: translateY(8px) scale(.97); } }
+@keyframes neu-hg  { from { opacity: 0; } to { opacity: 1; } }
+
+.neu-kopf { position: relative; padding: 1.6rem 1.6rem 1.4rem; color: #fff; flex: none;
+  background:
+    radial-gradient(circle at 88% 18%, rgba(174, 203, 244, .35) 0 2px, transparent 3px),
+    radial-gradient(circle at 76% 62%, rgba(255, 255, 255, .28) 0 1.5px, transparent 2.5px),
+    radial-gradient(circle at 93% 78%, rgba(255, 214, 120, .45) 0 2px, transparent 3px),
+    radial-gradient(circle at 64% 28%, rgba(255, 255, 255, .22) 0 1px, transparent 2px),
+    radial-gradient(120% 140% at 100% 0%, #1f7f99 0%, transparent 55%),
+    linear-gradient(135deg, #0E5C73 0%, #083a47 100%); }
+.neu-funkeln { display: inline-grid; place-items: center; width: 2.6rem; height: 2.6rem; border-radius: 50%;
+  background: rgba(255, 255, 255, .14); border: 1px solid rgba(255, 255, 255, .22); font-size: 1.35rem; margin-bottom: .7rem;
+  animation: neu-funkeln 2.4s ease-in-out .5s 2; }
+@keyframes neu-funkeln { 0%, 100% { transform: rotate(0) scale(1); } 40% { transform: rotate(-12deg) scale(1.12); } 70% { transform: rotate(8deg) scale(1.04); } }
+.neu-kicker { display: block; font-size: .74rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #bfe3ec; }
+.neu-kopf h2 { margin: .2rem 0 0; font-size: 1.65rem; line-height: 1.15; color: #fff; text-wrap: balance; }
+.neu-x { position: absolute; top: .9rem; right: .9rem; width: 2.2rem; height: 2.2rem; border-radius: 50%; border: 0; cursor: pointer;
+  background: rgba(255, 255, 255, .12); color: #fff; font-size: 1.1rem; display: grid; place-items: center; }
+.neu-x:hover, .neu-x:focus-visible { background: rgba(255, 255, 255, .24); }
+
+.neu-punkte { list-style: none; margin: 0; padding: 1.1rem 1.4rem .3rem; display: flex; flex-direction: column; gap: 1rem; overflow-y: auto; }
+.neu-punkt { display: grid; grid-template-columns: 2.9rem 1fr; gap: .9rem; align-items: start;
+  animation: neu-punkt .45s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--i, 0) * 90ms + 220ms); }
+@keyframes neu-punkt { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.neu-icon { display: grid; place-items: center; width: 2.9rem; height: 2.9rem; border-radius: 14px; font-size: 1.45rem; }
+.neu-petrol .neu-icon  { background: var(--petrol-soft); color: var(--petrol); }
+.neu-gold .neu-icon    { background: var(--amber-bg); color: var(--amber); }
+.neu-violett .neu-icon { background: var(--violet-bg); color: var(--violet); }
+.neu-inhalt h3 { margin: .15rem 0 .2rem; font-size: 1.02rem; color: var(--ink); }
+.neu-inhalt p { margin: 0; font-size: .92rem; line-height: 1.5; color: var(--muted); }
+.neu-inhalt p strong { color: var(--ink); }
+/* Umgezogene Menüpunkte: je ein Kärtchen „Symbol · Name → neuer Ort" */
+.neu-orte { list-style: none; margin: .55rem 0 .1rem; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12.5rem), 1fr)); gap: .4rem; }
+.neu-orte li { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; font-size: .86rem; line-height: 1.3;
+  padding: .45rem .6rem; border-radius: 10px; background: var(--violet-bg); color: var(--ink); }
+.neu-orte li > .ti { color: var(--violet); font-size: 1.05rem; }
+.neu-orte li span { color: var(--muted); font-size: .8rem; display: inline-flex; align-items: center; gap: .2rem; }
+.neu-orte li span .ti { font-size: .8rem; }
+.neu-mehr { display: inline-flex; align-items: center; gap: .3rem; margin-top: .45rem; font-size: .88rem; font-weight: 700;
+  color: var(--petrol); text-decoration: none; background: none; border: 0; padding: 0; cursor: pointer; font-family: inherit; }
+.neu-mehr .ti { transition: transform .15s ease; }
+.neu-mehr:hover .ti, .neu-mehr:focus-visible .ti { transform: translateX(3px); }
+.neu-ausserdem { margin: .6rem 1.4rem 0; padding: .7rem 0 0; border-top: 1px solid var(--line); font-size: .84rem; color: var(--muted); line-height: 1.45; flex: none; }
+.neu-fuss { display: flex; justify-content: flex-end; padding: .9rem 1.4rem 1.2rem; flex: none; }
+.neu-fuss .btn { min-width: 9rem; justify-content: center; }
+@media (max-width: 520px) {
+  .neu-kopf { padding: 1.3rem 1.2rem 1.1rem; }
+  .neu-kopf h2 { font-size: 1.4rem; }
+  .neu-punkte { padding: 1rem 1.1rem .2rem; }
+  .neu-ausserdem { margin: .5rem 1.1rem 0; }
+  .neu-fuss { padding: .8rem 1.1rem 1rem; }
+  .neu-fuss .btn { width: 100%; }
+}
+@media (max-height: 700px) {
+  .neu-kopf { padding-top: 1.1rem; padding-bottom: 1rem; }
+  .neu-funkeln { width: 2.1rem; height: 2.1rem; font-size: 1.1rem; margin-bottom: .4rem; }
+  .neu-kopf h2 { font-size: 1.4rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .neu-splash[open], .neu-splash::backdrop, .neu-splash.ist-zu, .neu-punkt, .neu-funkeln { animation: none; }
+}
+
+/* -----------------------------------------------------------------------------------------
+   Umlaufverfahren des StuPa: Abstimmungsseite (stupa/abstimmen.php, öffentlich, strenge CSP –
+   KEINE style-Attribute dort, alles hier) und die Formulare des Präsidiums (stupa/umlauf.php).
+   ----------------------------------------------------------------------------------------- */
+.su-body { background: var(--bg); }
+.su-seite { max-width: 640px; margin: 0 auto; padding: 1.4rem 16px 2.5rem; }
+.su-marke { display: flex; align-items: center; gap: .55rem; font-weight: 700; color: var(--petrol); margin: 0 0 1rem; }
+.su-seite .card { margin: 0 0 .9rem; }
+.su-seite .card p { margin: 0; }
+.su-seite .card p + p, .su-seite .su-abstimmen p { margin-top: .6rem; }
+.su-seite .su-abstimmen p:first-child { margin-top: 0; margin-bottom: .6rem; }
+.su-karte .small:first-child { margin-bottom: .3rem; }
+.su-titel { margin: 0 0 .5rem; font-size: 1.35rem; line-height: 1.25; color: var(--ink); text-wrap: balance; }
+.su-text { color: var(--ink); line-height: 1.55; margin: 0 0 .6rem !important; }
+.su-fakten { list-style: none; margin: .4rem 0 0; padding: 0; display: grid; gap: .3rem; font-size: .9rem; }
+.su-fakten .ti { color: var(--petrol); margin-right: .25rem; }
+.su-wahlen { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; margin: 0 0 .9rem; }
+.su-wahlknopf { margin: 0; cursor: pointer; }
+.su-wahlknopf input { position: absolute; opacity: 0; pointer-events: none; }
+.su-wahlknopf span { display: flex; align-items: center; justify-content: center; gap: .35rem; padding: .8rem .4rem; border-radius: 12px;
+  border: 2px solid var(--line); background: var(--white); font-weight: 700; color: var(--ink); transition: border-color .12s, background .12s; }
+.su-wahlknopf input:focus-visible + span { outline: 2px solid var(--petrol); outline-offset: 2px; }
+.su-yes input:checked + span { border-color: var(--green); background: var(--green-bg); color: var(--green); }
+.su-no input:checked + span { border-color: var(--red); background: var(--red-bg); color: var(--red); }
+.su-abstain input:checked + span { border-color: var(--amber); background: var(--amber-bg); color: var(--amber); }
+.su-hinweis { display: flex; align-items: center; gap: .45rem; padding: .7rem .9rem; border-radius: 12px; margin: 0 0 .9rem; font-weight: 600; }
+.su-ok { background: var(--green-bg); color: var(--green); }
+.su-fehler { background: var(--red-bg); color: var(--red); }
+.su-namen { list-style: none; margin: .6rem 0 0; padding: 0; display: grid; gap: .25rem; }
+.su-fuss { text-align: center; margin: 1.2rem 0 0; }
+.su-seite .empty .ti-link-off { color: var(--red); }
+@media (max-width: 420px) { .su-wahlen { grid-template-columns: 1fr; } }
+
+.su-form { display: flex; flex-direction: column; gap: .7rem; }
+.su-form label { display: flex; flex-direction: column; gap: .25rem; margin: 0; }
+.su-form fieldset { border: 1px solid var(--line); border-radius: 10px; padding: .5rem .8rem .6rem; margin: 0; }
+.su-form legend { font-weight: 700; font-size: .9rem; padding: 0 .3rem; }
+.su-form label.su-wahl { flex-direction: row; align-items: baseline; gap: .4rem; font-weight: 400; margin: .2rem 0; }
+.su-form label.su-wahl input { width: auto; }
+.su-form.su-zeile { flex-direction: row; flex-wrap: wrap; align-items: flex-end; }
+.su-form.su-zeile label { flex: 1 1 12rem; }
+.su-mitglieder input[type="text"], .su-mitglieder input[type="email"] { width: 100%; min-width: 9rem; }
+.su-aktionen { white-space: nowrap; }
+.su-aktionen form { display: inline-block; margin: 0; }

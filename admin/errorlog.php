@@ -5741,6 +5741,171 @@ if ($doTest) {
         st_expect(function_exists('file_delivery_headers'), 'zentraler Datei-Header-Helfer muss vorhanden sein (ersetzt no-store der Session – sonst weiße Quick-Look-Seite auf iOS)');
     });
 
+    $run('StuPa-Umlaufverfahren: Links, namentlich/geheim, Mehrheiten, Trennung', function () {
+        $wurzel = dirname(__DIR__);
+        // Rechnen: alle vier Regeln an ihren Grenzen
+        $t = static fn (int $y, int $n, int $a) => ['yes' => $y, 'no' => $n, 'abstain' => $a, 'total' => $y + $n + $a];
+        require_once $wurzel . '/stupa-umlauf-db.php';
+        st_expect(su_eval('zweidrittel', 0, $t(6, 3, 5), 20) === 'accepted' && su_eval('zweidrittel', 0, $t(5, 3, 0), 20) === 'rejected',
+            'Zwei-Drittel-Mehrheit rechnet falsch (6:3 muss reichen, 5:3 nicht)');
+        st_expect(su_eval('simple', 0, $t(3, 3, 1), 9) === 'rejected' && su_eval('absolute', 0, $t(5, 0, 0), 9) === 'accepted'
+                  && su_eval('absolute', 0, $t(4, 0, 0), 9) === 'rejected' && su_eval('unanimous', 0, $t(4, 0, 3), 9) === 'accepted'
+                  && su_eval('simple', 50, $t(3, 0, 0), 9) === 'no_quorum', 'Eine Annahme-Regel oder die Mindestbeteiligung rechnet falsch');
+        // Ablauf in einer Transaktion der StuPa-Datenbank, die am Ende zurückgenommen wird. Gibt es die
+        // Datei noch nicht (keine Umläufe), wird sie dafür NICHT angelegt – der Selbsttest schreibt nichts.
+        $mitAblauf = is_file(SU_DB_FILE);
+        if ($mitAblauf):
+        $pdo = su_db();
+        $pdo->exec('BEGIN IMMEDIATE');
+        try {
+            [$n, $fehler] = su_members_import("Kim Probe, kim@st.invalid\nAlex Probe <alex@st.invalid>\nkaputt ohne Adresse");
+            st_expect($n === 2 && count($fehler) === 1, 'Der Import der Mitgliederliste nimmt falsch an (' . $n . ' / ' . count($fehler) . ')');
+            $pdo->exec("UPDATE su_members SET active = 0 WHERE email NOT LIKE '%@st.invalid'");   // nur die Probe-Leute stimmen mit
+            // su_vote_create und su_cast öffnen eigene Transaktionen – deshalb hier nachgebaut, damit alles in DIESER bleibt
+            $pdo->prepare("INSERT INTO su_votes(title, deadline, secret, rule, eligible_count, result_mail) VALUES('Probe namentlich', ?, 0, 'simple', 2, 0)")
+                ->execute([date('Y-m-d H:i', time() + 86400)]);
+            $vn = (int)$pdo->lastInsertId();
+            $pdo->prepare("INSERT INTO su_votes(title, deadline, secret, rule, eligible_count, result_mail) VALUES('Probe geheim', ?, 1, 'simple', 2, 0)")
+                ->execute([date('Y-m-d H:i', time() + 86400)]);
+            $vg = (int)$pdo->lastInsertId();
+            $tok = [];
+            foreach ([$vn, $vg] as $vid) foreach ($pdo->query("SELECT id, name, email FROM su_members WHERE email LIKE '%@st.invalid'")->fetchAll() as $m) {
+                $k = bin2hex(random_bytes(16)); $tok[$vid][] = $k;
+                $pdo->prepare('INSERT INTO su_tokens(vote_id, member_id, name, email, token) VALUES(?,?,?,?,?)')->execute([$vid, (int)$m['id'], $m['name'], $m['email'], $k]);
+            }
+            st_expect(su_token_find('kein-gueltiger-link') === null && su_token_find($tok[$vn][0]) !== null, 'Ungültige Links werden angenommen oder gültige nicht gefunden');
+            $pdo->prepare("UPDATE su_tokens SET choice = 'yes', voted_at = datetime('now') WHERE token = ?")->execute([$tok[$vn][0]]);
+            $pdo->prepare("UPDATE su_tokens SET choice = 'no', voted_at = datetime('now') WHERE token = ?")->execute([$tok[$vn][0]]);   // geändert
+            $z = su_tally(su_vote_get($vn));
+            st_expect($z['yes'] === 0 && $z['no'] === 1 && $z['total'] === 1, 'Namentlich: eine geänderte Stimme zählt doppelt oder falsch');
+            $pdo->prepare("INSERT INTO su_secret(vote_id, choice) VALUES(?, 'yes')")->execute([$vg]);
+            $pdo->prepare("UPDATE su_tokens SET voted_at = datetime('now') WHERE token = ?")->execute([$tok[$vg][0]]);
+            $zg = su_tally(su_vote_get($vg));
+            st_expect($zg['yes'] === 1 && $zg['total'] === 1, 'Geheim: die Stimme wird nicht gezählt');
+            st_expect(su_names(su_vote_get($vg)) === ['yes' => [], 'no' => [], 'abstain' => []], 'Geheim: es tauchen Namen zu Stimmen auf');
+        } finally {
+            $pdo->exec('ROLLBACK');
+        }
+        // Geheim heißt: Die Tabelle der geheimen Stimmen kennt keine Person.
+        $spalten = array_column(su_db()->query('PRAGMA table_info(su_secret)')->fetchAll(), 'name');
+        st_expect($spalten === ['vote_id', 'choice'], 'su_secret hat eine Spalte, über die sich eine geheime Stimme einer Person zuordnen ließe');
+        endif;
+        // Geheime Stimme nicht änderbar, offene Frist, Auszählung am Ende: in su_cast festgeschrieben
+        $src = (string)@file_get_contents($wurzel . '/stupa-umlauf-db.php');
+        st_expect(str_contains($src, "if (\$t['voted_at'] !== null) { \$pdo->exec('ROLLBACK'); return 'Du hast schon abgestimmt."), 'su_cast lässt eine geheime Stimme zweimal zu');
+        // Öffentliche Seite: ohne lib.php, ohne Inline-Styles (die CSP würde sie verwerfen)
+        $oeff = (string)@file_get_contents($wurzel . '/stupa/abstimmen.php');
+        st_expect($oeff !== '' && !preg_match('~(lib|stupa-lib)\.php~', preg_replace('~/\*.*?\*/~s', '', $oeff)) && !str_contains($oeff, 'style="'),
+            'stupa/abstimmen.php bindet die App-Bibliothek ein oder nutzt Inline-Styles');
+        // Der AStA sieht die Umläufe nicht: Außer dem StuPa-Bereich, dem Cron und diesem Test lädt sie niemand.
+        $erlaubt = ['stupa-umlauf-db.php', 'cron_automations.php', 'admin/errorlog.php', 'stupa/umlauf.php', 'stupa/abstimmen.php'];
+        $fremd = [];
+        $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($wurzel, FilesystemIterator::SKIP_DOTS));
+        foreach ($it as $f) {
+            $rel = ltrim(str_replace($wurzel, '', $f->getPathname()), '/');
+            if (!str_ends_with($rel, '.php') || str_starts_with($rel, 'data/') || in_array($rel, $erlaubt, true)) continue;
+            if (str_contains((string)file_get_contents($f->getPathname()), 'stupa-umlauf-db.php')) $fremd[] = $rel;
+        }
+        st_expect(!$fremd, 'Die StuPa-Umläufe werden auch geladen von: ' . implode(', ', $fremd) . ' – der AStA soll sie nicht einsehen');
+        return ($mitAblauf ? 'Regeln, Links, namentlich/geheim' : 'Regeln (Ablauf erst, wenn es Umläufe gibt)') . ', öffentliche Seite und Trennung vom AStA geprüft (nichts gespeichert)';
+    });
+
+    $run('„Neu im StuPa-Bereich": einmal je Geräteart', function () {
+        $n = stupa_neuigkeiten();
+        foreach ($n['punkte'] as $i => $pk) {
+            if (!empty($pk['link'])) st_expect(is_file(dirname(__DIR__) . '/stupa/' . preg_replace('~[?#].*$~', '', (string)$pk['link'])),
+                'StuPa-Neuigkeit ' . ($i + 1) . ': der Link zeigt auf eine Seite, die es nicht gibt');
+        }
+        $pdo = db();
+        $pdo->beginTransaction();
+        try {
+            $pdo->exec("INSERT INTO stupa_users(name, email, active) VALUES('Selbsttest Splash', 'splash-selbsttest@st.invalid', 1)"); $u = (int)$pdo->lastInsertId();
+            st_expect(stupa_neuigkeiten_offen($u) === ['desktop' => true, 'mobil' => true], 'Ein StuPa-Zugang bekommt den Splash nicht');
+            stupa_neuigkeiten_gesehen($u, 'mobil');
+            st_expect(stupa_neuigkeiten_offen($u) === ['desktop' => true, 'mobil' => false], 'Gesehen am Handy wirkt nicht getrennt vom Desktop');
+        } finally {
+            $pdo->rollBack();
+        }
+        st_expect(str_contains((string)@file_get_contents(dirname(__DIR__) . '/stupa/neu.php'), 'stupa_neuigkeiten_gesehen('), 'stupa/neu.php vermerkt „gesehen" nicht – der Splash käme immer wieder');
+        return 'Version ' . STUPA_NEUIGKEITEN_VERSION . ', Links und Gerätearten geprüft (nichts gespeichert)';
+    });
+    $run('„Neu in der App": einmal für den Bestand, nie für neue Mitglieder', function () {
+        $n = app_neuigkeiten();
+        st_expect(trim(APP_NEUIGKEITEN_VERSION) !== '' && !empty($n['punkte']), 'Die Neuigkeiten haben keine Version oder keine Punkte');
+        $css = (string)@file_get_contents(dirname(__DIR__) . '/assets/style.css');
+        foreach ($n['punkte'] as $i => $pk) {
+            st_expect(trim((string)($pk['titel'] ?? '')) !== '' && trim((string)($pk['text'] ?? '')) !== '' && str_starts_with((string)($pk['icon'] ?? ''), 'ti-'),
+                'Neuigkeit ' . ($i + 1) . ': Titel, Text oder Icon fehlt');
+            st_expect(preg_match('~\.neu-' . preg_quote((string)($pk['farbe'] ?? ''), '~') . '\s+\.neu-icon\s*\{~', $css) === 1,
+                'Neuigkeit ' . ($i + 1) . ': für die Farbe „' . ($pk['farbe'] ?? '') . '" gibt es keine Regel in style.css');
+            if (!empty($pk['link'])) {
+                $datei = preg_replace('~[?#].*$~', '', (string)$pk['link']);
+                st_expect(is_file(dirname(__DIR__) . '/' . $datei), 'Neuigkeit ' . ($i + 1) . ': der Link zeigt auf eine Seite, die es nicht gibt (' . $datei . ')');
+            }
+        }
+        // Wer sieht ihn? In einer Transaktion, die zurückgenommen wird.
+        $pdo = db();
+        $pdo->beginTransaction();
+        try {
+            $pdo->exec("INSERT INTO members(name, active, onboarded, news_seen) VALUES('Selbsttest Neu', 1, 0, '')"); $neu = (int)$pdo->lastInsertId();
+            $pdo->exec("INSERT INTO members(name, active, onboarded, news_seen) VALUES('Selbsttest Bestand', 1, 1, '')"); $alt = (int)$pdo->lastInsertId();
+            $keins = ['desktop' => false, 'mobil' => false];
+            st_expect(app_neuigkeiten_offen($neu) === $keins && app_neuigkeiten_offen($alt) === ['desktop' => true, 'mobil' => true],
+                'Der Splash ginge an neue Mitglieder – oder nicht auf beiden Gerätearten an den Bestand');
+            app_neuigkeiten_gesehen($alt, 'desktop');
+            st_expect(app_neuigkeiten_offen($alt) === ['desktop' => false, 'mobil' => true], 'Am Desktop gesehen – aber das Handy bekäme ihn nicht mehr (oder der Desktop noch einmal)');
+            app_neuigkeiten_gesehen($alt, 'mobil');
+            st_expect(app_neuigkeiten_offen($alt) === $keins, 'Der Splash käme nach dem Schließen auf beiden Gerätearten noch einmal');
+            member_mark_onboarded($neu);
+            st_expect(app_neuigkeiten_offen($neu) === $keins, 'Nach dem Rundgang käme der Splash hinterher – die Neuerungen standen doch im Rundgang');
+        } finally {
+            $pdo->rollBack();
+        }
+        st_expect(str_contains((string)@file_get_contents(dirname(__DIR__) . '/push.php'), "\$action === 'news_seen'"),
+            'push.php kann „gesehen" nicht vermerken – der Splash käme bei jedem Seitenaufruf');
+        return 'Version ' . APP_NEUIGKEITEN_VERSION . ', ' . count($n['punkte']) . ' Punkte, Sichtbarkeit geprüft (nichts gespeichert)';
+    });
+    $run('Raumbelegung: feste Zeiten, Buchen, Überschneidungen, StuPa', function () {
+        // In einer Transaktion, die am Ende zurückgenommen wird; Mails aus ($mail = false).
+        $pdo = db();
+        $pdo->beginTransaction();
+        try {
+            $pdo->exec("INSERT INTO rooms(name, active) VALUES('Selbsttest-Raum', 1)"); $r = (int)$pdo->lastInsertId();
+            $pdo->exec("INSERT INTO members(name, active) VALUES('Selbsttest Raum', 1)"); $m = (int)$pdo->lastInsertId();
+            $pdo->exec("INSERT INTO stupa_users(name, email, active) VALUES('Selbsttest StuPa', 'raum-selbsttest@st.invalid', 1)"); $u = (int)$pdo->lastInsertId();
+            $di = date('Y-m-d', strtotime('tuesday next week'));
+            st_expect(raum_serie_anlegen($r, 2, '10:00', '12:00', $di, date('Y-m-d', strtotime($di . ' +14 days')), 'Sprechstunde', $m) === '',
+                'Eine wöchentliche feste Zeit lässt sich nicht anlegen');
+            $tage = array_filter(raum_belegungen($di, date('Y-m-d', strtotime($di . ' +14 days')), $r), static fn ($b) => $b['art'] === 'serie');
+            st_expect(count($tage) === 3, 'Die feste Zeit ergibt nicht genau drei Dienstage (' . count($tage) . ')');
+            st_expect(raum_buchen($r, "$di 11:00", "$di 13:00", 'Kollision', 'asta', $m, false, false) !== '',
+                'Eine Buchung in eine feste Zeit hinein wurde angenommen');
+            raum_serie_auslassen((int)reset($tage)['serie_id'], $di);
+            st_expect(raum_buchen($r, "$di 11:00", "$di 13:00", 'Nach Ausfall', 'asta', $m, false, false) === '',
+                'Nach dem Ausfallenlassen eines Termins ist der Raum nicht buchbar');
+            st_expect(raum_buchen($r, "$di 12:30", "$di 14:00", 'StuPa drüber', 'stupa', $u, false, false) !== ''
+                      && raum_buchen($r, "$di 13:00", "$di 14:00", 'StuPa danach', 'stupa', $u, false, false) === '',
+                'Überschneidung mit einer Buchung angenommen – oder eine direkt anschließende abgelehnt');
+            st_expect(raum_buchen($r, '2000-01-01 10:00', '2000-01-01 11:00', 'Vergangen', 'asta', $m, false, false) !== ''
+                      && raum_buchen($r, "$di 15:00", "$di 14:00", 'Rückwärts', 'asta', $m, false, false) !== '',
+                'Vergangene oder rückwärts laufende Buchungen werden angenommen');
+            $st = $pdo->prepare("SELECT id FROM room_bookings WHERE room_id = ? AND side = ?");
+            $st->execute([$r, 'stupa']); $sb = (int)$st->fetchColumn();
+            $st->execute([$r, 'asta']);  $ab = (int)$st->fetchColumn();
+            st_expect(!raum_buchung_loeschen($sb, 'asta', $m, false, false) && !raum_buchung_loeschen($ab, 'stupa', $u, false, false),
+                'Eine Seite kann Buchungen der anderen löschen (Nummernkreise vermischt?)');
+            st_expect(raum_buchung_loeschen($sb, 'stupa', $u, false, false) && raum_buchung_loeschen($ab, 'asta', $m + 999999, true, false),
+                'Eigene Buchung (StuPa) bzw. als Verwaltung löschen geht nicht');
+        } finally {
+            $pdo->rollBack();
+        }
+        // Das StuPa bekommt nie die Pflege: Seine Seite reicht immer false durch.
+        $stupaSeite = (string)@file_get_contents(dirname(__DIR__) . '/stupa/raeume.php');
+        st_expect(str_contains($stupaSeite, "raum_post_verarbeiten('stupa', \$uid, false)") && str_contains($stupaSeite, "'verwalter' => false"),
+            'stupa/raeume.php gibt dem StuPa Verwaltungsrechte für Räume');
+        st_expect(isset(mail_templates()['raum_gebucht'], mail_templates()['raum_storniert']), 'Die Mailvorlagen der Raumbelegung fehlen');
+        return 'feste Zeit, Ausfall, Überschneidung, StuPa-Trennung geprüft (nichts gespeichert)';
+    });
     $run('AsT: verdient mit Schichten, Zuschlag fürs Übernehmen', function () {
         // In einer Transaktion, die am Ende zurückgenommen wird – keine Spur im Live-Betrieb.
         // Nachgespielt: geleistete, übernommene, eingesprungene, abgegebene und künftige Schicht.

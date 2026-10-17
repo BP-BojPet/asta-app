@@ -1462,13 +1462,13 @@
     mitglieder: 'a[href$="mitglieder.php"]', profil: 'a[href$="profil.php"]', erinnerungen: 'a[href$="erinnerungen.php"]',
     achievements: 'a[href$="achievements.php"]', basisscore: 'a[href$="basisscore.php"]', score: 'a[href$="score.php"]:not([href$="basisscore.php"])',
     finanzen: 'a[href$="finanzen.php"]', verwaltung: 'a[href$="admin/index.php"]', adminmembers: 'a[href$="members.php"]', info: 'a[href$="info.php"]',
-    wegweiser: 'a[href$="wegweiser.php"]:not([href*="admin"])'
+    wegweiser: 'a[href$="wegweiser.php"]:not([href*="admin"])', raeume: 'a[href$="raeume.php"]:not([href*="stupa"])'
   };
   var NAVLABEL = {
     dashboard: 'Dashboard', kalender: 'Kalender', events: 'Events', sitzungen: 'Sitzungen', umlauf: 'Abstimmungen',
     mitglieder: 'Mitglieder', profil: 'Mein Profil', erinnerungen: 'Erinnerungen-Kachel', achievements: 'Achievements',
     basisscore: 'Basis', score: 'Eventscore', finanzen: 'Auslagen', verwaltung: 'Verwaltung', adminmembers: 'Mitglieder', info: 'Wichtige Infos & Anleitung',
-    wegweiser: 'Wegweiser'
+    wegweiser: 'Wegweiser', raeume: 'Räume'
   };
   // Ist ein Nav-Ziel gerade versteckt (Handy: im „Mehr"-Sheet; Desktop: im Namens-Dropdown), muss der Nutzer
   // erst dieses Menü öffnen. Reihenfolge: Desktop-Dropdown, dann Handy-„Mehr"-Button (der jeweils Sichtbare gewinnt).
@@ -1483,7 +1483,7 @@
     { c: 0, page: 'dashboard', sel: '.tiles', title: 'Schnell-Überblick', html: 'Diese Kacheln zeigen auf einen Blick, was ansteht: <strong>offene Aufgaben</strong>, kommende Events und Sitzungen. Ein Tipp führt direkt hin.' },
     { c: 0, page: 'dashboard', sel: '.tiles a[href="#offen"]', title: 'Deine Aufgaben', html: 'Was von dir gebraucht wird, sammelt sich hier: Berichte, Abstimmungen, Pronomen eintragen … Weiter unten stehen sie ausführlich, dazu <strong>Nachrichten & Hinweise</strong> und die <strong>nächsten Termine</strong>.' },
     { c: 0, page: 'dashboard', sel: '#ical-card', title: 'Kalender-Abo per QR 📆', html: 'Mit „<strong>Mein Kalender-Abo</strong>" holst du dir <strong>alle AStA-Termine in deinen eigenen Kalender</strong>: <strong>QR-Code scannen</strong> (iPhone) oder den <strong>Link kopieren</strong> (Android/Outlook). Neue Termine erscheinen dann automatisch auf deinem Handy.' },
-    { c: 0, page: 'dashboard', sel: '#db-absence', title: 'Wer ist gerade weg? 🌴', html: 'Auf dem Dashboard siehst du <strong>sofort, wer gerade oder demnächst abwesend</strong> ist – praktisch, bevor du jemanden für eine Schicht einplanst. Deine <strong>eigene</strong> Abwesenheit trägst du über „Abwesenheit" im Menü ein.' },
+    { c: 0, page: 'dashboard', sel: '#db-absence', title: 'Wer ist gerade weg? 🌴', html: 'Auf dem Dashboard siehst du <strong>sofort, wer gerade oder demnächst abwesend</strong> ist – praktisch, bevor du jemanden für eine Schicht einplanst. Deine <strong>eigene</strong> Abwesenheit trägst du über „Abwesenheit" im Menü unter <strong>deinem Namen</strong> ein.' },
     { c: 0, page: 'dashboard', sel: '#install-card', title: 'App installieren 📱', html: 'Leg dir die AStA-App <strong>wie eine echte App aufs Gerät</strong> (Vollbild, eigenes Icon, direkter Zugriff). Hier steht Schritt für Schritt wie – und nur so gibt es auf dem iPhone <strong>echte Push-Benachrichtigungen</strong>. Sehr empfohlen!' },
     { c: 0, page: 'dashboard', title: 'Und der Rest', html: 'Weiter unten findest du außerdem deine <strong>Nachrichten & Hinweise</strong>, die offenen Aufgaben im Detail und die <strong>kommenden Termine</strong>. Jetzt gleich noch eine wichtige Kachel …' },
     { c: 0, page: 'dashboard', sel: '.tiles a[href$="erinnerungen.php"]', title: 'Benachrichtigungen 🔔', html: 'Über die <strong>Erinnerungen-Kachel</strong> stellst du ein, <strong>worüber</strong> und <strong>wie</strong> du benachrichtigt wirst. Klick sie gleich an – schauen wir sie uns direkt an.' },
@@ -1493,9 +1493,11 @@
     { c: 1, to: 'kalender', title: 'Weiter zum Kalender 📅', html: 'Schauen wir uns die Bereiche an – los mit dem <strong>Kalender</strong>.' },
     { c: 1, page: 'kalender', sel: 'h1, .section-title', title: 'Der Kalender', html: 'Hier stehen <strong>alle Termine</strong>: Events, Sitzungen und mehr. Du kannst <strong>StuPa-Termine ein-/ausblenden</strong> und über die Knöpfe oben <strong>freie Zeitfenster</strong> finden oder einen Terminfinder starten. (Dein Kalender-Abo mit QR liegt auf dem Dashboard.)' },
     { c: 1, to: 'events', title: 'Weiter zu Events', html: 'Als Nächstes die <strong>Events</strong>.' },
-    { c: 1, page: 'events', sel: 'h1, .section-title', title: 'Events & Schichten', html: 'Hier siehst du, wo Helfer:innen gebraucht werden. Du meldest dich für <strong>Schichten</strong> an, kannst welche in die <strong>Schichtbörse</strong> geben und sagst bei <strong>Get-Togethers</strong> zu (dort auch, wer was mitbringt).' },
+    { c: 1, page: 'events', sel: 'h1, .section-title', title: 'Events & Schichten', html: 'Hier siehst du, wo Helfer:innen gebraucht werden. Du meldest dich für <strong>Schichten</strong> an, kannst welche in die <strong>Schichtbörse</strong> geben (jede geleistete Schicht bringt dir <strong>AsT</strong> für den Belohnungs-Locker, eine aus der Börse übernommene deutlich mehr) und sagst bei <strong>Get-Togethers</strong> zu (dort auch, wer was mitbringt).' },
     // ---- Kapitel 2: Sitzungen ----
     { c: 1, page: 'events', sel: '#externe, .section-title', flag: 'extern', title: 'Externe Events \uD83C\uDF9F\uFE0F', html: 'Unter <strong>Externe Events</strong> legt ihr <strong>öffentliche Anmeldungen</strong> an – Kneipentour, Fahrten, Workshops. Formular selbst zusammenstellen, Warteliste, und am Ende teilt die App die Leute in <strong>Gruppen</strong> ein: Freundeskreise bleiben zusammen, die Größen gleichen sich aus.' },
+    { c: 1, to: 'raeume', title: 'Räume buchen 🚪', html: 'Gleich daneben: die <strong>Raumbelegung</strong>. Dort siehst du, wann welcher Raum frei ist.' },
+    { c: 1, page: 'raeume', sel: '.raum-raster, .section-title', title: 'Frei? Dann buchen', html: 'Je Raum eine Karte mit der ganzen Woche. Darunter buchst du: Raum, Tag, Uhrzeit, Anlass – <strong>wer zuerst bucht, hat den Raum</strong>. Die Bestätigung kommt per Mail, und das StuPa bucht über seinen eigenen Zugang mit.' },
     { c: 2, to: 'sitzungen', title: 'Weiter zu den Sitzungen', html: 'Schauen wir uns die <strong>Sitzungen</strong> an.' },
     { c: 2, page: 'sitzungen', sel: 'h1, .section-title', title: 'Sitzungen & Berichte', html: 'Hier findest du die <strong>Tagesordnung</strong>, kannst eigene <strong>TOPs einreichen</strong>, die Protokolle lesen und dich bei Verhinderung <strong>abmelden</strong> (das steht dann sauber im Protokoll).' },
     { c: 2, page: 'sitzungen', flag: 'referat', sel: 'h1, .section-title', title: 'Dein Referats-Bericht', html: 'Weil du ein <strong>Referat</strong> hast: Vor berichtspflichtigen Sitzungen gibst du hier deinen kurzen <strong>Bericht</strong> ab. Vergisst du ihn, gibt es einen Minuspunkt im Basis-Score – also lieber dranbleiben.' },
@@ -1546,7 +1548,7 @@
     { c: 9, page: 'info', sel: 'h1, .section-title', title: 'Infos, Dokumente & Wiederholen', html: 'Hier liegen <strong>Anleitungen und Dokumente</strong> (Geschäftsordnung, How-tos …) – und ganz oben der Knopf, um <strong>diesen Rundgang jederzeit zu wiederholen</strong>.' },
     { c: 9, page: 'info', sel: 'button.foot-link, .foot-link', title: 'Feedback 💬', html: 'Ganz unten im Fuß der Seite: <strong>„Feedback"</strong> – für <strong>Lob, Ideen, Kritik oder Fragen</strong>. Deine Rückmeldung landet nicht in einem Postfach, sondern als Eintrag beim Technik-Referat: Du siehst unter <strong>„Feedback"</strong>, was daraus wird, und bekommst eine Mitteilung, sobald jemand antwortet.' },
     { c: 9, page: 'info', sel: 'a[href$="bug.php"]', title: 'Fehler melden 🐞', html: 'Und direkt daneben <strong>„Fehler melden"</strong>: Ist etwas kaputt oder komisch? Melde es hier. Wird dein gemeldeter Bug behoben, gibt es sogar ein Achievement dafür.' },
-    { c: 9, to: 'wegweiser', title: 'Der Wegweiser 🧭', html: 'Im selben Menü direkt unter den Infos: der <strong>Wegweiser</strong>. Dort steht, <strong>wo was liegt und wer wofür zuständig ist</strong> – unsere eigenen Dienste, die Anlaufstellen an der Uni und die Menschen außerhalb.' },
+    { c: 9, to: 'wegweiser', title: 'Der Wegweiser 🧭', html: 'Oben in der Leiste (am Handy unter „Mehr"): der <strong>Wegweiser</strong>. Dort steht, <strong>wo was liegt und wer wofür zuständig ist</strong> – unsere eigenen Dienste, die Anlaufstellen an der Uni und die Menschen außerhalb.' },
     { c: 9, page: 'wegweiser', sel: '#wwSearch, h1', title: 'Einfach tippen', html: 'Statt zu scrollen: <strong>ins Suchfeld tippen</strong>. Gesucht wird über Namen, Stichworte und Adressen – auch mit mehreren Wörtern in beliebiger Reihenfolge.' },
     { c: 9, page: 'wegweiser', sel: '#meine, .section-title', flag: '!admin', title: 'Selbst etwas eintragen', html: 'Fehlt etwas? Ganz unten unter <strong>„Deine Einträge"</strong> trägst du es selbst ein – zum Beispiel die Anlaufstellen, mit denen dein Referat regelmäßig zu tun hat. <strong>Deine eigenen Einträge kannst du jederzeit ändern und löschen</strong>, fremde nicht; das darf nur der Vorsitz.' },
     { c: 9, title: 'Geschafft! 🎉', html: 'Das war der komplette Rundgang. Am wichtigsten: <strong>schau täglich kurz rein</strong>, dann verpasst du nichts. Wiederholen kannst du alles jederzeit unter „Wichtige Infos & Anleitung". Viel Spaß im AStA! 💚' }
@@ -2288,4 +2290,48 @@
     if (ref) ref.hidden = r.value !== 'referate';
     if (per) per.hidden = r.value !== 'personen';
   });
+})();
+
+/* „Neu in der App" (app_neuigkeiten_html in lib.php): nach einem Update einmal am Desktop und
+   einmal am Handy, nur für Bestandsmitglieder. Handy = schmaler Schirm oder Touch (auch die
+   installierte App). Jedes Schließen – Knopf, Link, Esc, Klick daneben – meldet „gesehen" für
+   diese Geräteart. Läuft gerade der Rundgang, hat der Vorrang. */
+(function () {
+  var dlg = document.getElementById('neuSplash');
+  if (!window.ASTA_NEWS || !dlg || typeof dlg.showModal !== 'function') return;
+  var geraet = window.matchMedia('(max-width: 760px), (pointer: coarse)').matches ? 'mobil' : 'desktop';
+  if (!window.ASTA_NEWS[geraet]) return;                              // hier schon gesehen
+  // Der StuPa-Bereich meldet an seine eigene Adresse (window.ASTA_NEWS_URL), die App an push.php.
+  var url = window.ASTA_NEWS_URL || ((window.ASTA_ACH_EQUIP || 'achievements.php').replace(/achievements\.php$/, '') + 'push.php');
+  var gemeldet = false;
+  function melden() {
+    if (gemeldet) return;
+    gemeldet = true;
+    var body = new FormData();
+    body.append('action', 'news_seen'); body.append('geraet', geraet); body.append('csrf', window.ASTA_CSRF);
+    try { fetch(url, { method: 'POST', body: body, credentials: 'same-origin', keepalive: true }); } catch (e) {}
+  }
+  function menueZeigen() {
+    var nu = document.querySelector('.nav-user');
+    if (nu && nu.offsetParent !== null) { nu.open = true; nu.querySelector('summary') && nu.querySelector('summary').focus(); return; }
+    var mehr = document.querySelector('.tab-more');
+    if (mehr && mehr.offsetParent !== null) mehr.click();
+  }
+  dlg.addEventListener('close', melden);
+  dlg.addEventListener('click', function (ev) {
+    if (ev.target === dlg) { dlg.close(); return; }                 // Klick auf den Hintergrund
+    var zu = ev.target.closest ? ev.target.closest('[data-neu-zu]') : null;
+    if (!zu) return;
+    melden();
+    if (zu.tagName === 'A') return;                                   // Link: einfach folgen
+    dlg.classList.add('ist-zu');
+    setTimeout(function () {
+      dlg.close();
+      if (zu.getAttribute('data-neu-zeige') === 'menu') menueZeigen();
+    }, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 180);
+  });
+  setTimeout(function () {
+    if (document.querySelector('.tour-ov, .tour-tip')) return;   // Rundgang läuft
+    dlg.showModal();
+  }, 450);
 })();

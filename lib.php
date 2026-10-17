@@ -363,6 +363,15 @@ function migrate_schema(PDO $pdo): void
     // Freiwilliges Dashboard-Angebot „mach den Rundgang mal" (1 = anzeigen). Bestandsmitglieder bekommen es durch
     // DEFAULT 1 automatisch; ein VOLL abgeschlossener Rundgang oder „Ich kenne mich aus" setzt es auf 0 (Abbrechen NICHT).
     if (!in_array('tour_task', $cols('members'), true)) $pdo->exec("ALTER TABLE members ADD COLUMN tour_task INTEGER NOT NULL DEFAULT 1");
+    // „Neu in der App": Versionsstempel der zuletzt gesehenen Neuigkeiten ('' = noch keine). Bestand
+    // startet leer und sieht den Splash einmal; wer den Rundgang beendet, bekommt den aktuellen Stand gleich mit.
+    if (!in_array('news_seen', $cols('members'), true)) $pdo->exec("ALTER TABLE members ADD COLUMN news_seen TEXT NOT NULL DEFAULT ''");
+    // … getrennt fürs Handy: Den Splash gibt es einmal am Desktop (news_seen) und einmal am Handy.
+    if (!in_array('news_seen_mobil', $cols('members'), true)) $pdo->exec("ALTER TABLE members ADD COLUMN news_seen_mobil TEXT NOT NULL DEFAULT ''");
+    // Dasselbe für die Zugänge des StuPa-Präsidiums (eigener Splash im StuPa-Bereich).
+    foreach (['news_seen', 'news_seen_mobil'] as $nsSp) {
+        if ($cols('stupa_users') && !in_array($nsSp, $cols('stupa_users'), true)) $pdo->exec("ALTER TABLE stupa_users ADD COLUMN $nsSp TEXT NOT NULL DEFAULT ''");
+    }
     // Einmalig automatisch anzuwendender Skin (z. B. „Hochsommer" nach dem Sommerkönig-Unlock oder einem Skin-Geschenk):
     // page_header reicht ihn als window.ASTA_AUTO_SKIN an app.js, das ihn genau einmal aktiviert und per push.php (skin_applied) leert.
     if (!in_array('pending_skin', $cols('members'), true)) $pdo->exec("ALTER TABLE members ADD COLUMN pending_skin TEXT NOT NULL DEFAULT ''");
@@ -1464,6 +1473,42 @@ function init_schema(PDO $pdo): void
         fund           TEXT NOT NULL DEFAULT '',     -- Topf
         iban           TEXT NOT NULL,
         sort           INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS rooms (               -- Raumbelegung: die Räume (beliebig viele, in der App gepflegt)
+        id     INTEGER PRIMARY KEY,
+        name   TEXT NOT NULL,
+        info   TEXT NOT NULL DEFAULT '',             -- kurz: wo, wie viele Plätze, Schlüssel …
+        sort   INTEGER NOT NULL DEFAULT 0,
+        active INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE TABLE IF NOT EXISTS room_bookings (       -- einzelne Belegungen: Buchungen und einmalige feste Termine
+        id         INTEGER PRIMARY KEY,
+        room_id    INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+        starts_at  TEXT NOT NULL,                    -- 'Y-m-d H:i'
+        ends_at    TEXT NOT NULL,
+        title      TEXT NOT NULL DEFAULT '',
+        fixed      INTEGER NOT NULL DEFAULT 0,       -- 1 = feste Belegung (Admin/Vorsitz/Sekretariat)
+        side       TEXT NOT NULL DEFAULT 'asta',     -- 'asta' | 'stupa' – WICHTIG: booked_by zeigt je nach
+        booked_by  INTEGER NOT NULL DEFAULT 0,       -- Seite auf members ODER stupa_users (getrennte
+        created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))  -- Nummernkreise, nie ohne side lesen!)
+    );
+    CREATE INDEX IF NOT EXISTS room_bookings_zeit ON room_bookings(room_id, starts_at);
+    CREATE TABLE IF NOT EXISTS room_series (         -- wöchentlich wiederkehrende feste Zeiten (Termine werden GERECHNET)
+        id         INTEGER PRIMARY KEY,
+        room_id    INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+        weekday    INTEGER NOT NULL,                 -- 1 = Montag … 7 = Sonntag
+        time_from  TEXT NOT NULL,                    -- 'H:i'
+        time_to    TEXT NOT NULL,
+        date_from  TEXT NOT NULL,                    -- 'Y-m-d', erster möglicher Tag
+        date_to    TEXT NOT NULL,                    -- 'Y-m-d', letzter möglicher Tag
+        title      TEXT NOT NULL DEFAULT '',
+        created_by INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+    CREATE TABLE IF NOT EXISTS room_series_skips (   -- einzelne Tage, an denen eine feste Zeit ausfällt
+        series_id INTEGER NOT NULL REFERENCES room_series(id) ON DELETE CASCADE,
+        day       TEXT NOT NULL,                     -- 'Y-m-d'
+        PRIMARY KEY (series_id, day)
     );
     CREATE TABLE IF NOT EXISTS stupa_comments (    -- Rückfragen zwischen Präsidium und Finanzen
         id         INTEGER PRIMARY KEY,
@@ -5277,6 +5322,7 @@ function app_places(): array
         'bericht'      => ['url' => 'report.php',       'label' => 'Bericht schreiben',          'icon' => 'ti-clipboard-text', 'darf' => $eingeloggt],
         'wegweiser'    => ['url' => 'wegweiser.php',    'label' => 'Wegweiser',                  'icon' => 'ti-map-2',         'darf' => $eingeloggt],
         'tauschboerse' => ['url' => 'tauschboerse.php', 'label' => 'Schichtbörse',               'icon' => 'ti-arrows-exchange', 'darf' => $eingeloggt],
+        'raeume'       => ['url' => 'raeume.php',       'label' => 'Raumbelegung',               'icon' => 'ti-door',            'darf' => $eingeloggt],
         'gettogether'  => ['url' => 'gettogether.php',  'label' => 'Get-Together',               'icon' => 'ti-beer',          'darf' => $eingeloggt],
         'bug'          => ['url' => 'bug.php',          'label' => 'Fehler melden',              'icon' => 'ti-bug',           'darf' => $eingeloggt],
         'feedback'     => ['url' => 'feedback.php',     'label' => 'Feedback',                   'icon' => 'ti-message-heart', 'darf' => $eingeloggt],
@@ -6387,6 +6433,105 @@ function flame_style_icon(string $style): string
 
 /** Hat dieses Mitglied den Onboarding-Rundgang schon durchlaufen (oder übersprungen)?
  *  Technik-Login/kein Mitglied → true (kein Tutorial). */
+/**
+ * „Neu in der App" – der Splash beim nächsten Öffnen nach einem Update.
+ *
+ * Für ein neues Update: Version hochsetzen und die Punkte unten austauschen. Jedes Mitglied sieht
+ * den Splash EINMAL JE GERÄTEART – am Desktop (members.news_seen) und am Handy (news_seen_mobil);
+ * welche Art gerade vorliegt, entscheidet app.js (schmaler Schirm oder Touch = Handy). Neue Mitglieder sehen ihn nie: Solange sie den
+ * Rundgang nicht beendet haben, läuft der; beim Beenden (member_mark_onboarded) gilt der aktuelle
+ * Stand als gesehen – die Neuerungen gehören deshalb AUCH in den Rundgang (app.js, STEPS).
+ * Jeder Punkt: icon, farbe (CSS-Variante), titel, text (HTML erlaubt, wird nicht maskiert), optional
+ * orte (umgezogene Menüpunkte: [Icon, Name, neuer Ort]), dazu link + knopf oder zeige ('menu' öffnet
+ * das Namens-Menü).
+ */
+const APP_NEUIGKEITEN_VERSION = '2026-10-raeume';
+
+function app_neuigkeiten(): array
+{
+    return [
+        'kicker'   => 'Neu in der App',
+        'titel'    => 'Frisch eingeräumt',
+        'punkte'   => [
+            ['icon' => 'ti-door', 'farbe' => 'petrol', 'titel' => 'Räume buchen',
+             'text' => 'Sieh auf einen Blick, wann welcher Raum frei ist – und buch ihn direkt. Das StuPa bucht über seinen Zugang mit, die Bestätigung kommt per Mail.',
+             'link' => 'raeume.php', 'knopf' => 'Zu den Räumen'],
+            ['icon' => 'ti-coins', 'farbe' => 'gold', 'titel' => 'Schichten bringen AsT',
+             'text' => 'Jede geleistete Schicht bringt <strong>500 AsT</strong>. Übernimmst du eine abgegebene Schicht aus der Börse oder springst kurzfristig ein, gibt es <strong>2.000</strong> dazu. Dein bisheriges Guthaben bleibt.',
+             'link' => 'tauschboerse.php#guthaben', 'knopf' => 'Zum Guthaben'],
+            ['icon' => 'ti-layout-navbar', 'farbe' => 'violett', 'titel' => 'Neue Plätze im Menü',
+             'text' => 'Damit die Leiste schlank bleibt, ist einiges umgezogen:',
+             'orte' => [
+                 ['ti-plane-departure', 'Abwesenheit', 'unter deinem Namen'],
+                 ['ti-receipt-2', 'Auslagen', 'unter deinem Namen'],
+                 ['ti-trophy', 'Achievements', 'unter deinem Namen'],
+                 ['ti-directions', 'Wegweiser', 'oben in der Leiste'],
+             ],
+             'zeige' => 'menu', 'knopf' => 'Zeig mir das Menü'],
+        ],
+        'ausserdem' => 'Außerdem lassen sich Abstimmungen auf bestimmte Referate oder Personen begrenzen, und die Mails der App sehen jetzt deutlich besser aus.',
+    ];
+}
+
+/** Wo steht der Splash noch aus? ['desktop' => bool, 'mobil' => bool]; nur Bestand (Rundgang erledigt). */
+function app_neuigkeiten_offen(int $memberId): array
+{
+    $nein = ['desktop' => false, 'mobil' => false];
+    if ($memberId <= 0) return $nein;
+    try {
+        $s = db()->prepare('SELECT onboarded, news_seen, news_seen_mobil FROM members WHERE id = ?');
+        $s->execute([$memberId]);
+        $r = $s->fetch();
+        if (!$r || (int)$r['onboarded'] !== 1) return $nein;
+        return ['desktop' => (string)$r['news_seen'] !== APP_NEUIGKEITEN_VERSION,
+                'mobil'   => (string)$r['news_seen_mobil'] !== APP_NEUIGKEITEN_VERSION];
+    } catch (\Throwable $e) { return $nein; }
+}
+
+/** Auf dieser Geräteart gesehen ('desktop' | 'mobil'). */
+function app_neuigkeiten_gesehen(int $memberId, string $geraet): void
+{
+    if ($memberId <= 0 || !in_array($geraet, ['desktop', 'mobil'], true)) return;
+    $spalte = $geraet === 'mobil' ? 'news_seen_mobil' : 'news_seen';
+    try { db()->prepare("UPDATE members SET $spalte = ? WHERE id = ?")->execute([APP_NEUIGKEITEN_VERSION, $memberId]); } catch (\Throwable $e) {}
+}
+
+/** Der Splash als <dialog> – app.js öffnet ihn nach dem Laden (window.ASTA_NEWS). $n: Inhalt (Standard: der der App). */
+function app_neuigkeiten_html(string $b, ?array $n = null): string
+{
+    $n = $n ?? app_neuigkeiten();
+    $o = '<dialog class="neu-splash" id="neuSplash" aria-labelledby="neuSplashTitel">'
+       . '<div class="neu-kopf"><span class="neu-funkeln" aria-hidden="true"><i class="ti ti-sparkles"></i></span>'
+       . '<span class="neu-kicker">' . h($n['kicker']) . '</span>'
+       . '<h2 id="neuSplashTitel">' . h($n['titel']) . '</h2>'
+       . '<button type="button" class="neu-x" data-neu-zu aria-label="Schließen"><i class="ti ti-x"></i></button></div>'
+       . '<ul class="neu-punkte">';
+    foreach ($n['punkte'] as $i => $p) {
+        $o .= '<li class="neu-punkt neu-' . h($p['farbe']) . '" style="--i:' . (int)$i . '">'
+            . '<span class="neu-icon" aria-hidden="true"><i class="ti ' . h($p['icon']) . '"></i></span>'
+            . '<div class="neu-inhalt"><h3>' . h($p['titel']) . '</h3><p>' . $p['text'] . '</p>';
+        if (!empty($p['orte'])) {
+            $o .= '<ul class="neu-orte">';
+            foreach ($p['orte'] as [$oIcon, $oName, $oWo]) {
+                $o .= '<li><i class="ti ' . h($oIcon) . '" aria-hidden="true"></i><strong>' . h($oName) . '</strong>'
+                    . '<span><i class="ti ti-arrow-right" aria-hidden="true"></i> ' . h($oWo) . '</span></li>';
+            }
+            $o .= '</ul>';
+        }
+        if (!empty($p['link'])) {
+            $o .= '<a class="neu-mehr" href="' . h($b . $p['link']) . '" data-neu-zu>' . h($p['knopf']) . ' <i class="ti ti-arrow-right"></i></a>';
+        } elseif (($p['zeige'] ?? '') === 'menu') {
+            $o .= '<button type="button" class="neu-mehr" data-neu-zu data-neu-zeige="menu">' . h($p['knopf']) . ' <i class="ti ti-arrow-right"></i></button>';
+        }
+        $o .= '</div></li>';
+    }
+    $o .= '</ul>'
+        . (trim((string)($n['ausserdem'] ?? '')) !== '' ? '<p class="neu-ausserdem"><i class="ti ti-plus"></i> ' . h($n['ausserdem']) . '</p>' : '')
+        . '<div class="neu-fuss"><button type="button" class="btn" data-neu-zu>Alles klar</button></div>'
+        . '</dialog>';
+    return $o;
+}
+
 function member_onboarded(int $memberId): bool
 {
     if ($memberId <= 0) return true;
@@ -6398,7 +6543,8 @@ function member_onboarded(int $memberId): bool
 function member_mark_onboarded(int $memberId): void
 {
     if ($memberId <= 0) return;
-    try { db()->prepare('UPDATE members SET onboarded = 1 WHERE id = ?')->execute([$memberId]); } catch (\Throwable $e) {}
+    // Den aktuellen Neuigkeiten-Stand gleich mit: Was neu ist, steht im Rundgang – ein Splash danach wäre doppelt.
+    try { db()->prepare('UPDATE members SET onboarded = 1, news_seen = ?, news_seen_mobil = ? WHERE id = ?')->execute([APP_NEUIGKEITEN_VERSION, APP_NEUIGKEITEN_VERSION, $memberId]); } catch (\Throwable $e) {}
 }
 
 /** Soll dem Mitglied das freiwillige Dashboard-Angebot „geh den Rundgang mal durch" gezeigt werden? */
@@ -6431,7 +6577,7 @@ function tour_pages(): array
         'dashboard' => 'dashboard.php', 'kalender' => 'index.php', 'events' => 'events.php',
         'umlauf' => 'umlauf.php', 'mitglieder' => 'mitglieder.php', 'profil' => 'profil.php',
         'achievements' => 'achievements.php', 'basisscore' => 'basisscore.php', 'score' => 'score.php',
-        'erinnerungen' => 'erinnerungen.php', 'info' => 'info.php', 'wegweiser' => 'wegweiser.php',
+        'erinnerungen' => 'erinnerungen.php', 'info' => 'info.php', 'wegweiser' => 'wegweiser.php', 'raeume' => 'raeume.php',
         'finanzen' => 'finanzen.php', // Auslagen/Belegblatt: für ALLE Mitglieder
     ];
     if (can_manage_meetings()) $p['sitzungen'] = 'admin/meetings.php';
@@ -15650,6 +15796,472 @@ function stupa_protokoll_purpose(int $nr, string $art): string
     return 'Protokoll ' . $nr . '. ' . $art . ' Sitzung';
 }
 
+// ---- Raumbelegung (raeume.php und stupa/raeume.php) ----------------------------------------
+//
+// Räume sind eine Liste in der App – zwei, fünf oder einer, ganz wie der Träger es braucht.
+// Belegt wird auf drei Wegen:
+//   • feste Zeiten, wöchentlich (room_series): Die einzelnen Termine werden beim Anzeigen
+//     GERECHNET, nicht gespeichert – eine Regel „jeden Dienstag 10–12 bis März" ist eine Zeile.
+//     Fällt ein Termin aus, steht nur dieser Tag in room_series_skips.
+//   • feste einmalige Termine: room_bookings mit fixed = 1
+//   • Buchungen: room_bookings mit fixed = 0 – von AStA-Mitgliedern oder vom StuPa-Präsidium.
+// Feste Zeiten tragen Admin, Vorsitz und Sekretariat ein; buchen dürfen alle Mitglieder und die
+// Präsidiums-Zugänge des StuPa. Wer zuerst bucht, hat den Raum – Überschneidungen lehnt die App ab,
+// geprüft unter BEGIN IMMEDIATE (db_atomar), damit zwei gleichzeitige Buchungen sich nicht beide
+// durchmogeln. Das StuPa sieht davon nur diese Seite: Sein Bereich hat eigene Session und
+// eigene Konten (stupa_users); side + booked_by halten die beiden Nummernkreise auseinander.
+
+/** Darf die angemeldete Person Räume und feste Zeiten pflegen? Nur Mitglieder mit Orga-Rolle – nie das StuPa. */
+function raum_kann_verwalten(): bool
+{
+    return current_member() !== null && can_manage_meetings();
+}
+
+/** Räume (sortiert). $nurAktiv = false liefert auch abgeschaltete (für die Pflege). */
+function raum_alle(bool $nurAktiv = true): array
+{
+    return db()->query('SELECT * FROM rooms' . ($nurAktiv ? ' WHERE active = 1' : '')
+        . ' ORDER BY sort, name COLLATE NOCASE')->fetchAll();
+}
+
+function raum_get(int $id): ?array
+{
+    $st = db()->prepare('SELECT * FROM rooms WHERE id = ?');
+    $st->execute([$id]);
+    return $st->fetch() ?: null;
+}
+
+/** Raum anlegen ($id = 0) oder ändern. Rückgabe: Fehlermeldung oder ''. */
+function raum_speichern(int $id, string $name, string $info, bool $aktiv): string
+{
+    $name = trim($name); $info = trim($info);
+    if ($name === '' || mb_strlen($name) > 80) return 'Bitte einen Namen angeben (bis 80 Zeichen).';
+    if (mb_strlen($info) > 300) return 'Die Beschreibung darf höchstens 300 Zeichen lang sein.';
+    if ($id > 0) {
+        db()->prepare('UPDATE rooms SET name = ?, info = ?, active = ? WHERE id = ?')->execute([$name, $info, $aktiv ? 1 : 0, $id]);
+    } else {
+        $sort = (int)db()->query('SELECT COALESCE(MAX(sort), 0) + 1 FROM rooms')->fetchColumn();
+        db()->prepare('INSERT INTO rooms(name, info, sort, active) VALUES(?,?,?,1)')->execute([$name, $info, $sort]);
+    }
+    return '';
+}
+
+/** Raum samt allen Belegungen löschen. Wer dort noch eine kommende Buchung hatte, bekommt Bescheid. */
+function raum_loeschen(int $id, bool $mail = true): void
+{
+    $st = db()->prepare("SELECT * FROM room_bookings WHERE room_id = ? AND fixed = 0 AND ends_at > ?");
+    $st->execute([$id, date('Y-m-d H:i')]);
+    $betroffen = $st->fetchAll();
+    if ($mail) foreach ($betroffen as $b) raum_mail('raum_storniert', $b, 'Der Raum wurde aus der Raumbelegung entfernt.');
+    db()->prepare('DELETE FROM rooms WHERE id = ?')->execute([$id]);
+}
+
+/** Wer hat gebucht – als Anzeigename. Mitglieder kurz, StuPa mit Zusatz. */
+function raum_wer(string $seite, int $id): string
+{
+    if ($seite === 'stupa') {
+        $u = $id > 0 ? stupa_user_get($id) : null;
+        return ($u ? (string)$u['name'] : 'Präsidium') . ' (StuPa)';
+    }
+    $m = $id > 0 ? member_get($id) : null;
+    return $m ? short_name((string)$m['name']) : 'AStA';
+}
+
+/** 'Y-m-d H:i' aus Datum und Uhrzeit – oder '' bei Unsinn. */
+function raum_zeitpunkt(string $tag, string $uhr): string
+{
+    $tag = trim($tag); $uhr = trim($uhr);
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $tag) || !preg_match('/^\d{1,2}:\d{2}$/', $uhr)) return '';
+    $t = DateTime::createFromFormat('Y-m-d H:i', $tag . ' ' . str_pad($uhr, 5, '0', STR_PAD_LEFT));
+    return $t ? $t->format('Y-m-d H:i') : '';
+}
+
+/**
+ * Alle Belegungen zwischen $von und $bis ('Y-m-d', beide einschließlich), sortiert nach Beginn.
+ * Jede Zeile: room_id, starts_at, ends_at, title, art ('serie'|'fest'|'buchung'), side, booked_by,
+ * id (Buchung) bzw. serie_id + tag (gerechneter Termin einer festen Zeit). $raumId = 0: alle Räume.
+ */
+function raum_belegungen(string $von, string $bis, int $raumId = 0): array
+{
+    $out = [];
+    $sql = 'SELECT * FROM room_bookings WHERE starts_at < ? AND ends_at > ?' . ($raumId > 0 ? ' AND room_id = ?' : '');
+    $st = db()->prepare($sql);
+    $st->execute(array_merge([$bis . ' 24:00', $von . ' 00:00'], $raumId > 0 ? [$raumId] : []));
+    foreach ($st->fetchAll() as $b) {
+        $out[] = ['room_id' => (int)$b['room_id'], 'starts_at' => (string)$b['starts_at'], 'ends_at' => (string)$b['ends_at'],
+            'title' => (string)$b['title'], 'art' => !empty($b['fixed']) ? 'fest' : 'buchung', 'side' => (string)$b['side'],
+            'booked_by' => (int)$b['booked_by'], 'id' => (int)$b['id'], 'serie_id' => 0, 'tag' => substr((string)$b['starts_at'], 0, 10)];
+    }
+    $st = db()->prepare('SELECT * FROM room_series WHERE date_from <= ? AND date_to >= ?' . ($raumId > 0 ? ' AND room_id = ?' : ''));
+    $st->execute(array_merge([$bis, $von], $raumId > 0 ? [$raumId] : []));
+    $serien = $st->fetchAll();
+    if ($serien) {
+        $aus = [];
+        foreach (db()->query('SELECT series_id, day FROM room_series_skips')->fetchAll() as $k) $aus[(int)$k['series_id'] . '|' . $k['day']] = true;
+        foreach ($serien as $r) {
+            $tag = new DateTime(max($von, (string)$r['date_from']));
+            $ende = min($bis, (string)$r['date_to']);
+            while ($tag->format('Y-m-d') <= $ende) {
+                $d = $tag->format('Y-m-d');
+                if ((int)$tag->format('N') === (int)$r['weekday'] && !isset($aus[(int)$r['id'] . '|' . $d])) {
+                    $out[] = ['room_id' => (int)$r['room_id'], 'starts_at' => $d . ' ' . $r['time_from'], 'ends_at' => $d . ' ' . $r['time_to'],
+                        'title' => (string)$r['title'], 'art' => 'serie', 'side' => 'asta', 'booked_by' => (int)$r['created_by'],
+                        'id' => 0, 'serie_id' => (int)$r['id'], 'tag' => $d];
+                }
+                $tag->modify('+1 day');
+            }
+        }
+    }
+    usort($out, static fn ($a, $b) => [$a['starts_at'], $a['room_id']] <=> [$b['starts_at'], $b['room_id']]);
+    return $out;
+}
+
+/** Überschneidet sich [$start, $ende) im Raum mit einer Belegung? Rückgabe: die erste, sonst null. */
+function raum_konflikt(int $raumId, string $start, string $ende): ?array
+{
+    foreach (raum_belegungen(substr($start, 0, 10), substr($ende, 0, 10), $raumId) as $b) {
+        if ($b['starts_at'] < $ende && $b['ends_at'] > $start) return $b;
+    }
+    return null;
+}
+
+/**
+ * Eine Belegung eintragen. $fest = einmaliger fester Termin (nur Verwaltende). Rückgabe: Fehler oder ''.
+ * Buchungen sind höchstens 24 Stunden lang und liegen nicht in der Vergangenheit.
+ */
+function raum_buchen(int $raumId, string $start, string $ende, string $titel, string $seite, int $vonId, bool $fest = false, bool $mail = true): string
+{
+    $titel = trim($titel);
+    $raum = raum_get($raumId);
+    if (!$raum || empty($raum['active'])) return 'Diesen Raum gibt es nicht.';
+    if ($start === '' || $ende === '') return 'Bitte Datum, Beginn und Ende angeben.';
+    if ($ende <= $start) return 'Das Ende muss nach dem Beginn liegen.';
+    if (strtotime($ende) - strtotime($start) > 24 * 3600) return 'Eine Buchung darf höchstens 24 Stunden dauern.';
+    if (!$fest && $ende <= date('Y-m-d H:i')) return 'Dieser Zeitraum ist schon vorbei.';
+    if ($titel === '' || mb_strlen($titel) > 120) return 'Bitte einen Anlass angeben (bis 120 Zeichen).';
+    if (!in_array($seite, ['asta', 'stupa'], true) || $vonId <= 0) return 'Buchen geht nur angemeldet.';
+    $fehler = db_atomar(function () use ($raumId, $start, $ende, $titel, $seite, $vonId, $fest, $raum): string {
+        if ($k = raum_konflikt($raumId, $start, $ende)) {
+            return (string)$raum['name'] . ' ist dann schon belegt: ' . substr($k['starts_at'], 11) . '–' . substr($k['ends_at'], 11)
+                . ' Uhr' . ($k['title'] !== '' ? ' („' . $k['title'] . '")' : '') . '.';
+        }
+        db()->prepare('INSERT INTO room_bookings(room_id, starts_at, ends_at, title, fixed, side, booked_by) VALUES(?,?,?,?,?,?,?)')
+            ->execute([$raumId, $start, $ende, $titel, $fest ? 1 : 0, $seite, $vonId]);
+        return '';
+    });
+    // Erst NACH der Transaktion: Die Sperre hält niemand fest, während die Mail rausgeht.
+    if ($fehler === '' && $mail) {
+        raum_mail('raum_gebucht', ['room_id' => $raumId, 'starts_at' => $start, 'ends_at' => $ende, 'title' => $titel,
+            'side' => $seite, 'booked_by' => $vonId, 'fixed' => $fest ? 1 : 0]);
+    }
+    return $fehler;
+}
+
+/**
+ * Mail an die Person, die gebucht hat – Bestätigung ('raum_gebucht') oder Wegfall ('raum_storniert').
+ * Geht von der App-Adresse an Mitglied ODER StuPa-Konto (side!), mit Link auf die jeweils eigene
+ * Raumseite. Feste Belegungen schicken nichts: Die trägt die Verwaltung für niemanden Bestimmtes ein.
+ */
+function raum_mail(string $vorlage, array $b, string $hinweis = ''): bool
+{
+    if (!empty($b['fixed'])) return false;
+    $seite = (string)($b['side'] ?? 'asta'); $id = (int)($b['booked_by'] ?? 0);
+    if ($seite === 'stupa') {
+        $u = $id > 0 ? stupa_user_get($id) : null;
+        if (!$u || empty($u['active'])) return false;
+        $an = trim((string)$u['email']); $name = (string)$u['name']; $seiteUrl = 'stupa/raeume.php';
+    } else {
+        $m = $id > 0 ? member_get($id) : null;
+        if (!$m) return false;
+        $an = member_mail($m); $name = (string)$m['name']; $seiteUrl = 'raeume.php';
+    }
+    if ($an === '' || !filter_var($an, FILTER_VALIDATE_EMAIL)) return false;
+    $raum = raum_get((int)$b['room_id']);
+    $tag = substr((string)$b['starts_at'], 0, 10);
+    try {
+        return mail_tpl_send($vorlage, $an, [
+            '{{VORNAME}}' => first_name($name),
+            '{{RAUM}}'    => $raum ? (string)$raum['name'] : 'Raum',
+            '{{ZEIT}}'    => fmt_date($tag) . ', ' . substr((string)$b['starts_at'], 11) . '–' . substr((string)$b['ends_at'], 11) . ' Uhr',
+            '{{ANLASS}}'  => (string)$b['title'],
+            '{{HINWEIS}}' => $hinweis,
+            '{{LINK}}'    => app_url($seiteUrl . '?w=' . date('Y-m-d', strtotime('monday this week', strtotime($tag)))),
+        ]);
+    } catch (\Throwable $e) {
+        return false;                                   // eine Mail darf die Buchung nie kippen
+    }
+}
+
+/** Darf diese Person die Buchung löschen? Eigene immer, alles nur Verwaltende. */
+function raum_darf_loeschen(array $b, string $seite, int $vonId, bool $verwalter): bool
+{
+    if ($verwalter) return true;
+    return $b['art'] === 'buchung' && $b['side'] === $seite && (int)$b['booked_by'] === $vonId && $vonId > 0;
+}
+
+/** Buchung löschen (mit Rechteprüfung). Rückgabe: true, wenn gelöscht. */
+function raum_buchung_loeschen(int $id, string $seite, int $vonId, bool $verwalter, bool $mail = true): bool
+{
+    $st = db()->prepare('SELECT * FROM room_bookings WHERE id = ?');
+    $st->execute([$id]);
+    $b = $st->fetch();
+    if (!$b) return false;
+    $zeile = ['art' => !empty($b['fixed']) ? 'fest' : 'buchung', 'side' => (string)$b['side'], 'booked_by' => (int)$b['booked_by']];
+    if (!raum_darf_loeschen($zeile, $seite, $vonId, $verwalter)) return false;
+    db()->prepare('DELETE FROM room_bookings WHERE id = ?')->execute([$id]);
+    // Bescheid nur für Kommendes – aufgeräumte alte Buchungen interessieren niemanden mehr.
+    if ($mail && (string)$b['ends_at'] > date('Y-m-d H:i')) {
+        $selbst = (string)$b['side'] === $seite && (int)$b['booked_by'] === $vonId;
+        raum_mail('raum_storniert', $b, $selbst ? 'Du hast sie selbst gelöscht – damit ist der Raum wieder frei.'
+            : 'Gelöscht von ' . raum_wer($seite, $vonId) . '. Bei Fragen meld dich gern direkt.');
+    }
+    return true;
+}
+
+/**
+ * Wöchentliche feste Zeit anlegen. Überschneidet sie sich mit einer bestehenden Belegung, legt die
+ * App sie NICHT an und nennt die Konflikte – erst klären, dann eintragen. Rückgabe: Fehler oder ''.
+ */
+function raum_serie_anlegen(int $raumId, int $wochentag, string $uhrVon, string $uhrBis, string $tagVon, string $tagBis, string $titel, int $vonId): string
+{
+    $titel = trim($titel);
+    if (!raum_get($raumId)) return 'Diesen Raum gibt es nicht.';
+    if ($wochentag < 1 || $wochentag > 7) return 'Bitte einen Wochentag wählen.';
+    if (raum_zeitpunkt('2000-01-01', $uhrVon) === '' || raum_zeitpunkt('2000-01-01', $uhrBis) === '') return 'Bitte Beginn und Ende als Uhrzeit angeben.';
+    $uhrVon = substr(raum_zeitpunkt('2000-01-01', $uhrVon), 11); $uhrBis = substr(raum_zeitpunkt('2000-01-01', $uhrBis), 11);
+    if ($uhrBis <= $uhrVon) return 'Das Ende muss nach dem Beginn liegen (am selben Tag).';
+    if (raum_zeitpunkt($tagVon, '00:00') === '' || raum_zeitpunkt($tagBis, '00:00') === '' || $tagBis < $tagVon) return 'Bitte einen gültigen Zeitraum angeben (von – bis).';
+    if ((strtotime($tagBis) - strtotime($tagVon)) > 400 * 86400) return 'Eine feste Zeit läuft höchstens gut ein Jahr – danach einfach neu eintragen.';
+    if ($titel === '' || mb_strlen($titel) > 120) return 'Bitte einen Anlass angeben (bis 120 Zeichen).';
+    return db_atomar(function () use ($raumId, $wochentag, $uhrVon, $uhrBis, $tagVon, $tagBis, $titel, $vonId): string {
+        $konflikte = [];
+        $tag = new DateTime($tagVon);
+        while ($tag->format('Y-m-d') <= $tagBis) {
+            if ((int)$tag->format('N') === $wochentag) {
+                $d = $tag->format('Y-m-d');
+                if ($k = raum_konflikt($raumId, $d . ' ' . $uhrVon, $d . ' ' . $uhrBis)) $konflikte[] = fmt_date($d) . ($k['title'] !== '' ? ' („' . $k['title'] . '")' : '');
+            }
+            $tag->modify('+1 day');
+        }
+        if ($konflikte) {
+            return 'Nicht angelegt – an ' . count($konflikte) . ' Tag(en) ist der Raum schon belegt: '
+                . implode(', ', array_slice($konflikte, 0, 5)) . (count($konflikte) > 5 ? ' …' : '') . '. Bitte vorher klären.';
+        }
+        db()->prepare('INSERT INTO room_series(room_id, weekday, time_from, time_to, date_from, date_to, title, created_by) VALUES(?,?,?,?,?,?,?,?)')
+            ->execute([$raumId, $wochentag, $uhrVon, $uhrBis, $tagVon, $tagBis, $titel, $vonId]);
+        return '';
+    });
+}
+
+function raum_serien(): array
+{
+    return db()->query('SELECT s.*, r.name AS room_name FROM room_series s JOIN rooms r ON r.id = s.room_id
+                        ORDER BY r.sort, r.name COLLATE NOCASE, s.weekday, s.time_from')->fetchAll();
+}
+
+function raum_serie_loeschen(int $id): void
+{
+    db()->prepare('DELETE FROM room_series WHERE id = ?')->execute([$id]);
+}
+
+/** Einen Termin einer festen Zeit ausfallen lassen – der Raum ist an dem Tag dann buchbar. */
+function raum_serie_auslassen(int $id, string $tag): void
+{
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $tag)) return;
+    db()->prepare('INSERT OR IGNORE INTO room_series_skips(series_id, day) VALUES(?, ?)')->execute([$id, $tag]);
+}
+
+/** Montag der Woche, die nach einem Formular gezeigt werden soll: die des gebuchten Tags, sonst die zuletzt angesehene. */
+function raum_woche_nach_post(): string
+{
+    foreach (['tag', 'w'] as $k) {
+        $v = trim((string)($_POST[$k] ?? $_GET[$k] ?? ''));
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) && strtotime($v)) return date('Y-m-d', strtotime('monday this week', strtotime($v)));
+    }
+    return date('Y-m-d', strtotime('monday this week'));
+}
+
+/** Wochentage für Formulare und Anzeige. */
+function raum_wochentage(): array
+{
+    return [1 => 'Montag', 2 => 'Dienstag', 3 => 'Mittwoch', 4 => 'Donnerstag', 5 => 'Freitag', 6 => 'Samstag', 7 => 'Sonntag'];
+}
+
+/**
+ * Die Formulare der Seite auswerten – EINE Stelle für App und StuPa-Bereich.
+ * $seite/$vonId: wer handelt ('asta' + Mitglieds-ID oder 'stupa' + Konto-ID); $verwalter schaltet
+ * die Pflege frei (nur Mitglieder mit Orga-Rolle, siehe raum_kann_verwalten()).
+ * Rückgabe: [Meldung, 'success'|'error'] oder null, wenn kein Raum-Formular abgeschickt wurde.
+ */
+function raum_post_verarbeiten(string $seite, int $vonId, bool $verwalter): ?array
+{
+    $a = (string)($_POST['action'] ?? '');
+    $p = static fn (string $k) => trim((string)($_POST[$k] ?? ''));
+    switch ($a) {
+        case 'raum_buchen':
+            $fest = $verwalter && !empty($_POST['fest']);
+            $tag = $p('tag');
+            $e = raum_buchen((int)$p('room_id'), raum_zeitpunkt($tag, $p('von')), raum_zeitpunkt($tag, $p('bis')), $p('titel'), $seite, $vonId, $fest);
+            return $e === '' ? [($fest ? 'Feste Belegung eingetragen.' : 'Gebucht.'), 'success'] : [$e, 'error'];
+        case 'raum_loeschen':
+            return raum_buchung_loeschen((int)$p('id'), $seite, $vonId, $verwalter)
+                ? ['Belegung gelöscht.', 'success'] : ['Das darfst du nicht löschen (oder es ist schon weg).', 'error'];
+    }
+    if (!$verwalter) return null;
+    switch ($a) {
+        case 'raum_speichern':
+            $e = raum_speichern((int)$p('id'), $p('name'), $p('info'), !isset($_POST['active']) || !empty($_POST['active']));
+            return $e === '' ? ['Raum gespeichert.', 'success'] : [$e, 'error'];
+        case 'raum_entfernen':
+            raum_loeschen((int)$p('id'));
+            return ['Raum samt seiner Belegungen gelöscht.', 'success'];
+        case 'serie_anlegen':
+            $e = raum_serie_anlegen((int)$p('room_id'), (int)$p('weekday'), $p('von'), $p('bis'), $p('tag_von'), $p('tag_bis'), $p('titel'), $vonId);
+            return $e === '' ? ['Feste Zeit eingetragen.', 'success'] : [$e, 'error'];
+        case 'serie_loeschen':
+            raum_serie_loeschen((int)$p('id'));
+            return ['Feste Zeit gelöscht – alle ihre Termine sind wieder frei.', 'success'];
+        case 'serie_auslassen':
+            raum_serie_auslassen((int)$p('id'), $p('tag'));
+            return ['Dieser Termin fällt aus – der Raum ist an dem Tag frei.', 'success'];
+    }
+    return null;
+}
+
+/**
+ * Die Wochenansicht samt Buchungsformular – EINE Darstellung für App und StuPa-Bereich.
+ * $o: woche (Montag, 'Y-m-d'), self (Seiten-URL ohne Parameter), seite/von_id/verwalter (wer schaut),
+ * fp (true = Datumswähler der App, false = Browser-Felder; der StuPa-Bereich lädt den Wähler nicht).
+ */
+function raum_wochenansicht(array $o): string
+{
+    $raeume = raum_alle();
+    $self = (string)$o['self'];
+    $seite = (string)$o['seite']; $vonId = (int)$o['von_id']; $verwalter = !empty($o['verwalter']);
+    $mo = new DateTime((string)$o['woche']);
+    $so = (clone $mo)->modify('+6 days');
+    $belegt = raum_belegungen($mo->format('Y-m-d'), $so->format('Y-m-d'));
+    $tage = raum_wochentage();
+    $heute = date('Y-m-d');
+    $fp = !empty($o['fp']);
+    $datum = $fp ? 'type="text" class="fp-date"' : 'type="date"';
+    $uhr = $fp ? 'type="text" class="fp-time"' : 'type="time" step="900"';
+
+    $h = '<div class="raum-woche-nav">'
+        . '<a class="btn secondary small" href="' . h($self . '?w=' . (clone $mo)->modify('-7 days')->format('Y-m-d')) . '"><i class="ti ti-chevron-left"></i> Vorwoche</a>'
+        . '<strong>' . h(fmt_date($mo->format('Y-m-d')) . ' – ' . fmt_date($so->format('Y-m-d'))) . '</strong>'
+        . '<a class="btn secondary small" href="' . h($self . '?w=' . (clone $mo)->modify('+7 days')->format('Y-m-d')) . '">Nächste Woche <i class="ti ti-chevron-right"></i></a>'
+        . ($mo->format('Y-m-d') !== date('Y-m-d', strtotime('monday this week')) ? '<a class="small" href="' . h($self) . '">Diese Woche</a>' : '')
+        . '</div>';
+
+    if (!$raeume) {
+        return $h . '<div class="card"><p class="empty"><i class="ti ti-door-off"></i> Es sind noch keine Räume eingerichtet.'
+            . ($verwalter ? ' Lege unten unter „Räume &amp; feste Zeiten" den ersten an.' : '') . '</p></div>';
+    }
+
+    $h .= '<div class="raum-raster">';
+    foreach ($raeume as $r) {
+        $rid = (int)$r['id'];
+        $h .= '<section class="card raum-karte"><h3 class="raum-name"><i class="ti ti-door"></i> ' . h((string)$r['name']) . '</h3>'
+            . (trim((string)$r['info']) !== '' ? '<p class="small muted raum-info">' . h((string)$r['info']) . '</p>' : '')
+            . '<ul class="raum-tage">';
+        for ($i = 0; $i < 7; $i++) {
+            $d = (clone $mo)->modify("+$i days")->format('Y-m-d');
+            $eintraege = array_values(array_filter($belegt, static fn ($b) => $b['room_id'] === $rid && $b['tag'] === $d));
+            $h .= '<li class="raum-tag' . ($d === $heute ? ' ist-heute' : '') . ($d < $heute ? ' ist-vorbei' : '') . '">'
+                . '<span class="raum-tag-name">' . h(mb_substr($tage[$i + 1], 0, 2)) . ' ' . h(date('d.m.', strtotime($d))) . '</span>';
+            if (!$eintraege) {
+                $h .= '<span class="raum-frei">frei</span>';
+            } else {
+                $h .= '<span class="raum-belegt">';
+                foreach ($eintraege as $b) {
+                    $wer = raum_wer($b['side'], $b['booked_by']);
+                    $h .= '<span class="raum-eintrag raum-' . h($b['art']) . ($b['side'] === 'stupa' ? ' raum-stupa' : '') . '">'
+                        . '<strong>' . h(substr($b['starts_at'], 11) . '–' . substr($b['ends_at'], 11)) . '</strong> '
+                        . h($b['title'])
+                        . ($b['art'] === 'buchung' ? ' <span class="muted">· ' . h($wer) . '</span>' : ' <span class="raum-chip">fest</span>');
+                    if ($b['art'] !== 'serie' && raum_darf_loeschen($b, $seite, $vonId, $verwalter) && $d >= $heute) {
+                        $h .= '<form method="post" class="raum-x" data-confirm="Diese Belegung löschen?" data-confirm-danger data-confirm-ok="Löschen">'
+                            . csrf_field() . '<input type="hidden" name="w" value="' . h($mo->format('Y-m-d')) . '"><input type="hidden" name="action" value="raum_loeschen"><input type="hidden" name="id" value="' . (int)$b['id'] . '">'
+                            . '<button type="submit" class="raum-x-btn" title="Löschen" aria-label="Löschen"><i class="ti ti-x"></i></button></form>';
+                    } elseif ($b['art'] === 'serie' && $verwalter && $d >= $heute) {
+                        $h .= '<form method="post" class="raum-x" data-confirm="Diesen einen Termin ausfallen lassen? Der Raum ist an dem Tag dann frei." data-confirm-ok="Ausfallen lassen">'
+                            . csrf_field() . '<input type="hidden" name="w" value="' . h($mo->format('Y-m-d')) . '"><input type="hidden" name="action" value="serie_auslassen"><input type="hidden" name="id" value="' . (int)$b['serie_id'] . '">'
+                            . '<input type="hidden" name="tag" value="' . h($d) . '">'
+                            . '<button type="submit" class="raum-x-btn" title="Diesmal nicht" aria-label="Diesmal nicht"><i class="ti ti-calendar-off"></i></button></form>';
+                    }
+                    $h .= '</span>';
+                }
+                $h .= '</span>';
+            }
+            $h .= '</li>';
+        }
+        $h .= '</ul></section>';
+    }
+    $h .= '</div>';
+
+    // Buchen
+    $h .= '<div class="section-title" id="buchen"><i class="ti ti-calendar-plus"></i> Raum buchen</div>'
+        . '<div class="card"><form method="post" class="raum-formular">' . csrf_field() . '<input type="hidden" name="action" value="raum_buchen">'
+        . '<label>Raum<select name="room_id" required>';
+    foreach ($raeume as $r) $h .= '<option value="' . (int)$r['id'] . '">' . h((string)$r['name']) . '</option>';
+    $h .= '</select></label>'
+        . '<label>Tag<input ' . $datum . ' name="tag" required placeholder="Datum wählen"></label>'
+        . '<label>von<input ' . $uhr . ' name="von" required placeholder="10:00"></label>'
+        . '<label>bis<input ' . $uhr . ' name="bis" required placeholder="12:00"></label>'
+        . '<label class="raum-anlass">Anlass<input type="text" name="titel" required maxlength="120" placeholder="z. B. Referatstreffen"></label>'
+        . ($verwalter ? '<label class="raum-fest"><input type="checkbox" name="fest" value="1"> als feste Belegung</label>' : '')
+        . '<button class="btn" type="submit"><i class="ti ti-calendar-plus"></i> Buchen</button>'
+        . '</form><p class="small muted" style="margin:.5rem 0 0">Wer zuerst bucht, hat den Raum – ist er belegt, sagt dir die App, womit. Eigene Buchungen kannst du in der Übersicht oben über das <i class="ti ti-x"></i> wieder löschen.</p></div>';
+    return $h;
+}
+
+/**
+ * „Neu im StuPa-Bereich" – derselbe Splash wie in der App (app_neuigkeiten_html, app.js), mit
+ * eigenem Inhalt und eigenem Merker an stupa_users. Einmal am Desktop, einmal am Handy. Anders als
+ * in der App sehen ihn auch neu angelegte Zugänge: Einen Rundgang gibt es hier nicht.
+ * Für ein neues Update: Version hochsetzen, Punkte tauschen (Links relativ zu stupa/).
+ */
+const STUPA_NEUIGKEITEN_VERSION = '2026-10-raeume-umlauf';
+
+function stupa_neuigkeiten(): array
+{
+    return [
+        'kicker' => 'Neu im StuPa-Bereich',
+        'titel'  => 'Zwei neue Werkzeuge',
+        'punkte' => [
+            ['icon' => 'ti-door', 'farbe' => 'petrol', 'titel' => 'Räume buchen',
+             'text' => 'Seht auf einen Blick, wann die Räume frei sind, und bucht sie direkt. Die Bestätigung kommt per Mail.',
+             'link' => 'raeume.php', 'knopf' => 'Zur Raumbelegung'],
+            ['icon' => 'ti-mailbox', 'farbe' => 'violett', 'titel' => 'Umlaufverfahren',
+             'text' => 'Beschlüsse außerhalb der Sitzung: Mitgliederliste anlegen, Umlauf starten – jedes Mitglied stimmt über seinen <strong>persönlichen Link</strong> ab, namentlich oder geheim. Die Umläufe seht nur ihr.',
+             'link' => 'umlauf.php', 'knopf' => 'Zu den Umläufen'],
+        ],
+        'ausserdem' => 'Oben in der Leiste stehen jetzt Auszahlungen, Räume und Umläufe nebeneinander.',
+    ];
+}
+
+/** Wo steht der StuPa-Splash noch aus? ['desktop' => bool, 'mobil' => bool]. */
+function stupa_neuigkeiten_offen(int $userId): array
+{
+    $nein = ['desktop' => false, 'mobil' => false];
+    if ($userId <= 0) return $nein;
+    try {
+        $s = db()->prepare('SELECT news_seen, news_seen_mobil FROM stupa_users WHERE id = ? AND active = 1');
+        $s->execute([$userId]);
+        $r = $s->fetch();
+        if (!$r) return $nein;
+        return ['desktop' => (string)$r['news_seen'] !== STUPA_NEUIGKEITEN_VERSION, 'mobil' => (string)$r['news_seen_mobil'] !== STUPA_NEUIGKEITEN_VERSION];
+    } catch (\Throwable $e) { return $nein; }
+}
+
+function stupa_neuigkeiten_gesehen(int $userId, string $geraet): void
+{
+    if ($userId <= 0 || !in_array($geraet, ['desktop', 'mobil'], true)) return;
+    $spalte = $geraet === 'mobil' ? 'news_seen_mobil' : 'news_seen';
+    try { db()->prepare("UPDATE stupa_users SET $spalte = ? WHERE id = ?")->execute([STUPA_NEUIGKEITEN_VERSION, $userId]); } catch (\Throwable $e) {}
+}
+
 // ---- Zugänge des StuPa-Präsidiums (eigene Konten, kein Eintrag in members) ----
 
 const STUPA_TOKEN_MINUTES = 60;   // Gültigkeit eines Anmelde-Links
@@ -16840,6 +17452,12 @@ function mail_templates(): array
         'maybe_reminder' => ['label' => '„Evtl."-Erinnerung', 'subject' => 'Bitte „Evtl." anpassen – {{EVENT}}',
             'body' => "Hallo {{VORNAME}},\n\nbei „{{EVENT}}“ hast du bei mindestens einer Schicht „Evtl.“ angegeben.\nDie Abstimmungsfrist endet morgen ({{FRIST}}). Bitte leg dich bis dahin auf Ja oder Nein fest – sonst wird „Evtl.“ automatisch zu „Nein“.\n\nHier anpassen:\n{{LINK}}\n\nDanke!\nDeine AStA-App",
             'vars' => ['{{VORNAME}}' => 'Vorname', '{{EVENT}}' => 'Event-Titel', '{{FRIST}}' => 'Fristdatum', '{{LINK}}' => 'Event-Link']],
+        'raum_gebucht' => ['label' => 'Raumbuchung bestätigt', 'subject' => 'Gebucht: {{RAUM}}, {{ZEIT}}',
+            'body' => "Hallo {{VORNAME}},\n\ndeine Buchung steht:\n\n**{{RAUM}}**\n{{ZEIT}}\nAnlass: {{ANLASS}}\n\nZur Raumbelegung:\n{{LINK}}\n\nKannst du doch nicht? Dann lösch die Buchung dort bitte wieder, damit der Raum für andere frei wird.\n\nViele Grüße\nDeine AStA-App",
+            'vars' => ['{{VORNAME}}' => 'Vorname', '{{RAUM}}' => 'Raum', '{{ZEIT}}' => 'Tag und Uhrzeit', '{{ANLASS}}' => 'Anlass', '{{LINK}}' => 'Link zur Raumbelegung']],
+        'raum_storniert' => ['label' => 'Raumbuchung gelöscht', 'subject' => 'Buchung gelöscht: {{RAUM}}, {{ZEIT}}',
+            'body' => "Hallo {{VORNAME}},\n\ndiese Buchung gibt es nicht mehr:\n\n**{{RAUM}}**\n{{ZEIT}}\nAnlass: {{ANLASS}}\n\n{{HINWEIS}}\n\nZur Raumbelegung:\n{{LINK}}\n\nViele Grüße\nDeine AStA-App",
+            'vars' => ['{{VORNAME}}' => 'Vorname', '{{RAUM}}' => 'Raum', '{{ZEIT}}' => 'Tag und Uhrzeit', '{{ANLASS}}' => 'Anlass', '{{HINWEIS}}' => 'wer gelöscht hat bzw. warum', '{{LINK}}' => 'Link zur Raumbelegung']],
         'invite_reminder' => ['label' => 'Einladungs-Reminder (Sekretariat)', 'subject' => 'Einladung vorbereiten – {{SITZUNG}}',
             'body' => "Hallo {{VORNAME}},\n\ndie Einladung zur „{{SITZUNG}}“ ({{DATUM}}) sollte bald raus – geplant für den {{STICHTAG}}.\n\nBitte kümmere dich um den Versand (Teams-Link eintragen, Einladung verschicken bzw. freigeben):\n{{LINK}}\n\nAStA-App",
             'vars' => ['{{VORNAME}}' => 'Vorname', '{{SITZUNG}}' => 'Sitzung', '{{DATUM}}' => 'Datum', '{{STICHTAG}}' => 'Versand-Stichtag', '{{LINK}}' => 'Sitzungs-Link']],
@@ -16875,6 +17493,10 @@ function mail_tpl_beispiel(?array $me): array
         '{{FRISTHINWEIS}}' => 'Die Frist endet am ' . fmt_date($tag) . '.',
         '{{FRIST}}' => fmt_date($tag),
         '{{STICHTAG}}' => fmt_date(date('Y-m-d', strtotime('+1 day'))),
+        '{{RAUM}}' => 'AStA-Büro (Beispiel)',
+        '{{ZEIT}}' => fmt_date($tag) . ', 10:00–12:00 Uhr',
+        '{{ANLASS}}' => 'Referatstreffen',
+        '{{HINWEIS}}' => 'Gelöscht von Alex.',
     ];
 }
 
@@ -17629,6 +18251,14 @@ function page_header(string $title, bool $admin = false): void
     // Topbar-Navigation als auch im „Mehr"-Bottom-Sheet der Tab-Leiste genutzt (kein Drift).
     $navMore = [];
     $cmNav = is_logged_in() ? current_member() : null;
+    // Persönliches: am Desktop im Namens-Menü, am Handy im „Mehr"-Sheet. Auslagen nicht für die
+    // Finanzen-Rolle – die hat dieselbe Seite schon als eigenen Punkt „Finanzen".
+    $navPersoenlich = [];
+    if ($cmNav) {
+        $navPersoenlich[] = ['absence.php', 'ti-plane-departure', 'Abwesenheit'];
+        if (current_role() !== 'finanzen') $navPersoenlich[] = ['finanzen.php', 'ti-receipt-2', 'Auslagen'];
+        $navPersoenlich[] = ['achievements.php', 'ti-trophy', 'Achievements'];
+    }
     if (is_logged_in()) {
         if (can_manage_meetings()) {
             $navMore[] = ['admin/meetings.php', 'ti-gavel', 'Sitzungen'];
@@ -17641,13 +18271,12 @@ function page_header(string $title, bool $admin = false): void
         $navMore[] = ['umlauf.php', 'ti-mailbox', 'Abstimmungen', true];
         // Mitgliederliste mit Nutzerprofilen: für alle, in der Topbar nur als Icon
         $navMore[] = ['mitglieder.php', 'ti-users-group', 'Mitglieder', true];
-        // Abwesenheit: Mitglieder mit Text, Vorsitz/Admin nur als Icon (4. Feld = Icon-only in der
-        // Topbar – im aufgeklappten Hamburger-Menü und im „Mehr"-Sheet trotzdem beschriftet),
-        // bewusst ZWISCHEN Sitzungen und Verwaltung.
-        $navMore[] = ['absence.php', 'ti-plane-departure', 'Abwesenheit', can_admin()];
-        // Auslagen (finanzen.php, Einreichen): Finanzen-Rolle hat ihren eigenen Punkt; bei Vorsitz/Admin
-        // sitzt das Icon ZWISCHEN Abwesenheit und Verwaltung, für alle anderen weiter hinten bei den Icons.
-        if (can_admin() && current_role() !== 'finanzen') $navMore[] = ['finanzen.php', 'ti-receipt-2', 'Auslagen', true];
+        // Raumbelegung: für alle, in der Topbar nur als Icon
+        $navMore[] = ['raeume.php', 'ti-door', 'Räume', true];
+        // Wegweiser: ein Nachschlagewerk für alle – in der Topbar als Icon. Was dich persönlich
+        // betrifft (Abwesenheit, Auslagen, Achievements), steht dagegen im Menü unter deinem
+        // Namen ($navPersoenlich) – so bleibt die Topbar am Desktop schmal.
+        $navMore[] = ['wegweiser.php', 'ti-directions', 'Wegweiser', true];
         // Pat:innenprogramm-Verantwortliche: eigener Titelleisten-Punkt – ihr einziger Zugang,
         // mehr Verwaltung sehen sie nicht. (Admin/Vorsitz kommen über die Verwaltung dorthin.)
         if (is_pat_manager() && !can_admin()) $navMore[] = ['admin/paten.php', 'ti-heart-handshake', 'Pat:innen'];
@@ -17683,15 +18312,15 @@ function page_header(string $title, bool $admin = false): void
           <a href="<?= $b . $nmHref ?>"><i class="ti <?= $nmIcon ?>"></i><?= h($nmLabel) ?></a>
         <?php endif; ?>
       <?php endforeach; ?>
-      <?php if (current_role() !== 'finanzen' && !can_admin()): // Vorsitz/Admin haben Auslagen schon oben zwischen Abwesenheit und Verwaltung ?><a class="nav-ic" href="<?= $b ?>finanzen.php" title="Auslagen einreichen" aria-label="Auslagen einreichen"><i class="ti ti-receipt-2"></i><span class="nav-ic-lbl">Auslagen</span></a><?php endif; ?>
-      <a class="nav-ic" href="<?= $b ?>achievements.php" title="Achievements" aria-label="Achievements"><i class="ti ti-trophy"></i><span class="nav-ic-lbl">Achievements</span></a>
-      <?php if ($cmNav): // eigener Name → Dropdown: Mein Profil / Wichtige Infos & Anleitung / Konto wechseln / Abmelden ?>
+      <?php if ($cmNav): // eigener Name → Dropdown: Mein Profil / Persönliches ($navPersoenlich) / Wichtige Infos & Anleitung / Konto wechseln / Abmelden ?>
         <details class="nav-user">
           <summary class="navuser"><i class="ti ti-user-circle"></i> <?= h(first_name((string)$cmNav['name'])) ?> <i class="ti ti-chevron-down nav-user-chev"></i></summary>
           <div class="nav-user-menu">
             <a href="<?= $b ?>profil.php"><i class="ti ti-user-circle"></i> Mein Profil</a>
+            <?php foreach ($navPersoenlich as [$npHref, $npIcon, $npLabel]): ?>
+              <a href="<?= $b . $npHref ?>"><i class="ti <?= $npIcon ?>"></i> <?= h($npLabel) ?></a>
+            <?php endforeach; ?>
             <a href="<?= $b ?>info.php"><i class="ti ti-info-circle"></i> Wichtige Infos &amp; Anleitung</a>
-            <a href="<?= $b ?>wegweiser.php"><i class="ti ti-directions"></i> Wegweiser</a>
             <?php if (count(shared_members()) > 1): ?><a href="<?= $b ?>login.php?switch=1"><i class="ti ti-switch-horizontal"></i> Konto wechseln</a><?php endif; ?>
             <a class="nav-user-out" href="<?= $b ?>logout.php"><i class="ti ti-logout"></i> Abmelden</a>
           </div>
@@ -17726,12 +18355,12 @@ function page_header(string $title, bool $admin = false): void
       <?php foreach ($navMore as [$nmHref, $nmIcon, $nmLabel]): ?>
         <a href="<?= $b . $nmHref ?>"><i class="ti <?= $nmIcon ?>"></i> <?= h($nmLabel) ?></a>
       <?php endforeach; ?>
-      <?php if (current_role() !== 'finanzen' && !can_admin()): // Vorsitz/Admin haben Auslagen schon über navMore ?><a href="<?= $b ?>finanzen.php"><i class="ti ti-receipt-2"></i> Auslagen</a><?php endif; ?>
-      <a href="<?= $b ?>achievements.php"><i class="ti ti-trophy"></i> Achievements</a>
+      <?php foreach ($navPersoenlich as [$npHref, $npIcon, $npLabel]): ?>
+        <a href="<?= $b . $npHref ?>"><i class="ti <?= $npIcon ?>"></i> <?= h($npLabel) ?></a>
+      <?php endforeach; ?>
       <a href="<?= $b ?>erinnerungen.php"><i class="ti ti-bell"></i> Erinnerungen</a>
       <?php if ($cmNav): ?><a href="<?= $b ?>profil.php"><i class="ti ti-user-circle"></i> Mein Profil</a><?php endif; ?>
       <a href="<?= $b ?>info.php"><i class="ti ti-info-circle"></i> Infos &amp; Anleitung</a>
-      <a href="<?= $b ?>wegweiser.php"><i class="ti ti-directions"></i> Wegweiser</a>
       <?php if (count(shared_members()) > 1): ?><a href="<?= $b ?>login.php?switch=1"><i class="ti ti-switch-horizontal"></i> Konto wechseln</a><?php endif; ?>
       <!-- Design-Umschalter: in der PWA ist die Topbar (mit der Glühbirne) ausgeblendet.
            Statt Durchschalten öffnet sich hier ein Direktwahl-Menü nach OBEN mit allen Designs. -->
@@ -17787,7 +18416,10 @@ function page_header(string $title, bool $admin = false): void
             && !in_array('pinkdream', member_achievement_codes($pid), true);
         // Einmalig automatisch anzuwendender Skin (Sommerkönig-Unlock oder Skin-Geschenk) – app.js aktiviert ihn genau einmal und leert das Feld.
         $autoSkin = ($pid > 0 && ($ps = member_pending_skin($pid)) !== '' && skin_unlocked($ps)) ? $ps : ''; ?>
-  <script>window.ASTA_CSRF=<?= json_encode(csrf_token()) ?>;window.ASTA_ACH_EQUIP=<?= json_encode($b . 'achievements.php') ?>;<?php if ($autoSkin): ?>window.ASTA_AUTO_SKIN=<?= json_encode($autoSkin) ?>;<?php endif; ?><?php if (puste_moment() !== ''): ?>window.ASTA_PUSTE=<?= json_encode(puste_moment(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;<?php endif; ?><?php if ($pinkReady): ?>window.ASTA_PINK_READY=1;<?php endif; ?><?php if ($achUnlocks): ?>window.ASTA_ACH_UNLOCKS=<?= json_encode($achUnlocks, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;<?php endif; ?><?php if ($propsReset): ?>window.ASTA_PROPS_RESET=1;window.ASTA_PROPS_LEFT=<?= (int)kudos_quota_left((int)($_SESSION['member_id'] ?? 0)) ?>;<?php endif; ?><?php if ($streakGain > 0): $flameStyle = member_flame_style((int)($_SESSION['member_id'] ?? 0)); ?>window.ASTA_STREAK_GAIN=<?= (int)$streakGain ?>;window.ASTA_FLAME_SVG=<?= json_encode(flame_svg($flameStyle), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;window.ASTA_FLAME_STYLE=<?= json_encode($flameStyle, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;window.ASTA_FLAME_AURA=<?= json_encode(streak_aura_html($flameStyle, 5), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;<?php endif; ?><?php if (basename((string)($_SERVER['SCRIPT_NAME'] ?? '')) === 'dashboard.php' && !member_onboarded((int)($_SESSION['member_id'] ?? 0))): ?>window.ASTA_TOUR_AUTO=1;<?php endif; ?><?php if (current_member()): ?>window.ASTA_TOUR_PAGES=<?= json_encode(tour_pages(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;window.ASTA_TOUR_FLAGS=<?= json_encode(tour_flags(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;window.ASTA_BASE=<?= json_encode($b, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;<?php endif; ?></script>
+  <?php $neuOffen = current_member() !== null ? app_neuigkeiten_offen((int)($_SESSION['member_id'] ?? 0)) : ['desktop' => false, 'mobil' => false];
+        $neuZeigen = $neuOffen['desktop'] || $neuOffen['mobil'];
+        if ($neuZeigen) echo app_neuigkeiten_html($b); ?>
+  <script><?php if ($neuZeigen): ?>window.ASTA_NEWS=<?= json_encode($neuOffen) ?>;<?php endif; ?>window.ASTA_CSRF=<?= json_encode(csrf_token()) ?>;window.ASTA_ACH_EQUIP=<?= json_encode($b . 'achievements.php') ?>;<?php if ($autoSkin): ?>window.ASTA_AUTO_SKIN=<?= json_encode($autoSkin) ?>;<?php endif; ?><?php if (puste_moment() !== ''): ?>window.ASTA_PUSTE=<?= json_encode(puste_moment(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;<?php endif; ?><?php if ($pinkReady): ?>window.ASTA_PINK_READY=1;<?php endif; ?><?php if ($achUnlocks): ?>window.ASTA_ACH_UNLOCKS=<?= json_encode($achUnlocks, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;<?php endif; ?><?php if ($propsReset): ?>window.ASTA_PROPS_RESET=1;window.ASTA_PROPS_LEFT=<?= (int)kudos_quota_left((int)($_SESSION['member_id'] ?? 0)) ?>;<?php endif; ?><?php if ($streakGain > 0): $flameStyle = member_flame_style((int)($_SESSION['member_id'] ?? 0)); ?>window.ASTA_STREAK_GAIN=<?= (int)$streakGain ?>;window.ASTA_FLAME_SVG=<?= json_encode(flame_svg($flameStyle), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;window.ASTA_FLAME_STYLE=<?= json_encode($flameStyle, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;window.ASTA_FLAME_AURA=<?= json_encode(streak_aura_html($flameStyle, 5), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;<?php endif; ?><?php if (basename((string)($_SERVER['SCRIPT_NAME'] ?? '')) === 'dashboard.php' && !member_onboarded((int)($_SESSION['member_id'] ?? 0))): ?>window.ASTA_TOUR_AUTO=1;<?php endif; ?><?php if (current_member()): ?>window.ASTA_TOUR_PAGES=<?= json_encode(tour_pages(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;window.ASTA_TOUR_FLAGS=<?= json_encode(tour_flags(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;window.ASTA_BASE=<?= json_encode($b, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;<?php endif; ?></script>
 <?php endif; ?>
 <?php
 }

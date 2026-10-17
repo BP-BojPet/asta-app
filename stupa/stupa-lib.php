@@ -1,6 +1,6 @@
 <?php
 /**
- * Gemeinsamer Unterbau des StuPa-Bereichs.
+ * Gemeinsamer Unterbau des StuPa-Bereichs (Auszahlungsaufforderungen, Raumbelegung, Umlaufverfahren).
  *
  * WARUM EIGENER BEREICH: Das Präsidium ist kein AStA-Mitglied. Als Eintrag in `members` liefe
  * das Konto in allem mit, was Mitglieder abfragt – Anwesenheitszahlen, Score,
@@ -74,9 +74,12 @@ function stupa_header(string $title, ?array $user = null): void
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="index.php"><img src="<?= h(brand_url('logo-header', '../')) ?>" alt="" height="34"><span>StuPa · Auszahlungen</span></a>
+  <a class="brand" href="index.php"><img src="<?= h(brand_url('logo-header', '../')) ?>" alt="" height="34"><span>StuPa</span></a>
   <nav id="mainnav">
-    <?php if ($user): ?>
+    <?php if ($user): $hier = basename((string)($_SERVER['SCRIPT_NAME'] ?? '')); ?>
+      <a href="index.php"<?= $hier === 'index.php' ? ' aria-current="page"' : '' ?>><i class="ti ti-receipt"></i>Auszahlungen</a>
+      <a href="raeume.php"<?= $hier === 'raeume.php' ? ' aria-current="page"' : '' ?>><i class="ti ti-door"></i>Räume</a>
+      <a href="umlauf.php"<?= $hier === 'umlauf.php' ? ' aria-current="page"' : '' ?>><i class="ti ti-mailbox"></i>Umläufe</a>
       <span class="navuser"><i class="ti ti-building-bank"></i> <?= h($user['name']) ?></span>
       <a href="logout.php"><i class="ti ti-logout"></i>Abmelden</a>
     <?php endif; ?>
@@ -100,9 +103,15 @@ function stupa_header(string $title, ?array $user = null): void
 
 function stupa_footer(): void
 {
+    // „Neu im StuPa-Bereich": derselbe Splash wie in der App, gemeldet über stupa/neu.php
+    $u = stupa_current();
+    $neuOffen = $u ? stupa_neuigkeiten_offen((int)$u['id']) : ['desktop' => false, 'mobil' => false];
+    $neuZeigen = $neuOffen['desktop'] || $neuOffen['mobil'];
     ?>
 </main>
-<footer class="foot"><span class="muted small"><?= h(org_name_kurz()) ?> · Auszahlungsaufforderungen des StuPa</span></footer>
+<?php if ($neuZeigen) echo app_neuigkeiten_html('', stupa_neuigkeiten()); ?>
+<script>window.ASTA_CSRF=<?= json_encode(csrf_token()) ?>;<?php if ($neuZeigen): ?>window.ASTA_NEWS=<?= json_encode($neuOffen) ?>;window.ASTA_NEWS_URL='neu.php';<?php endif; ?></script>
+<footer class="foot"><span class="muted small"><?= h(org_name_kurz()) ?> · Bereich des StuPa-Präsidiums</span></footer>
 <script src="../assets/app.js?v=<?= STUPA_ASSET_V ?>"></script>
 </body>
 </html>

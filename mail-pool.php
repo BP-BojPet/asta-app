@@ -32,6 +32,7 @@ function mail_pool_quellen(): array
         'extern'   => 'Externe Events',
         'termin'   => 'Terminplaner (öffentlich)',
         'waslaeuft' => 'was.läuft (Veranstalter-Zugänge)',
+        'stupa'     => 'StuPa (Umlaufverfahren)',
     ];
 }
 
