@@ -5628,6 +5628,8 @@ if ($doTest) {
             // Basis-Score: Verpasst hat die Pflicht nur, wer zum Kreis gehörte.
             $pdo->prepare("UPDATE simple_polls SET status = 'closed', deadline = ?, closed_at = ?, result_json = ? WHERE id = ?")
                 ->execute([$heute . ' 00:01', date('Y-m-d H:i:s'), json_encode(['counts' => [], 'voters' => 0, 'kreis' => [$a]]), $pr]);
+            $pdo->exec('DELETE FROM wartung_zeiten');   // in einer laufenden Wartung gäbe es sonst gar keinen Abzug
+            wartung_zeiten(true);
             $ctx = basis_context();
             $verpasst = function (int $mid) use ($ctx) {
                 foreach (member_basis_breakdown(member_get($mid), $ctx)['rows'] as $row) {
@@ -5638,6 +5640,7 @@ if ($doTest) {
             st_expect($verpasst($a) - $verpasst($d) === 1, 'der Basis-Score zieht auch außerhalb des Kreises ab (oder im Kreis nicht)');
         } finally {
             $pdo->rollBack();
+            wartung_zeiten(true);
         }
         $srcU = (string)file_get_contents(dirname(__DIR__) . '/umlauf.php');
         $srcD = (string)file_get_contents(dirname(__DIR__) . '/download.php');
@@ -5810,60 +5813,98 @@ if ($doTest) {
         return ($mitAblauf ? 'Regeln, Links, namentlich/geheim' : 'Regeln (Ablauf erst, wenn es Umläufe gibt)') . ', öffentliche Seite und Trennung vom AStA geprüft (nichts gespeichert)';
     });
 
-    $run('„Neu im StuPa-Bereich": einmal je Geräteart', function () {
-        $n = stupa_neuigkeiten();
-        foreach ($n['punkte'] as $i => $pk) {
-            if (!empty($pk['link'])) st_expect(is_file(dirname(__DIR__) . '/stupa/' . preg_replace('~[?#].*$~', '', (string)$pk['link'])),
-                'StuPa-Neuigkeit ' . ($i + 1) . ': der Link zeigt auf eine Seite, die es nicht gibt');
-        }
+    $run('Neuigkeiten-Splash: Baukasten, Bestand, einmal je Geräteart', function () {
+        // Alles in einer Transaktion, die zurückgenommen wird – kein laufender Splash wird angefasst.
         $pdo = db();
         $pdo->beginTransaction();
         try {
-            $pdo->exec("INSERT INTO stupa_users(name, email, active) VALUES('Selbsttest Splash', 'splash-selbsttest@st.invalid', 1)"); $u = (int)$pdo->lastInsertId();
-            st_expect(stupa_neuigkeiten_offen($u) === ['desktop' => true, 'mobil' => true], 'Ein StuPa-Zugang bekommt den Splash nicht');
-            stupa_neuigkeiten_gesehen($u, 'mobil');
-            st_expect(stupa_neuigkeiten_offen($u) === ['desktop' => true, 'mobil' => false], 'Gesehen am Handy wirkt nicht getrennt vom Desktop');
-        } finally {
-            $pdo->rollBack();
-        }
-        st_expect(str_contains((string)@file_get_contents(dirname(__DIR__) . '/stupa/neu.php'), 'stupa_neuigkeiten_gesehen('), 'stupa/neu.php vermerkt „gesehen" nicht – der Splash käme immer wieder');
-        return 'Version ' . STUPA_NEUIGKEITEN_VERSION . ', Links und Gerätearten geprüft (nichts gespeichert)';
-    });
-    $run('„Neu in der App": einmal für den Bestand, nie für neue Mitglieder', function () {
-        $n = app_neuigkeiten();
-        st_expect(trim(APP_NEUIGKEITEN_VERSION) !== '' && !empty($n['punkte']), 'Die Neuigkeiten haben keine Version oder keine Punkte');
-        $css = (string)@file_get_contents(dirname(__DIR__) . '/assets/style.css');
-        foreach ($n['punkte'] as $i => $pk) {
-            st_expect(trim((string)($pk['titel'] ?? '')) !== '' && trim((string)($pk['text'] ?? '')) !== '' && str_starts_with((string)($pk['icon'] ?? ''), 'ti-'),
-                'Neuigkeit ' . ($i + 1) . ': Titel, Text oder Icon fehlt');
-            st_expect(preg_match('~\.neu-' . preg_quote((string)($pk['farbe'] ?? ''), '~') . '\s+\.neu-icon\s*\{~', $css) === 1,
-                'Neuigkeit ' . ($i + 1) . ': für die Farbe „' . ($pk['farbe'] ?? '') . '" gibt es keine Regel in style.css');
-            if (!empty($pk['link'])) {
-                $datei = preg_replace('~[?#].*$~', '', (string)$pk['link']);
-                st_expect(is_file(dirname(__DIR__) . '/' . $datei), 'Neuigkeit ' . ($i + 1) . ': der Link zeigt auf eine Seite, die es nicht gibt (' . $datei . ')');
-            }
-        }
-        // Wer sieht ihn? In einer Transaktion, die zurückgenommen wird.
-        $pdo = db();
-        $pdo->beginTransaction();
-        try {
+            $pdo->exec("UPDATE splashes SET status = 'archiv' WHERE status = 'live'");
+            splash_cache_leeren();
+            $keins = ['desktop' => false, 'mobil' => false];
+            $beide = ['desktop' => true, 'mobil' => true];
             $pdo->exec("INSERT INTO members(name, active, onboarded, news_seen) VALUES('Selbsttest Neu', 1, 0, '')"); $neu = (int)$pdo->lastInsertId();
             $pdo->exec("INSERT INTO members(name, active, onboarded, news_seen) VALUES('Selbsttest Bestand', 1, 1, '')"); $alt = (int)$pdo->lastInsertId();
-            $keins = ['desktop' => false, 'mobil' => false];
-            st_expect(app_neuigkeiten_offen($neu) === $keins && app_neuigkeiten_offen($alt) === ['desktop' => true, 'mobil' => true],
+            st_expect(app_neuigkeiten_offen($alt) === $keins && app_neuigkeiten_html('') === '', 'Ohne laufenden Splash käme trotzdem einer');
+
+            // Bauen: ein fertiger Punkt, ein halb fertiger, ein Umzug, Knopf auf einen Ort der App
+            $inhalt = splash_leer('app');
+            $inhalt['titel'] = 'Selbsttest';
+            $inhalt['kopf'] = 'wald';
+            $inhalt['punkte'] = [
+                ['icon' => 'door', 'farbe' => 'gruen', 'titel' => 'Räume', 'text' => "Jetzt **fett**\n<b>x</b>", 'ziel' => 'ort:raeume', 'knopf' => 'Hin',
+                 'orte' => [['icon' => 'trophy', 'name' => 'Achievements', 'wo' => 'unter deinem Namen'], ['icon' => 'trophy', 'name' => '', 'wo' => 'leer']]],
+                ['icon' => 'gibt-es-nicht', 'farbe' => 'pink', 'titel' => '', 'text' => 'halb fertig', 'ziel' => 'ort:gibt-es-nicht'],
+            ];
+            $id = splash_speichern(0, 'app', 'Selbsttest', $inhalt, 0);
+            $s = splash_get($id);
+            st_expect($s['inhalt']['punkte'][1]['icon'] === array_key_first(splash_icons()) && $s['inhalt']['punkte'][1]['farbe'] === array_key_first(splash_farben())
+                && $s['inhalt']['punkte'][1]['ziel'] === '' && count($s['inhalt']['punkte'][0]['orte']) === 1,
+                'Der Baukasten speichert unbekannte Symbole, Farben oder Ziele – oder behält leere Umzugs-Zeilen');
+            $html = app_neuigkeiten_html('', $s['inhalt']);
+            st_expect(str_contains($html, 'neu-kopf-wald') && str_contains($html, '<strong>fett</strong>') && str_contains($html, '&lt;b&gt;')
+                && str_contains($html, 'href="raeume.php"') && str_contains($html, 'neu-orte') && substr_count($html, 'class="neu-punkt ') === 1,
+                'Der Splash zeigt Kopf, Fettschrift, Knopf oder Umzüge nicht richtig, lässt HTML durch oder zeigt halb fertige Punkte');
+            st_expect(splash_link_ok('https://example.org/x') !== '' && splash_link_ok('tauschboerse.php#guthaben') !== ''
+                && splash_link_ok('javascript:alert(1)') === '' && splash_link_ok('../data/asta.sqlite') === '' && splash_link_ok('//fremd.example/x.php') === '',
+                'Eigene Adressen im Splash: Gefährliches kommt durch oder Erlaubtes nicht');
+
+            // Veröffentlichen: nur der Bestand, je Geräteart einmal; der Rundgang zählt als gesehen
+            st_expect(splash_veroeffentlichen($id) === '' && app_neuigkeiten_version() !== '', 'Ein fertiger Splash lässt sich nicht veröffentlichen');
+            st_expect(app_neuigkeiten_offen($neu) === $keins && app_neuigkeiten_offen($alt) === $beide,
                 'Der Splash ginge an neue Mitglieder – oder nicht auf beiden Gerätearten an den Bestand');
             app_neuigkeiten_gesehen($alt, 'desktop');
-            st_expect(app_neuigkeiten_offen($alt) === ['desktop' => false, 'mobil' => true], 'Am Desktop gesehen – aber das Handy bekäme ihn nicht mehr (oder der Desktop noch einmal)');
+            st_expect(app_neuigkeiten_offen($alt) === ['desktop' => false, 'mobil' => true], 'Am Rechner gesehen – aber das Handy bekäme ihn nicht mehr (oder der Rechner noch einmal)');
             app_neuigkeiten_gesehen($alt, 'mobil');
             st_expect(app_neuigkeiten_offen($alt) === $keins, 'Der Splash käme nach dem Schließen auf beiden Gerätearten noch einmal');
             member_mark_onboarded($neu);
             st_expect(app_neuigkeiten_offen($neu) === $keins, 'Nach dem Rundgang käme der Splash hinterher – die Neuerungen standen doch im Rundgang');
+            splash_erneut_zeigen($id);
+            st_expect(app_neuigkeiten_offen($alt) === $beide, '„Allen noch einmal zeigen" wirkt nicht');
+
+            // Ein zweiter läuft an: Der erste endet, es läuft immer nur einer
+            $id2 = splash_kopieren($id, 0);
+            st_expect(splash_veroeffentlichen($id2) === '' && splash_get($id)['status'] === 'archiv'
+                && (int)$pdo->query("SELECT COUNT(*) FROM splashes WHERE ziel = 'app' AND status = 'live'")->fetchColumn() === 1,
+                'Nach dem Veröffentlichen laufen zwei Splashs gleichzeitig');
+            st_expect(!splash_loeschen($id2), 'Ein laufender Splash ließ sich löschen');
+            splash_zurueckziehen($id2);
+            st_expect(app_neuigkeiten_offen($alt) === $keins, 'Ein zurückgezogener Splash käme weiter');
+            $leer = splash_speichern(0, 'app', '', splash_leer('app'), 0);
+            st_expect(splash_veroeffentlichen($leer) !== '', 'Ein leerer Splash ließ sich veröffentlichen');
+
+            // StuPa: eigener Splash, alle Zugänge, Knopf relativ zu stupa/
+            $st = splash_leer('stupa');
+            $st['titel'] = 'Selbsttest';
+            $st['punkte'][0] = ['titel' => 'Räume', 'ziel' => 'seite:raeume.php', 'knopf' => 'Hin'] + splash_punkt_leer();
+            $sid = splash_speichern(0, 'stupa', '', $st, 0);
+            splash_veroeffentlichen($sid);
+            $pdo->exec("INSERT INTO stupa_users(name, email, active) VALUES('Selbsttest Splash', 'splash-selbsttest@st.invalid', 1)"); $u = (int)$pdo->lastInsertId();
+            st_expect(stupa_neuigkeiten_offen($u) === $beide, 'Ein StuPa-Zugang bekommt den Splash nicht');
+            stupa_neuigkeiten_gesehen($u, 'mobil');
+            st_expect(stupa_neuigkeiten_offen($u) === ['desktop' => true, 'mobil' => false], 'Gesehen am Handy wirkt im StuPa-Bereich nicht getrennt vom Rechner');
+            st_expect(str_contains(app_neuigkeiten_html('', stupa_neuigkeiten(), 'stupa'), 'href="raeume.php"'), 'Der Knopf im StuPa-Splash zeigt nicht auf die Seite im StuPa-Bereich');
+            st_expect(app_neuigkeiten_version() === '', 'Der StuPa-Splash taucht in der App auf');
         } finally {
             $pdo->rollBack();
+            splash_cache_leeren();
         }
-        st_expect(str_contains((string)@file_get_contents(dirname(__DIR__) . '/push.php'), "\$action === 'news_seen'"),
-            'push.php kann „gesehen" nicht vermerken – der Splash käme bei jedem Seitenaufruf');
-        return 'Version ' . APP_NEUIGKEITEN_VERSION . ', ' . count($n['punkte']) . ' Punkte, Sichtbarkeit geprüft (nichts gespeichert)';
+        // Was der Baukasten anbietet, muss es geben: Symbole in der Icon-Schrift, Farben und Verläufe im CSS
+        $root = dirname(__DIR__);
+        $css = (string)@file_get_contents($root . '/assets/style.css');
+        $tabler = (string)@file_get_contents($root . '/assets/tabler/tabler-icons.min.css');
+        foreach (array_keys(splash_icons()) as $ic) st_expect(str_contains($tabler, '.ti-' . $ic . ':before'), 'Splash-Symbol „' . $ic . '" gibt es in der Icon-Schrift nicht');
+        foreach (array_keys(splash_farben()) as $f) st_expect(preg_match('~\.neu-' . preg_quote($f, '~') . '\s+\.neu-icon\s*\{~', $css) === 1, 'Für die Splash-Farbe „' . $f . '" gibt es keine Regel in style.css');
+        foreach (array_slice(array_keys(splash_kopf_stile()), 1) as $k) st_expect(preg_match('~\.neu-kopf-' . preg_quote($k, '~') . '\s*\{~', $css) === 1, 'Für den Kopf-Verlauf „' . $k . '" gibt es keine Regel in style.css');
+        foreach (splash_stupa_seiten() as $datei => $_) st_expect(is_file($root . '/stupa/' . $datei), 'Knopf-Ziel im StuPa-Bereich fehlt: ' . $datei);
+        // Eingebaut, wo er hingehört; „gesehen" melden App und StuPa-Bereich je an ihre Adresse
+        st_expect(str_contains((string)@file_get_contents($root . '/stupa/stupa-lib.php'), "app_neuigkeiten_html('', stupa_neuigkeiten(), 'stupa')"), 'Der StuPa-Bereich zeigt seinen Splash nicht (oder mit App-Links)');
+        st_expect(str_contains((string)@file_get_contents($root . '/push.php'), "\$action === 'news_seen'") && str_contains((string)@file_get_contents($root . '/stupa/neu.php'), 'stupa_neuigkeiten_gesehen('),
+            '„gesehen" wird nicht vermerkt – der Splash käme bei jedem Seitenaufruf');
+        $bk = (string)@file_get_contents($root . '/admin/neuigkeiten.php');
+        st_expect(str_contains($bk, 'require_admin()') && str_contains($bk, "\$in, \$ziel, 'neuVorschau')") && !str_contains($bk, "'neuSplash'"), 'Der Baukasten ist nicht auf Admin/Vorsitz beschränkt – oder seine Vorschau würde „gesehen" melden');
+        $live = array_filter([splash_live('app'), splash_live('stupa')]);
+        return count(splash_icons()) . ' Symbole, ' . count(splash_farben()) . ' Farben, ' . count(splash_kopf_stile()) . ' Verläufe; Ablauf geprüft (nichts gespeichert)'
+            . ($live ? ' – läuft: ' . implode(', ', array_map(fn($s) => '„' . $s['inhalt']['titel'] . '"', $live)) : ' – gerade läuft keiner');
     });
     $run('Raumbelegung: feste Zeiten, Buchen, Überschneidungen, StuPa', function () {
         // In einer Transaktion, die am Ende zurückgenommen wird; Mails aus ($mail = false).
@@ -5905,6 +5946,231 @@ if ($doTest) {
             'stupa/raeume.php gibt dem StuPa Verwaltungsrechte für Räume');
         st_expect(isset(mail_templates()['raum_gebucht'], mail_templates()['raum_storniert']), 'Die Mailvorlagen der Raumbelegung fehlen');
         return 'feste Zeit, Ausfall, Überschneidung, StuPa-Trennung geprüft (nichts gespeichert)';
+    });
+    $run('iPhone-App: Word-Downloads gehen ans Teilen-Blatt', function () {
+        // Die installierte App zeigt Word-Dateien im eigenen Fenster als weiße Seite. app.js leitet
+        // sie deshalb ans Teilen-Blatt – aber nur die Adressen, deren Parameter in WORD_PARAMS stehen.
+        $root = dirname(__DIR__);
+        st_expect(preg_match('~var WORD_PARAMS = /\[\?&\]\(([\w|]+)\)=/;~', (string)@file_get_contents($root . '/assets/app.js'), $m) === 1,
+            'app.js: WORD_PARAMS nicht gefunden – Word-Downloads blieben auf dem iPhone weiß');
+        $bekannt = explode('|', $m[1] ?? '');
+        $gefunden = [];
+        foreach (array_merge(glob($root . '/*.php') ?: [], glob($root . '/admin/*.php') ?: [], glob($root . '/stupa/*.php') ?: []) as $f) {
+            preg_match_all("~isset\\(\\\$_GET\\['(\\w+)'\\]\\)\\)?\\s*(?:&&[^{]*)?\\{(.{0,1500}?)\\n\\}~s", (string)file_get_contents($f), $mm, PREG_SET_ORDER);
+            foreach ($mm as $x) {
+                if (!str_contains($x[2], 'wordprocessingml') && stripos($x[2], 'docx') === false) continue;
+                $gefunden[$x[1]] = true;
+                st_expect(in_array($x[1], $bekannt, true), basename($f) . '?' . $x[1] . '= liefert Word, fehlt aber in WORD_PARAMS (app.js) – auf dem iPhone bliebe die Seite weiß');
+            }
+        }
+        st_expect(count($gefunden) >= 4, 'Die Suche nach Word-Downloads findet kaum etwas – das Muster passt nicht mehr zum Code');
+        return count($gefunden) . ' Word-Downloads (' . implode(', ', array_keys($gefunden)) . ') gehen ans Teilen-Blatt';
+    });
+    $run('StuPa-Auszahlungen: Ablage in der Nextcloud', function () {
+        // Ohne Netz: Namen, Schalter und die Liste dessen, was der Cron nachholt – in einer
+        // Transaktion, die zurückgenommen wird.
+        $pdo = db();
+        $pdo->beginTransaction();
+        try {
+            $pdo->exec("DELETE FROM settings WHERE key = 'nc_stupa_enabled'");
+            $pdo->exec("INSERT OR REPLACE INTO settings(key, value) VALUES('nc_expense_enabled', '1')");
+            st_expect(stupa_nc_enabled() === nc_configured(), 'Ohne eigene Einstellung folgt die StuPa-Ablage nicht dem Schalter der Belegblätter');
+            $pdo->exec("INSERT OR REPLACE INTO settings(key, value) VALUES('nc_stupa_enabled', '0')");
+            st_expect(!stupa_nc_enabled(), 'Die StuPa-Ablage lässt sich nicht ausschalten');
+            $pdo->exec("DELETE FROM settings WHERE key = 'nc_stupa_folder'");
+            st_expect(stupa_nc_base() === 'Referate/Finanzen/StuPa-Auszahlungen', 'Der vereinbarte Ordner Referate/Finanzen/StuPa-Auszahlungen ist nicht die Vorgabe');
+            $pdo->exec("INSERT INTO stupa_claims(created_by, applicant, purpose, account_holder, iban, created_at) VALUES(0, '', '', '', '', '2026-03-04 10:00:00')");
+            $cid = (int)$pdo->lastInsertId();
+            $c = stupa_claim_get($cid);
+            st_expect(stupa_nc_folder($c) === 'Referate/Finanzen/StuPa-Auszahlungen/2026'
+                && stupa_nc_basename($c) === 'Auszahlungsaufforderung_2026-03-04_Nr' . $cid,
+                'Ordner oder Dateiname der StuPa-Ablage stimmen nicht (Jahr bzw. Name wie beim Herunterladen)');
+            st_expect(in_array($cid, stupa_nc_ausstehend(), true), 'Eine neue Auszahlung steht nicht auf der Liste, die der Cron nachholt');
+            $pdo->prepare("INSERT INTO nc_files(kind, ref_id, path, name) VALUES('stupa', ?, 'x', 'x')")->execute([$cid]);
+            st_expect(!in_array($cid, stupa_nc_ausstehend(), true), 'Eine abgelegte Auszahlung würde jeden Lauf neu abgelegt');
+            $pdo->prepare("INSERT INTO stupa_files(claim_id, orig_name, stored_name) VALUES(?, 'weg.pdf', 'gibt-es-nicht.pdf')")->execute([$cid]);
+            st_expect(!in_array($cid, stupa_nc_ausstehend(), true), 'Ein Beleg, dessen Datei fehlt, würde den Cron jeden Lauf neu anstoßen');
+        } finally {
+            $pdo->rollBack();
+        }
+        // Ausgelöst wird beim Einreichen (beide Wege) und bei nachgereichten Belegen, nachgeholt im Cron
+        $root = dirname(__DIR__);
+        $idx = (string)@file_get_contents($root . '/stupa/index.php');
+        st_expect(substr_count($idx, 'stupa_archivieren($neu)') === 2 && str_contains($idx, 'stupa_archivieren($cid)'),
+            'Der StuPa-Bereich legt neue Auszahlungen oder nachgereichte Belege nicht in der Nextcloud ab');
+        st_expect(str_contains((string)@file_get_contents($root . '/cron_automations.php'), 'stupa_nc_nachholen('), 'Der Automations-Cron holt fehlgeschlagene StuPa-Ablagen nicht nach');
+        st_expect(str_contains((string)@file_get_contents($root . '/uploads.php'), "'nc_stupa_folder'"), 'Der Ordner der StuPa-Ablage lässt sich nicht wählen');
+        $offen = stupa_nc_enabled() ? count(stupa_nc_ausstehend()) : 0;
+        return stupa_nc_enabled() ? 'eingeschaltet, ' . $offen . ' noch abzulegen' : 'ausgeschaltet (oder Nextcloud nicht eingerichtet) – Ablauf ohne Netz geprüft';
+    });
+    $run('Formular-Token: ein leeres gilt nie', function () {
+        // check_csrf() beendet die Anfrage beim Fehlschlag – darum am Quelltext geprüft.
+        $lib = (string)@file_get_contents(dirname(__DIR__) . '/lib.php');
+        $p = strpos($lib, 'function check_csrf(');
+        $rumpf = $p === false ? '' : substr($lib, $p, (int)strpos($lib, "\n}", $p) - $p);
+        st_expect(str_contains($rumpf, "\$soll !== ''"),
+            'check_csrf() nimmt ein leeres Token an, solange die Sitzung noch keins hat – fremde Seiten könnten so Formulare abschicken');
+        return 'leeres Token wird abgelehnt';
+    });
+    $run('Wartung: keine Minuspunkte, keine gerissene Streak', function () {
+        // Alles in einer Transaktion. Die Testdaten liegen im Jahr 2001: Dort gibt es keine echten,
+        // darum ist die Differenz vor/nach dem Zeitraum genau der Abzug des jeweiligen Testfalls.
+        $pdo = db();
+        $pdo->beginTransaction();
+        try {
+            $pdo->exec('DELETE FROM wartung_zeiten');
+            wartung_zeiten(true);
+            $pdo->exec("INSERT OR REPLACE INTO settings(key, value) VALUES('wartung_an', ''), ('basis_since', '2001-01-01'), ('basis_info_cutoff', '')");
+            $pdo->exec("INSERT INTO members(name, referat, active, onboarded, joined_at) VALUES('Selbsttest Wartung', 'Selbsttest-Wartung', 1, 1, '2001-01-01')");
+            $mid = (int)$pdo->lastInsertId();
+            $tage = ['2001-03-06', '2001-05-08'];        // der erste liegt gleich im Wartungszeitraum, der zweite nicht
+            foreach ($tage as $tag) {
+                $pdo->prepare("INSERT INTO meetings(title, starts_at, kind, needs_report) VALUES('Selbsttest', ?, 'ordentlich', 1)")->execute([$tag . ' 18:00']);
+                $sitzung = (int)$pdo->lastInsertId();
+                $pdo->prepare('INSERT INTO meeting_noshows(meeting_id, member_id) VALUES(?, ?)')->execute([$sitzung, $mid]);
+                $pdo->prepare("INSERT INTO vote_items(meeting_id, title) VALUES(?, 'Selbsttest')")->execute([$sitzung]);
+                $pdo->prepare("INSERT INTO infos(title, created_at) VALUES('Selbsttest', ?)")->execute([date('Y-m-d H:i:s', strtotime($tag . ' 12:00') - 7 * 86400)]);
+                $pdo->prepare("INSERT INTO circular_votes(created_by, deadline, status) VALUES(0, ?, 'closed')")->execute([$tag]);
+                $pdo->prepare("INSERT INTO simple_polls(created_by, deadline, status, mandatory) VALUES(0, ?, 'closed', 1)")->execute([$tag]);
+            }
+            $abzug = function (string $muster) use ($mid): int {
+                $summe = 0;
+                foreach (member_basis_breakdown(member_get($mid))['rows'] as $z) {
+                    if (preg_match($muster, $z['reason'])) $summe += (int)$z['points'];
+                }
+                return $summe;
+            };
+            $faelle = ['Bericht' => ['~^Bericht fehlte~', -1], 'Fehlen' => ['~^Unentschuldigt~', -2], 'App nicht geöffnet' => ['~^App \d+ Woche~', -1],
+                'Info' => ['~^Wichtige Infos~', -1], 'Abstimmungsgegenstände' => ['~^Abstimmungsgegenstände~', -1],
+                'Umlauf' => ['~^An Umlaufverfahren~', -2], 'Pflicht-Abstimmung' => ['~^An verpflichtender~', -1]];
+            $vorher = [];
+            foreach ($faelle as $name => [$muster]) $vorher[$name] = $abzug($muster);
+            st_expect(wartung_zeit_nachtragen('2001-03-05', '2001-03-07') === '', 'Ein vergangener Zeitraum lässt sich nicht nachtragen');
+            foreach ($faelle as $name => [$muster, $punkte]) {
+                st_expect($abzug($muster) - $vorher[$name] === -$punkte, 'In einer Wartung gibt es weiter einen Abzug: ' . $name);
+            }
+            $bericht = member_basis_breakdown(member_get($mid))['rows'];
+            st_expect((bool)array_filter($bericht, fn($z) => str_contains($z['reason'], 'Bericht fehlte') && str_contains($z['reason'], fmt_date($tage[1]))),
+                'Auch außerhalb der Wartung gibt es keinen Abzug mehr');
+
+            // Eventscore: Nur „nicht abgestimmt" entfällt, Schicht-Punkte bleiben
+            $slots = [['id' => 1, 'starts_at' => '2001-03-06 10:00', 'ends_at' => '2001-03-06 11:00']];
+            $drin = ['id' => 1, 'deadline' => $tage[0], 'important' => 0];
+            $draussen = ['id' => 2, 'deadline' => $tage[1], 'important' => 0];
+            st_expect(score_event_for_member($drin, $slots, [], [], $mid)['points'] === 0 && score_event_for_member($draussen, $slots, [], [], $mid)['points'] === -2,
+                'Eventscore: Nicht abgestimmt kostet in einer Wartung etwas – oder außerhalb nichts mehr');
+            st_expect(score_event_for_member($drin, $slots, [], [1 => [$mid]], $mid)['points'] > 0, 'Eventscore: Geleistete Schichten zählen in einer Wartung nicht mehr');
+
+            // Bereich „Ausbaufähig": ruht, solange die Wartung läuft
+            $ctx = basis_context([$mid => -100, $mid + 1 => 100, $mid + 2 => 100]);
+            $band = fn() => (bool)array_filter(member_basis_breakdown(member_get($mid), $ctx)['rows'], fn($z) => str_contains($z['reason'], 'Ausbaufähig'));
+            st_expect($band(), 'Der Abzug für den Bereich „Ausbaufähig" fehlt auch ohne Wartung');
+
+            // Streak: Wartungstage zählen nicht gegen die 5 Tage Kulanz
+            $vor = fn(int $n): string => date('Y-m-d', strtotime("-$n days"));
+            st_expect(!streak_alive_for($mid, $vor(12)), 'Die Streak reißt ohne Wartung nicht mehr');
+            st_expect(wartung_zeit_nachtragen($vor(10), $vor(4)) === '' && streak_alive_for($mid, $vor(12)), 'Die Streak reißt trotz Wartung');
+
+            // Schalter: ein offener Zeitraum je Wartung, Ende am Tag des Ausschaltens
+            wartung_setzen(true, '');
+            wartung_setzen(true, 'neuer Text');
+            $offen = fn(): int => (int)$pdo->query("SELECT COUNT(*) FROM wartung_zeiten WHERE bis = ''")->fetchColumn();
+            st_expect($offen() === 1 && wartung_im_zeitraum(date('Y-m-d')), 'Eine gestartete Wartung steht nicht genau einmal in den Zeiträumen');
+            st_expect(!$band(), 'Der Abzug für den Bereich „Ausbaufähig" läuft während der Wartung weiter');
+            $id = (int)$pdo->query("SELECT id FROM wartung_zeiten WHERE bis = ''")->fetchColumn();
+            wartung_zeit_entfernen($id);
+            st_expect($offen() === 1, 'Die laufende Wartung lässt sich aus den Zeiträumen entfernen');
+            wartung_setzen(false, '');
+            st_expect($offen() === 0 && wartung_im_zeitraum(date('Y-m-d')) && !wartung_im_zeitraum(date('Y-m-d', strtotime('+1 day'))),
+                'Das Ende der Wartung wird nicht richtig vermerkt');
+            wartung_zeit_entfernen($id);
+            st_expect(!wartung_im_zeitraum(date('Y-m-d')), 'Ein beendeter Zeitraum lässt sich nicht entfernen');
+            st_expect(wartung_zeit_nachtragen('2001-03-07', '2001-03-05') !== '' && wartung_zeit_nachtragen('quatsch', '2001-03-05') !== ''
+                && wartung_zeit_nachtragen(date('Y-m-d'), date('Y-m-d', strtotime('+1 day'))) !== '', 'Ungültige Zeiträume lassen sich nachtragen');
+        } finally {
+            $pdo->rollBack();
+            wartung_zeiten(true);
+        }
+        $lib = (string)@file_get_contents(dirname(__DIR__) . '/lib.php');
+        $p = strpos($lib, 'function send_inactivity_reminders(');
+        st_expect($p !== false && str_contains(substr($lib, $p, (int)strpos($lib, "\n}", $p) - $p), 'wartung_aktiv()'),
+            'Während der Wartung droht der Inaktivitäts-Push noch mit einem Abzug, den es gar nicht gibt');
+        return count(wartung_zeiten()) . ' Zeitraum/Zeiträume vermerkt; alle Abzüge und die Streak geprüft (nichts gespeichert)';
+    });
+    $run('Hinweis-Banner und Wartung', function () {
+        $root = dirname(__DIR__);
+        $quelle = static fn(string $datei): string => (string)@file_get_contents($root . '/' . $datei);
+        $rumpf = static function (string $code, string $fn): string {
+            $p = strpos($code, 'function ' . $fn . '(');
+            if ($p === false) return '';
+            $e = strpos($code, "\n}", $p);
+            return substr($code, $p, $e === false ? null : $e - $p);
+        };
+        // Jedes Symbol der Auswahl muss es in der Icon-Schrift geben, sonst bleibt die Kachel leer.
+        $tabler = $quelle('assets/tabler/tabler-icons.min.css');
+        foreach (array_keys(banner_icons()) as $ic) {
+            st_expect(str_contains($tabler, '.ti-' . $ic . ':before'), 'Banner-Symbol „' . $ic . '" gibt es in der Icon-Schrift nicht');
+        }
+        $pdo = db();
+        $pdo->beginTransaction();
+        try {
+            st_expect(banner_set('door', 'Selbsttest', "<b>x</b>\nhttps://example.org/a.") === '', 'Der Banner lässt sich nicht speichern');
+            $html = banner_html();
+            st_expect(str_contains($html, 'ti-door') && str_contains($html, '<a href="https://example.org/a"') && str_contains($html, '&lt;b&gt;'),
+                'Der Banner zeigt das Symbol nicht, macht Links nicht anklickbar oder lässt HTML durch');
+            // User-Wunsch: Der Banner bleibt stehen, bis ihn jemand ausschaltet – kein ✕.
+            st_expect(!str_contains($html, '<button') && !str_contains($html, 'lb-'), 'Der Banner lässt sich wegklicken – er soll stehen bleiben, bis ihn jemand ausschaltet');
+            banner_set('gibt-es-nicht', 'Selbsttest', '');
+            st_expect(banner_get()['icon'] === array_key_first(banner_icons()), 'Ein unbekanntes Symbol wird gespeichert statt der Vorgabe');
+            banner_aus();
+            st_expect(banner_html() === '', 'Der Banner ist nach dem Ausschalten noch zu sehen');
+            wartung_setzen(true, '');
+            st_expect(wartung_aktiv() && wartung_text() === WARTUNG_TEXT_VORGABE, 'Die Wartung lässt sich nicht einschalten oder der Warnhinweis fehlt');
+            wartung_setzen(false, 'Selbsttest');
+            st_expect(!wartung_aktiv() && wartung_text() === 'Selbsttest', 'Die Wartung lässt sich nicht ausschalten oder der Warnhinweis wird nicht gespeichert');
+        } finally {
+            $pdo->rollBack();
+            wartung_zeiten(true);
+        }
+        st_expect(str_contains($quelle('dashboard.php'), 'banner_html()'), 'Das Dashboard zeigt den Hinweis-Banner nicht an');
+        $sitz = $quelle('admin/meetings.php');
+        st_expect(str_contains($sitz, "'banner_set'") && str_contains($sitz, 'require_meetings()'),
+            'Den Banner können Vorsitz und Sekretariat nicht mehr einstellen (gehört in die Sitzungs-Verwaltung)');
+        // Gesperrt wird zentral beim Anmelde-Check der internen App.
+        $lib = $quelle('lib.php');
+        st_expect(str_contains($rumpf($lib, 'require_login'), 'wartung_sperre()'), 'require_login() sperrt während der Wartung nicht – alle könnten weiter speichern');
+        st_expect(str_contains($rumpf($lib, 'wartung_darf'), "current_role() === 'admin'"), 'Während der Wartung dürften nicht nur Admins speichern');
+        $sperre = $rumpf($lib, 'wartung_sperre');
+        st_expect(str_contains($sperre, "!== 'POST'") && str_contains($sperre, 'wartung_lesen()') && str_contains($rumpf($lib, 'wartung_lesen'), '!wartung_darf()'),
+            'wartung_sperre() sperrt mehr als das Speichern oder auch Admins');
+        $verw = $quelle('admin/index.php');
+        $pHandler = strpos($verw, "=== 'wartung' && wartung_darf()");
+        $pSperre  = strpos($verw, 'wartung_sperre();');
+        st_expect($pHandler !== false && $pSperre !== false && $pHandler < $pSperre,
+            'In der Verwaltung lässt sich die Wartung nicht mehr ausschalten (Schalter steht hinter der Sperre)');
+        st_expect(str_contains($quelle('veranstaltungen.php'), 'wartung_sperre()'), 'Die Verwaltung von was.läuft ist während der Wartung nicht gesperrt');
+        // Schreibwege ohne POST: das erste Öffnen in der Ablage legt die Datei dort an,
+        // die Redeliste trägt die Protokollführung in die App ein.
+        foreach (['teams.php', 'nextcloud.php'] as $ab) {
+            $q = $quelle($ab);
+            $pW = strpos($q, 'wartung_lesen() && mirror_store(');
+            st_expect($pW !== false && $pW < (int)strpos($q, '$res = mirror_ensure('), $ab . ' legt während der Wartung neue Dateien in der Ablage an');
+        }
+        $rp = $quelle('redeliste-protocol.php');
+        $pW = strpos($rp, 'if (wartung_aktiv()) jfail(503');
+        st_expect($pW !== false && $pW < (int)strpos($rp, 'UPDATE'), 'Die Redeliste schreibt während der Wartung die Protokollführung in die App');
+        $push = $quelle('push.php');
+        $pFrei = strpos($push, "\$GLOBALS['WARTUNG_FREI'] = true;");
+        st_expect($pFrei !== false && $pFrei < (int)strpos($push, 'require_login()'),
+            'push.php ist während der Wartung gesperrt – Splash und Rundgang kämen bei jedem Seitenaufruf wieder');
+        // User-Wunsch: Nur die interne App geht in die Wartung, der StuPa-Bereich läuft weiter.
+        st_expect(!preg_match('~(?<!\w)require_login\(~', $quelle('stupa/stupa-lib.php')) && !str_contains($quelle('stupa/stupa-lib.php'), 'wartung_sperre'),
+            'Der StuPa-Bereich geht mit in die Wartung – er soll weiterlaufen');
+        st_expect(str_contains($lib, 'class="techbanner wartbanner"') && str_contains($lib, "' data-wartung=\"1\"'"),
+            'page_header() zeigt den Warnhinweis nicht oder schaltet die Speichern-Knöpfe nicht ab');
+        st_expect(str_contains($quelle('assets/app.js'), "hasAttribute('data-wartung')"), 'app.js schaltet die Speichern-Knöpfe während der Wartung nicht ab');
+        return count(banner_icons()) . ' Symbole, Banner und Wartung geprüft (nichts gespeichert)'
+            . (wartung_aktiv() ? ' – Wartung läuft gerade' : '');
     });
     $run('AsT: verdient mit Schichten, Zuschlag fürs Übernehmen', function () {
         // In einer Transaktion, die am Ende zurückgenommen wird – keine Spur im Live-Betrieb.

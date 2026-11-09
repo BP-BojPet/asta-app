@@ -22,6 +22,14 @@ if (!mirror_open_permitted($kind, $refId, $me)) {
     exit('Keine Berechtigung, diese Datei in der Ablage zu öffnen.');
 }
 
+// Das erste Öffnen legt die Datei in der Ablage an – während der Wartung nur, was schon dort liegt.
+if (wartung_lesen() && mirror_store($kind, $refId) === '') {
+    flash('Gerade läuft eine Wartung – die Datei liegt noch nicht in der Ablage und kann erst danach dort angelegt werden.', 'error');
+    $ref = (string)($_SERVER['HTTP_REFERER'] ?? '');
+    $home = base_url() ?: '';
+    redirect($home !== '' && str_starts_with($ref, $home) ? $ref : 'dashboard.php');
+}
+
 $err = null;
 $res = mirror_ensure($kind, $refId, $me ? (int)$me['id'] : 0, $err);
 $url = $res ? ($res['store'] === 'nextcloud' ? nc_file_open_url($res['row']) : teams_file_open_url($res['row'])) : '';

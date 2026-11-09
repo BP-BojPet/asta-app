@@ -10,6 +10,18 @@ require __DIR__ . '/stupa-lib.php';
 $user = stupa_require_login();
 $me = null;                                  // hier gibt es kein Mitglied – bewusst
 
+/**
+ * Vorgang in der Nextcloud ablegen (falls eingeschaltet). Ein Fehler kippt nichts: Er landet im
+ * Fehler-Log, und cron_automations.php holt die Ablage nach. Das Präsidium bekommt davon nichts mit.
+ */
+function stupa_archivieren(int $claimId): void
+{
+    $err = null;
+    if (stupa_nc_enabled() && (!stupa_nc_sync($claimId, $err) || $err !== null) && $err) {
+        app_log_error('StuPa-Ablage (Auszahlung Nr' . $claimId . '): ' . $err);
+    }
+}
+
 /** Hochgeladene belege[]-Dateien an eine Aufforderung (oder Nachricht) hängen → [Anzahl, Fehler]. */
 function stupa_collect_uploads(int $claimId, ?int $commentId = null): array
 {
@@ -58,6 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             [$nF, $fErr] = stupa_collect_uploads($neu);
             stupa_claim_set_notify($neu, !empty($_POST['notify_done']));
             stupa_notify_finance($neu);
+            stupa_archivieren($neu);
             $n = count($posten);
             flash(($n > 1 ? $n . ' Posten übermittelt (zusammen ' : 'Auszahlungsaufforderung übermittelt (')
                 . euro(stupa_claim_total($neu)) . ($nF ? ', ' . $nF . ' Beleg(e)' : '')
@@ -95,6 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             [$nF, $fErr] = stupa_collect_uploads($neu);
             stupa_claim_set_notify($neu, !empty($_POST['notify_done']));
             stupa_notify_finance($neu);
+            stupa_archivieren($neu);
             if ($fErr) flash('Nicht alle Belege konnten angehängt werden: ' . implode(' · ', $fErr), 'error');
             // Abweichender Topf wird zum neuen Standard – beim nächsten Mal steht er schon drin
             $vorher = stupa_protokoll_fund();
@@ -128,6 +142,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $kid = stupa_comment_add($cid, true, (int)$user['id'], $body);
             [$nF, $fErr] = stupa_collect_uploads($cid, $kid);
             stupa_notify_finance_comment($claim, $body !== '' ? $body : $nF . ' Datei(en) angehängt.');
+            if ($nF > 0) stupa_archivieren($cid);   // nachgereichte Belege gehören mit ins Archiv
             flash('Nachricht an Finanzen geschickt.', 'success');
             if ($fErr) flash('Nicht alle Dateien konnten angehängt werden: ' . implode(' · ', $fErr), 'error');
         }

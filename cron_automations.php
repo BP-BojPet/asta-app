@@ -48,12 +48,25 @@ try {
     app_log_error('StuPa-Umlaufverfahren (Cron): ' . $e->getMessage());
 }
 
+// StuPa-Auszahlungen in der Nextcloud: was beim Einreichen nicht geklappt hat (oder älter ist als
+// der Schalter), wenige je Lauf – jede Ablage wandelt einmal über Graph.
+$stupaNc = ['ok' => 0, 'fehler' => []];
+try {
+    $stupaNc = stupa_nc_nachholen(3);
+} catch (\Throwable $e) {
+    app_log_error('StuPa-Ablage (Cron): ' . $e->getMessage());
+}
+
 cron_stamp('automations'); // Herzschlag: Selbsttest/Dashboard warnen, wenn dieser Stempel >26 h alt ist
 
 echo date('Y-m-d H:i') . ' · Berichte-Dok-Automation: ' . $res['count'] . " hochgeladen.\n";
 foreach ($res['lines'] as $l) echo '  - ' . $l . "\n";
 echo '  · Protokoll-Abstimmungen angelegt oder umgehängt: ' . $protoAttached . "\n";
 echo '  · Wartende TOPs/Abstimmungsgegenstände/Berichte übernommen: ' . ($geparkt['tops'] + $geparkt['votes'] + $geparkt['reports']) . "\n";
+if ($stupaNc['ok'] || $stupaNc['fehler']) {
+    echo '  · StuPa-Auszahlungen in der Nextcloud abgelegt: ' . $stupaNc['ok'] . "\n";
+    foreach ($stupaNc['fehler'] as $l) echo '  - nicht abgelegt: ' . $l . "\n";
+}
 if ($stupaUmlauf['ausgewertet'] || $stupaUmlauf['erinnert']) {
     echo '  · StuPa-Umläufe ausgewertet: ' . $stupaUmlauf['ausgewertet'] . ', Erinnerungen verschickt: ' . $stupaUmlauf['erinnert'] . "\n";
 }

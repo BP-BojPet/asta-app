@@ -319,6 +319,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         redirect('meetings.php?t=zeitraeume');
     }
+    if ($action === 'banner_set') {
+        $err = banner_set((string)($_POST['icon'] ?? ''), (string)($_POST['titel'] ?? ''), (string)($_POST['text'] ?? ''));
+        flash($err !== '' ? $err : 'Der Hinweis steht jetzt bei allen auf dem Dashboard.', $err !== '' ? 'error' : 'success');
+        redirect('meetings.php?t=zeitraeume#banner');
+    }
+    if ($action === 'banner_aus') {
+        banner_aus();
+        flash('Hinweis ausgeschaltet.', 'success');
+        redirect('meetings.php?t=zeitraeume#banner');
+    }
     if ($action === 'end_lecture_break') {
         lecture_break_end_now();
         flash('Vorlesungsfreie Zeit beendet – ab jetzt läuft die 7-Tage-Schonfrist.', 'success');
@@ -552,6 +562,38 @@ page_header('Sitzungen', true);
       </form>
     <?php endif; ?>
   </div>
+</div>
+
+<?php $ban = banner_get(); ?>
+<div class="section-title" id="banner"><i class="ti ti-<?= h($ban['icon']) ?>"></i> Hinweis auf dem Dashboard</div>
+<div class="card">
+  <?php if ($ban['an']): ?>
+    <p class="small" style="margin-top:0"><span class="pill pill-ok">sichtbar</span> Der Hinweis steht bei allen oben auf dem Dashboard, bis du ihn ausschaltest.</p>
+  <?php else: ?>
+    <p class="small muted" style="margin-top:0">Ein Hinweis, der bei allen oben auf dem Dashboard steht – so lange, bis ihn jemand ausschaltet. Wegklicken lässt er sich nicht.</p>
+  <?php endif; ?>
+  <form method="post">
+    <?= csrf_field() ?><input type="hidden" name="action" value="banner_set">
+    <span class="small" id="ban_icon_lbl">Symbol</span>
+    <div class="ban-icons" role="radiogroup" aria-labelledby="ban_icon_lbl">
+      <?php foreach (banner_icons() as $ik => $il): ?>
+        <label title="<?= h($il) ?>"><input type="radio" name="icon" value="<?= h($ik) ?>" aria-label="<?= h($il) ?>"<?= $ik === $ban['icon'] ? ' checked' : '' ?>><span><i class="ti ti-<?= h($ik) ?>" aria-hidden="true"></i></span></label>
+      <?php endforeach; ?>
+    </div>
+    <label for="ban_titel">Titel</label>
+    <input type="text" name="titel" id="ban_titel" maxlength="80" value="<?= h($ban['titel']) ?>">
+    <label for="ban_text">Text</label>
+    <textarea name="text" id="ban_text" rows="3" maxlength="600"><?= h($ban['text']) ?></textarea>
+    <div class="btn-row" style="margin-top:.8rem">
+      <button class="btn" type="submit"><i class="ti ti-speakerphone"></i> <?= $ban['an'] ? 'Hinweis ändern' : 'Hinweis anzeigen' ?></button>
+    </div>
+  </form>
+  <?php if ($ban['an']): ?>
+    <form method="post" style="margin-top:.6rem">
+      <?= csrf_field() ?><input type="hidden" name="action" value="banner_aus">
+      <button class="btn secondary" type="submit"><i class="ti ti-eye-off"></i> Ausschalten</button>
+    </form>
+  <?php endif; ?>
 </div>
 
 <?php endif; ?>

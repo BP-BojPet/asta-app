@@ -48,6 +48,7 @@ $ringPct = max(0, min(100, ($bb['total'] + 8) / 8 * 100));
     <li><strong>An Umlaufverfahren teilnehmen</strong> – bei einem abgeschlossenen Umlauf nicht abgestimmt: <strong>−2</strong> (Abstimmen geht online von überall, daher gilt das <em>auch bei eingetragener Abwesenheit</em>)</li>
     <li><strong>An verpflichtenden Abstimmungen teilnehmen</strong> – bei einer abgeschlossenen Pflicht-Abstimmung nicht abgestimmt: <strong>−1</strong> (ebenfalls auch im Urlaub)</li>
     <li class="small muted" style="list-style:none;margin-left:-1.2rem"><i class="ti ti-info-circle" style="color:var(--petrol)"></i> Für die letzten beiden Punkte gilt: Wird <strong>vorzeitig beendet</strong> – also bevor die Frist abgelaufen ist –, gibt es <strong>keinen Abzug</strong>. Wer bis zur Frist noch Zeit gehabt hätte, wird nicht dafür bestraft, dass früher abgebrochen wurde.</li>
+    <li class="small muted" style="list-style:none;margin-left:-1.2rem"><i class="ti ti-tool" style="color:var(--petrol)"></i> <strong>Während einer Wartung der App gibt es keine Abzüge</strong>, und deine Streak reißt nicht.</li>
   </ul>
   <p class="small muted" style="margin:0">Dazu kann der Vorsitz eine <strong>manuelle Korrektur (±)</strong> vergeben. Gezählt wird seit <strong><?= fmt_date(basis_since()) ?></strong>; dein Beitrittsdatum wird berücksichtigt. Deinen <a href="score.php">Eventscore</a> findest du auf seiner eigenen Seite.</p>
 </div>

@@ -76,6 +76,29 @@ if (!is_organizer()) {
 }
 
 // --- Dashboard ---
+// Wartung schalten: nur die Rolle Admin (und der Technik-Login) – vor der Sperre, damit sie
+// sich auch wieder ausschalten lässt.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'wartung' && wartung_darf()) {
+    check_csrf();
+    $wAn = ($_POST['an'] ?? '') === '1';
+    wartung_setzen($wAn, (string)($_POST['text'] ?? ''));
+    flash($wAn ? 'Wartung läuft – alle außer Admins können jetzt nur noch lesen.' : 'Wartung beendet – alle können wieder normal arbeiten.', 'success');
+    redirect('index.php#wartung');
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'wartung_zeit' && wartung_darf()) {
+    check_csrf();
+    $wFehler = wartung_zeit_nachtragen((string)($_POST['von'] ?? ''), (string)($_POST['bis'] ?? ''));
+    flash($wFehler !== '' ? $wFehler : 'Zeitraum nachgetragen – Abzüge aus dieser Zeit sind weg.', $wFehler !== '' ? 'error' : 'success');
+    redirect('index.php#wartung');
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'wartung_zeit_weg' && wartung_darf()) {
+    check_csrf();
+    wartung_zeit_entfernen((int)($_POST['id'] ?? 0));
+    flash('Zeitraum entfernt – Abzüge aus dieser Zeit zählen wieder.', 'success');
+    redirect('index.php#wartung');
+}
+wartung_sperre();
+
 // Einstellungen speichern
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_settings') {
     check_csrf();
@@ -160,6 +183,11 @@ page_header('Verwaltung', true);
   <a class="event-card" href="message.php">
     <div class="ec-title"><i class="ti ti-message-plus"></i> Nachricht hinterlassen</div>
     <div class="ec-meta"><span>Aufs Dashboard – einzeln oder als Ankündigung</span></div>
+  </a>
+  <?php $spLive = array_filter([splash_live('app'), splash_live('stupa')]); ?>
+  <a class="event-card" href="neuigkeiten.php">
+    <div class="ec-title"><i class="ti ti-sparkles"></i> Neuigkeiten-Splash</div>
+    <div class="ec-meta"><span><?= $spLive ? 'Läuft: ' . h(implode(' · ', array_map(fn($s) => $s['inhalt']['titel'], $spLive))) : 'Nach einem Update zeigen, was neu ist' ?></span></div>
   </a>
   <a class="event-card" href="score.php">
     <div class="ec-title"><i class="ti ti-trophy"></i> Scores</div>
@@ -272,6 +300,58 @@ page_header('Verwaltung', true);
 <div class="card">
   <p class="muted" style="margin:0">Jedes Mitglied hat einen <strong>persönlichen</strong> Abo-Link in seinem Dashboard – er zeigt alle Sitzungen sowie die Schichten/Termine, zu denen die Person <strong>eingeteilt</strong> ist. So kann jede:r den AStA-Kalender auf Handy/Outlook abonnieren, ohne Teams.</p>
 </div>
+
+<?php if (wartung_darf()): $wAktiv = wartung_aktiv(); ?>
+<div class="section-title" id="wartung"><i class="ti ti-tool"></i> Wartung</div>
+<div class="card">
+  <p class="small muted" style="margin-top:0">Während der Wartung sehen alle oben auf jeder Seite den Warnhinweis und können
+    die App nur noch <strong>lesen</strong>: Speichern, Abstimmen, Buchen und Eintragen gehen nicht. Nur Admins arbeiten normal
+    weiter. Der StuPa-Bereich und die Werkzeuge für Menschen außerhalb des AStA laufen weiter.
+    In dieser Zeit gibt es <strong>keine Minuspunkte</strong>, und keine Streak reißt.</p>
+  <?php if ($wAktiv): ?>
+    <p class="small" style="margin:0 0 .6rem"><span class="pill pill-warn">läuft</span> Die App ist gerade nur zum Lesen da.</p>
+  <?php endif; ?>
+  <form method="post" action="index.php"<?= $wAktiv ? '' : ' data-confirm="Wartung starten? Bis du sie beendest, können alle außer Admins nichts mehr speichern." data-confirm-ok="Starten"' ?>>
+    <?= csrf_field() ?>
+    <input type="hidden" name="action" value="wartung">
+    <?php if (!$wAktiv): ?><input type="hidden" name="an" value="1"><?php endif; ?>
+    <label for="wartung_text">Warnhinweis</label>
+    <textarea name="text" id="wartung_text" rows="3" maxlength="600"><?= h(wartung_text()) ?></textarea>
+    <div class="btn-row" style="margin-top:.8rem">
+      <?php if ($wAktiv): ?>
+        <button class="btn secondary" type="submit" name="an" value="1"><i class="ti ti-device-floppy"></i> Hinweis ändern</button>
+        <button class="btn" type="submit" name="an" value="0"><i class="ti ti-player-stop"></i> Wartung beenden</button>
+      <?php else: ?>
+        <button class="btn" type="submit"><i class="ti ti-tool"></i> Wartung starten</button>
+      <?php endif; ?>
+    </div>
+  </form>
+  <hr class="auto-sep" style="margin:1rem 0 .9rem">
+  <p class="small" style="margin:0 0 .4rem"><strong>Zeiträume ohne Minuspunkte</strong></p>
+  <?php $wZeiten = wartung_zeiten(); if ($wZeiten): ?>
+    <ul class="small" style="margin:0 0 .7rem;padding:0;list-style:none">
+      <?php foreach ($wZeiten as $wz): ?>
+        <li style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.3rem">
+          <span><?= h(fmt_date((string)$wz['von'])) ?> – <?= (string)$wz['bis'] !== '' ? h(fmt_date((string)$wz['bis'])) : 'läuft' ?></span>
+          <?php if ((string)$wz['bis'] !== ''): ?>
+            <form method="post" action="index.php" style="margin:0" data-confirm="Diesen Zeitraum entfernen? Abzüge aus dieser Zeit zählen dann wieder." data-confirm-ok="Entfernen">
+              <?= csrf_field() ?><input type="hidden" name="action" value="wartung_zeit_weg"><input type="hidden" name="id" value="<?= (int)$wz['id'] ?>">
+              <button class="btn secondary small" type="submit" aria-label="Zeitraum entfernen"><i class="ti ti-trash"></i></button>
+            </form>
+          <?php endif; ?>
+        </li>
+      <?php endforeach; ?>
+    </ul>
+  <?php endif; ?>
+  <form method="post" action="index.php" class="btn-row" style="align-items:flex-end;gap:.6rem;flex-wrap:wrap;margin:0">
+    <?= csrf_field() ?><input type="hidden" name="action" value="wartung_zeit">
+    <div style="min-width:150px"><label for="wartung_von" class="small">Von</label><input type="text" class="fp-date" name="von" id="wartung_von" required placeholder="Tag wählen"></div>
+    <div style="min-width:150px"><label for="wartung_bis" class="small">Bis</label><input type="text" class="fp-date" name="bis" id="wartung_bis" required placeholder="Tag wählen"></div>
+    <button class="btn secondary" type="submit"><i class="ti ti-history"></i> Zeitraum nachtragen</button>
+  </form>
+  <p class="small muted" style="margin:.5rem 0 0">Nachtragen wirkt rückwirkend auf alle Scores. Gestartete Wartungen stehen von selbst in der Liste.</p>
+</div>
+<?php endif; ?>
 
 <div class="section-title" id="einstellungen"><i class="ti ti-mail-cog"></i> E-Mail &amp; Einstellungen</div>
 <div class="card">

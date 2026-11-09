@@ -21,6 +21,7 @@ db();
 require_once __DIR__ . '/wl-db.php';
 
 if (!wl_can_manage()) { http_response_code(403); exit('Kein Zugriff.'); }
+wartung_sperre();
 
 wl_db();
 $self = 'veranstaltungen.php';

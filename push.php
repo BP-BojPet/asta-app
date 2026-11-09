@@ -1,6 +1,8 @@
 <?php
 // Web-Push-Abos an-/abmelden (wird von app.js per fetch aufgerufen).
 // Nur für eingeloggte Mitglieder; CSRF-geschützt wie alle Formulare.
+// Nur Buchführung (Splash gesehen, Rundgang, App geöffnet) – läuft auch während der Wartung.
+$GLOBALS['WARTUNG_FREI'] = true;
 require __DIR__ . '/lib.php';
 db();
 require_login();

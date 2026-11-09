@@ -844,6 +844,81 @@ function migrate_schema(PDO $pdo): void
         $stV = $pdo->prepare("INSERT OR REPLACE INTO settings(key, value) VALUES('invite_template', ?)");
         $stV->execute([default_invite_template()]);
     }
+
+    // Wartungszeiten: Scores und Streak werden gerechnet, nicht gespeichert – deshalb muss jeder
+    // Zeitraum aufbewahrt werden, sonst kämen die Abzüge nach dem Ende der Wartung wieder.
+    $pdo->exec("CREATE TABLE IF NOT EXISTS wartung_zeiten (
+        id  INTEGER PRIMARY KEY,
+        von TEXT NOT NULL,               -- 'Y-m-d'
+        bis TEXT NOT NULL DEFAULT ''     -- 'Y-m-d'; '' = läuft noch
+    )");
+    // Eine Wartung, die vor dieser Liste eingeschaltet wurde, hat keinen bekannten Beginn: Sie zählt
+    // ab heute, früher lässt sich in der Verwaltung nachtragen.
+    if (!$pdo->query("SELECT value FROM settings WHERE key = 'wartung_zeiten_start'")->fetchColumn()) {
+        if ((string)$pdo->query("SELECT value FROM settings WHERE key = 'wartung_an'")->fetchColumn() === '1') {
+            $pdo->prepare('INSERT INTO wartung_zeiten(von) VALUES(?)')->execute([date('Y-m-d')]);
+        }
+        $pdo->exec("INSERT OR REPLACE INTO settings(key, value) VALUES('wartung_zeiten_start', '1')");
+    }
+
+    // Splash-Baukasten (admin/neuigkeiten.php): je Ziel höchstens ein Splash live.
+    $pdo->exec("CREATE TABLE IF NOT EXISTS splashes (
+        id           INTEGER PRIMARY KEY,
+        ziel         TEXT NOT NULL DEFAULT 'app',      -- 'app' | 'stupa'
+        status       TEXT NOT NULL DEFAULT 'entwurf',  -- 'entwurf' | 'live' | 'archiv'
+        name         TEXT NOT NULL DEFAULT '',         -- nur für die Liste im Baukasten
+        inhalt       TEXT NOT NULL DEFAULT '{}',       -- JSON, Aufbau siehe splash_normalisieren()
+        version      TEXT NOT NULL DEFAULT '',         -- Stempel, den news_seen/news_seen_mobil vergleichen
+        created_by   INTEGER NOT NULL DEFAULT 0,
+        created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+        updated_at   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+        published_at TEXT NOT NULL DEFAULT ''
+    )");
+    // Die beiden Splashs, die vor dem Baukasten fest im Programm standen, einmalig als laufende
+    // übernehmen – mit ihrem alten Stempel, damit niemand sie ein zweites Mal sieht. Nur in
+    // Installationen, die sie schon ausgeliefert haben (dort tragen Zugänge den Stempel).
+    if (!$pdo->query("SELECT value FROM settings WHERE key = 'splash_altbestand'")->fetchColumn()) {
+        $altApp = '2026-10-raeume';
+        $altStupa = '2026-10-raeume-umlauf';
+        $hatApp = (int)$pdo->query("SELECT COUNT(*) FROM members WHERE news_seen = '$altApp' OR news_seen_mobil = '$altApp'")->fetchColumn() > 0;
+        $hatStupa = $cols('stupa_users') && in_array('news_seen', $cols('stupa_users'), true)
+            && (int)$pdo->query("SELECT COUNT(*) FROM stupa_users WHERE news_seen = '$altStupa' OR news_seen_mobil = '$altStupa'")->fetchColumn() > 0;
+        $ins = $pdo->prepare("INSERT INTO splashes(ziel, status, name, inhalt, version, published_at) VALUES(?, 'live', ?, ?, ?, datetime('now','localtime'))");
+        if ($hatApp) $ins->execute(['app', 'Räume, AsT und Menü (Oktober 2026)', json_encode([
+            'kicker' => 'Neu in der App', 'titel' => 'Frisch eingeräumt', 'kopf' => 'petrol', 'kopf_icon' => 'sparkles', 'fertig' => 'Alles klar',
+            'punkte' => [
+                ['icon' => 'door', 'farbe' => 'petrol', 'titel' => 'Räume buchen',
+                 'text' => 'Sieh auf einen Blick, wann welcher Raum frei ist – und buch ihn direkt. Das StuPa bucht über seinen Zugang mit, die Bestätigung kommt per Mail.',
+                 'ziel' => 'ort:raeume', 'knopf' => 'Zu den Räumen'],
+                ['icon' => 'coins', 'farbe' => 'gold', 'titel' => 'Schichten bringen AsT',
+                 'text' => 'Jede geleistete Schicht bringt **500 AsT**. Übernimmst du eine abgegebene Schicht aus der Börse oder springst kurzfristig ein, gibt es **2.000** dazu. Dein bisheriges Guthaben bleibt.',
+                 'ziel' => 'link', 'link' => 'tauschboerse.php#guthaben', 'knopf' => 'Zum Guthaben'],
+                ['icon' => 'layout-navbar', 'farbe' => 'violett', 'titel' => 'Neue Plätze im Menü',
+                 'text' => 'Damit die Leiste schlank bleibt, ist einiges umgezogen:',
+                 'orte' => [
+                     ['icon' => 'plane-departure', 'name' => 'Abwesenheit', 'wo' => 'unter deinem Namen'],
+                     ['icon' => 'receipt-2', 'name' => 'Auslagen', 'wo' => 'unter deinem Namen'],
+                     ['icon' => 'trophy', 'name' => 'Achievements', 'wo' => 'unter deinem Namen'],
+                     ['icon' => 'directions', 'name' => 'Wegweiser', 'wo' => 'oben in der Leiste'],
+                 ],
+                 'ziel' => 'menu', 'knopf' => 'Zeig mir das Menü'],
+            ],
+            'ausserdem' => 'Außerdem lassen sich Abstimmungen auf bestimmte Referate oder Personen begrenzen, und die Mails der App sehen jetzt deutlich besser aus.',
+        ], JSON_UNESCAPED_UNICODE), $altApp]);
+        if ($hatStupa) $ins->execute(['stupa', 'Räume und Umläufe (Oktober 2026)', json_encode([
+            'kicker' => 'Neu im StuPa-Bereich', 'titel' => 'Zwei neue Werkzeuge', 'kopf' => 'petrol', 'kopf_icon' => 'sparkles', 'fertig' => 'Alles klar',
+            'punkte' => [
+                ['icon' => 'door', 'farbe' => 'petrol', 'titel' => 'Räume buchen',
+                 'text' => 'Seht auf einen Blick, wann die Räume frei sind, und bucht sie direkt. Die Bestätigung kommt per Mail.',
+                 'ziel' => 'seite:raeume.php', 'knopf' => 'Zur Raumbelegung'],
+                ['icon' => 'mailbox', 'farbe' => 'violett', 'titel' => 'Umlaufverfahren',
+                 'text' => 'Beschlüsse außerhalb der Sitzung: Mitgliederliste anlegen, Umlauf starten – jedes Mitglied stimmt über seinen **persönlichen Link** ab, namentlich oder geheim. Die Umläufe seht nur ihr.',
+                 'ziel' => 'seite:umlauf.php', 'knopf' => 'Zu den Umläufen'],
+            ],
+            'ausserdem' => 'Oben in der Leiste stehen jetzt Auszahlungen, Räume und Umläufe nebeneinander.',
+        ], JSON_UNESCAPED_UNICODE), $altStupa]);
+        $pdo->exec("INSERT OR REPLACE INTO settings(key, value) VALUES('splash_altbestand', '1')");
+    }
 }
 
 function init_schema(PDO $pdo): void
@@ -1670,7 +1745,8 @@ function cron_jobs(): array
             'was'    => 'Erzeugt am Sitzungstag die Berichte-Dok und legt sie in die Ablage. Gleicht danach '
                       . 'die Protokoll-Genehmigungen mit dem Sitzungskalender ab: anlegen, wenn eine '
                       . 'Folgesitzung dazugekommen ist, und umhängen, wenn die bisherige Zielsitzung '
-                      . 'abgesagt, gelöscht oder verschoben wurde.',
+                      . 'abgesagt, gelöscht oder verschoben wurde. Legt außerdem StuPa-Auszahlungen in der '
+                      . 'Nextcloud ab, deren Ablage beim Einreichen nicht geklappt hat.',
         ],
         'patmail' => [
             'datei'  => 'cron_patmail.php',
@@ -4524,7 +4600,9 @@ function csrf_field(): string
 
 function check_csrf(): void
 {
-    $ok = isset($_POST['csrf']) && hash_equals($_SESSION['csrf'] ?? '', (string)$_POST['csrf']);
+    // Leer gegen leer wäre ein Treffer: Eine Sitzung, die noch keine Seite gesehen hat, hat kein Token.
+    $soll = (string)($_SESSION['csrf'] ?? '');
+    $ok = $soll !== '' && isset($_POST['csrf']) && hash_equals($soll, (string)$_POST['csrf']);
     if (!$ok) {
         http_response_code(400);
         exit('Ungültiges Formular-Token. Bitte Seite neu laden und erneut versuchen.');
@@ -5333,6 +5411,7 @@ function app_places(): array
         'a_events'     => ['url' => 'admin/events.php',      'label' => 'Events & Termine',           'icon' => 'ti-calendar-event', 'darf' => $eingeloggt],
         'a_sitzungen'  => ['url' => 'admin/meetings.php',    'label' => 'Sitzungen',                  'icon' => 'ti-gavel',         'darf' => static fn(): bool => can_manage_meetings()],
         'a_nachricht'  => ['url' => 'admin/message.php',     'label' => 'Nachricht hinterlassen',     'icon' => 'ti-message-plus',  'darf' => $admin],
+        'a_neuigkeiten' => ['url' => 'admin/neuigkeiten.php', 'label' => 'Neuigkeiten-Splash',        'icon' => 'ti-sparkles',      'darf' => $admin],
         'a_scores'     => ['url' => 'admin/score.php',       'label' => 'Scores',                     'icon' => 'ti-trophy',        'darf' => $admin],
         'a_aktivitaet' => ['url' => 'admin/activity.php',    'label' => 'Aktivitätsstatistik',        'icon' => 'ti-chart-line',    'darf' => $admin],
         'a_erfolge'    => ['url' => 'admin/achievements.php', 'label' => 'Achievements-Übersicht',    'icon' => 'ti-medal',         'darf' => $admin],
@@ -6434,57 +6513,323 @@ function flame_style_icon(string $style): string
 /** Hat dieses Mitglied den Onboarding-Rundgang schon durchlaufen (oder übersprungen)?
  *  Technik-Login/kein Mitglied → true (kein Tutorial). */
 /**
- * „Neu in der App" – der Splash beim nächsten Öffnen nach einem Update.
+ * „Neu in der App" / „Neu im StuPa-Bereich" – der Splash beim nächsten Öffnen nach einem Update.
  *
- * Für ein neues Update: Version hochsetzen und die Punkte unten austauschen. Jedes Mitglied sieht
- * den Splash EINMAL JE GERÄTEART – am Desktop (members.news_seen) und am Handy (news_seen_mobil);
- * welche Art gerade vorliegt, entscheidet app.js (schmaler Schirm oder Touch = Handy). Neue Mitglieder sehen ihn nie: Solange sie den
- * Rundgang nicht beendet haben, läuft der; beim Beenden (member_mark_onboarded) gilt der aktuelle
- * Stand als gesehen – die Neuerungen gehören deshalb AUCH in den Rundgang (app.js, STEPS).
- * Jeder Punkt: icon, farbe (CSS-Variante), titel, text (HTML erlaubt, wird nicht maskiert), optional
- * orte (umgezogene Menüpunkte: [Icon, Name, neuer Ort]), dazu link + knopf oder zeige ('menu' öffnet
- * das Namens-Menü).
+ * Gebaut wird er im Baukasten (admin/neuigkeiten.php) und liegt in der Tabelle splashes; je Ziel
+ * ('app' | 'stupa') ist höchstens einer live. Sein Versionsstempel entscheidet, wer ihn noch sieht:
+ * Jedes Mitglied EINMAL JE GERÄTEART – am Desktop (news_seen) und am Handy (news_seen_mobil);
+ * welche Art gerade vorliegt, entscheidet app.js (schmaler Schirm oder Touch = Handy).
+ * In der App sehen ihn nur Bestandsmitglieder: Solange jemand den Rundgang nicht beendet hat, läuft
+ * der; beim Beenden (member_mark_onboarded) gilt der aktuelle Stand als gesehen – Neuerungen gehören
+ * deshalb AUCH in den Rundgang (app.js, STEPS). Im StuPa-Bereich gibt es keinen Rundgang, dort sehen
+ * ihn alle Zugänge.
  */
-const APP_NEUIGKEITEN_VERSION = '2026-10-raeume';
 
-function app_neuigkeiten(): array
+function splash_ziele(): array
+{
+    return ['app' => 'App', 'stupa' => 'StuPa-Bereich'];
+}
+
+/** Farbverläufe für den Kopf (CSS: .neu-kopf-<stil>). Der erste ist die Vorgabe. */
+function splash_kopf_stile(): array
+{
+    return ['petrol' => 'Petrol', 'nacht' => 'Nacht', 'sonne' => 'Sonne', 'wald' => 'Wald', 'beere' => 'Beere'];
+}
+
+/** Farben der Symbole an den Punkten (CSS: .neu-<farbe> .neu-icon). Die erste ist die Vorgabe. */
+function splash_farben(): array
+{
+    return ['petrol' => 'Petrol', 'gold' => 'Gold', 'violett' => 'Violett', 'gruen' => 'Grün', 'rot' => 'Rot'];
+}
+
+/** Symbole zur Auswahl: Tabler-Name (ohne „ti-") => Beschriftung. Das erste ist die Vorgabe. */
+function splash_icons(): array
 {
     return [
-        'kicker'   => 'Neu in der App',
-        'titel'    => 'Frisch eingeräumt',
-        'punkte'   => [
-            ['icon' => 'ti-door', 'farbe' => 'petrol', 'titel' => 'Räume buchen',
-             'text' => 'Sieh auf einen Blick, wann welcher Raum frei ist – und buch ihn direkt. Das StuPa bucht über seinen Zugang mit, die Bestätigung kommt per Mail.',
-             'link' => 'raeume.php', 'knopf' => 'Zu den Räumen'],
-            ['icon' => 'ti-coins', 'farbe' => 'gold', 'titel' => 'Schichten bringen AsT',
-             'text' => 'Jede geleistete Schicht bringt <strong>500 AsT</strong>. Übernimmst du eine abgegebene Schicht aus der Börse oder springst kurzfristig ein, gibt es <strong>2.000</strong> dazu. Dein bisheriges Guthaben bleibt.',
-             'link' => 'tauschboerse.php#guthaben', 'knopf' => 'Zum Guthaben'],
-            ['icon' => 'ti-layout-navbar', 'farbe' => 'violett', 'titel' => 'Neue Plätze im Menü',
-             'text' => 'Damit die Leiste schlank bleibt, ist einiges umgezogen:',
-             'orte' => [
-                 ['ti-plane-departure', 'Abwesenheit', 'unter deinem Namen'],
-                 ['ti-receipt-2', 'Auslagen', 'unter deinem Namen'],
-                 ['ti-trophy', 'Achievements', 'unter deinem Namen'],
-                 ['ti-directions', 'Wegweiser', 'oben in der Leiste'],
-             ],
-             'zeige' => 'menu', 'knopf' => 'Zeig mir das Menü'],
-        ],
-        'ausserdem' => 'Außerdem lassen sich Abstimmungen auf bestimmte Referate oder Personen begrenzen, und die Mails der App sehen jetzt deutlich besser aus.',
+        'sparkles' => 'Funkeln', 'rocket' => 'Rakete', 'gift' => 'Geschenk', 'confetti' => 'Konfetti',
+        'star' => 'Stern', 'heart' => 'Herz', 'bulb' => 'Idee', 'wand' => 'Zauberstab',
+        'bell' => 'Glocke', 'speakerphone' => 'Ankündigung', 'message-circle' => 'Nachricht', 'mail' => 'Mail',
+        'calendar-event' => 'Termin', 'clock' => 'Uhr', 'door' => 'Raum', 'map-pin' => 'Ort',
+        'directions' => 'Wegweiser', 'layout-navbar' => 'Menüleiste', 'menu-2' => 'Menü', 'user' => 'Person',
+        'users' => 'Gruppe', 'users-group' => 'Mitglieder', 'mailbox' => 'Abstimmung', 'gavel' => 'Sitzung',
+        'checklist' => 'Aufgaben', 'file-text' => 'Dok', 'folder' => 'Ablage', 'photo' => 'Bild',
+        'coins' => 'Münzen', 'receipt-2' => 'Beleg', 'trophy' => 'Pokal', 'flame' => 'Flamme',
+        'palette' => 'Farben', 'device-mobile' => 'Handy', 'shield-check' => 'Sicherheit', 'tool' => 'Werkzeug',
+        'chart-bar' => 'Statistik', 'ticket' => 'Ticket', 'plane-departure' => 'Abwesenheit', 'beer' => 'Get-Together',
+        'sun' => 'Sonne', 'snowflake' => 'Schneeflocke', 'leaf' => 'Blatt', 'mood-smile' => 'Lächeln',
     ];
+}
+
+/** Seiten des StuPa-Bereichs als Knopf-Ziel (Pfad relativ zu stupa/). */
+function splash_stupa_seiten(): array
+{
+    return ['index.php' => 'Auszahlungen', 'raeume.php' => 'Räume', 'umlauf.php' => 'Umläufe'];
+}
+
+/** Ein leerer Punkt im Baukasten. */
+function splash_punkt_leer(): array
+{
+    return ['icon' => (string)array_key_first(splash_icons()), 'farbe' => (string)array_key_first(splash_farben()),
+            'titel' => '', 'text' => '', 'ziel' => '', 'link' => '', 'knopf' => '', 'orte' => []];
+}
+
+/** Ein frischer Entwurf. */
+function splash_leer(string $ziel): array
+{
+    return ['kicker' => $ziel === 'stupa' ? 'Neu im StuPa-Bereich' : 'Neu in der App', 'titel' => '',
+            'kopf' => (string)array_key_first(splash_kopf_stile()), 'kopf_icon' => 'sparkles',
+            'punkte' => [splash_punkt_leer()], 'ausserdem' => '', 'fertig' => 'Alles klar'];
+}
+
+/** Eigene Adresse für einen Knopf: https://… oder eine Seite dieser Installation (ohne „.."). '' = ungültig. */
+function splash_link_ok(string $l): string
+{
+    $l = trim($l);
+    if (preg_match('~^https://[^\s"<>]+$~i', $l)) return $l;
+    if (preg_match('~^[A-Za-z0-9_\-/]+\.php([?#][^\s"<>]*)?$~', $l) && !str_contains($l, '..') && !str_starts_with($l, '/')) return $l;
+    return '';
+}
+
+/**
+ * Bringt einen Inhalt (aus dem Formular oder der Datenbank) in Form: nur bekannte Werte,
+ * begrenzte Längen, leere Umzugs-Zeilen fallen weg. Leere Punkte bleiben stehen – im Baukasten
+ * will man sie ausfüllen; beim Anzeigen überspringt splash_html() sie.
+ */
+function splash_normalisieren(array $in, string $ziel): array
+{
+    $t = static fn($v, int $max): string => mb_substr(trim(str_replace("\r\n", "\n", (string)$v)), 0, $max);
+    $wahl = static fn($v, array $liste): string => isset($liste[(string)$v]) ? (string)$v : (string)array_key_first($liste);
+    $out = [
+        'kicker'    => $t($in['kicker'] ?? '', 40),
+        'titel'     => $t($in['titel'] ?? '', 80),
+        'kopf'      => $wahl($in['kopf'] ?? '', splash_kopf_stile()),
+        'kopf_icon' => $wahl($in['kopf_icon'] ?? '', splash_icons()),
+        'punkte'    => [],
+        'ausserdem' => $t($in['ausserdem'] ?? '', 300),
+        'fertig'    => $t($in['fertig'] ?? '', 30),
+    ];
+    if ($out['fertig'] === '') $out['fertig'] = 'Alles klar';
+    foreach (array_slice(array_values((array)($in['punkte'] ?? [])), 0, SPLASH_MAX_PUNKTE) as $p) {
+        if (!is_array($p)) continue;
+        $z = (string)($p['ziel'] ?? '');
+        $zOk = $z === '' || $z === 'link'
+            || ($ziel === 'app' && ($z === 'menu' || (str_starts_with($z, 'ort:') && isset(app_places()[substr($z, 4)]))))
+            || ($ziel === 'stupa' && str_starts_with($z, 'seite:') && isset(splash_stupa_seiten()[substr($z, 6)]));
+        $orte = [];
+        foreach (array_values((array)($p['orte'] ?? [])) as $o) {
+            if (!is_array($o) || trim((string)($o['name'] ?? '')) === '') continue;
+            $orte[] = ['icon' => $wahl($o['icon'] ?? '', splash_icons()), 'name' => $t($o['name'], 40), 'wo' => $t($o['wo'] ?? '', 40)];
+        }
+        $out['punkte'][] = [
+            'icon'  => $wahl($p['icon'] ?? '', splash_icons()),
+            'farbe' => $wahl($p['farbe'] ?? '', splash_farben()),
+            'titel' => $t($p['titel'] ?? '', 80),
+            'text'  => $t($p['text'] ?? '', 500),
+            'ziel'  => $zOk ? $z : '',
+            'link'  => splash_link_ok((string)($p['link'] ?? '')),
+            'knopf' => $t($p['knopf'] ?? '', 40),
+            'orte'  => array_slice($orte, 0, 8),
+        ];
+    }
+    return $out;
+}
+
+const SPLASH_MAX_PUNKTE = 6;
+
+/** Was ein Punkt zum Veröffentlichen noch braucht ('' = fertig). */
+function splash_fehlt(array $inhalt): string
+{
+    if ($inhalt['titel'] === '') return 'Der Splash braucht eine Überschrift.';
+    $voll = array_filter($inhalt['punkte'], fn($p) => $p['titel'] !== '');
+    if (!$voll) return 'Mindestens ein Punkt braucht einen Titel.';
+    foreach ($inhalt['punkte'] as $i => $p) {
+        if ($p['ziel'] === 'link' && $p['link'] === '') return 'Punkt ' . ($i + 1) . ': Die eigene Adresse fehlt oder ist ungültig (https://… oder eine Seite wie raeume.php).';
+    }
+    return '';
+}
+
+function splash_row(array $r): array
+{
+    $r['inhalt'] = splash_normalisieren((array)json_decode((string)$r['inhalt'], true), (string)$r['ziel']);
+    return $r;
+}
+
+function splash_get(int $id): ?array
+{
+    $st = db()->prepare('SELECT * FROM splashes WHERE id = ?');
+    $st->execute([$id]);
+    $r = $st->fetch();
+    return $r ? splash_row($r) : null;
+}
+
+/** Alle, neueste zuerst. */
+function splash_alle(): array
+{
+    return array_map('splash_row', db()->query("SELECT * FROM splashes ORDER BY CASE status WHEN 'live' THEN 0 WHEN 'entwurf' THEN 1 ELSE 2 END, COALESCE(NULLIF(published_at, ''), updated_at) DESC, id DESC")->fetchAll());
+}
+
+/** Merker für splash_live(); jede Änderung an splashes leert ihn (splash_cache_leeren). */
+function &splash_cache(): array
+{
+    static $c = [];
+    return $c;
+}
+
+function splash_cache_leeren(): void
+{
+    $c = &splash_cache();
+    $c = [];
+}
+
+/** Der Splash, der gerade für dieses Ziel läuft (oder null). Pro Anfrage gemerkt. */
+function splash_live(string $ziel): ?array
+{
+    $cache = &splash_cache();
+    if (!array_key_exists($ziel, $cache)) {
+        try {
+            $st = db()->prepare("SELECT * FROM splashes WHERE ziel = ? AND status = 'live' ORDER BY published_at DESC LIMIT 1");
+            $st->execute([$ziel]);
+            $r = $st->fetch();
+            $cache[$ziel] = $r ? splash_row($r) : null;
+        } catch (\Throwable $e) { $cache[$ziel] = null; }
+    }
+    return $cache[$ziel];
+}
+
+/** Anlegen ($id = 0) oder speichern. Rückgabe: die id. */
+function splash_speichern(int $id, string $ziel, string $name, array $inhalt, int $von): int
+{
+    $ziel = isset(splash_ziele()[$ziel]) ? $ziel : 'app';
+    $json = json_encode(splash_normalisieren($inhalt, $ziel), JSON_UNESCAPED_UNICODE);
+    $name = mb_substr(trim($name), 0, 80);
+    splash_cache_leeren();
+    if ($id > 0) {
+        db()->prepare("UPDATE splashes SET name = ?, inhalt = ?, updated_at = datetime('now','localtime') WHERE id = ?")->execute([$name, $json, $id]);
+        return $id;
+    }
+    db()->prepare('INSERT INTO splashes(ziel, name, inhalt, created_by) VALUES(?,?,?,?)')->execute([$ziel, $name, $json, $von]);
+    return (int)db()->lastInsertId();
+}
+
+/** Live schalten: Der bisherige Splash desselben Ziels wandert ins Archiv, alle sehen den neuen einmal. */
+function splash_veroeffentlichen(int $id): string
+{
+    $s = splash_get($id);
+    if (!$s) return 'Diesen Splash gibt es nicht mehr.';
+    $fehlt = splash_fehlt($s['inhalt']);
+    if ($fehlt !== '') return $fehlt;
+    db_atomar(function () use ($s) {
+        db()->prepare("UPDATE splashes SET status = 'archiv' WHERE ziel = ? AND status = 'live' AND id <> ?")->execute([$s['ziel'], $s['id']]);
+        db()->prepare("UPDATE splashes SET status = 'live', version = ?, published_at = datetime('now','localtime') WHERE id = ?")
+            ->execute([splash_neue_version((int)$s['id']), $s['id']]);
+    });
+    splash_cache_leeren();
+    return '';
+}
+
+/** Neuer Versionsstempel: Wer den Splash schon gesehen hat, sieht ihn dann noch einmal. */
+function splash_neue_version(int $id): string
+{
+    return 'b' . $id . '-' . date('YmdHis') . '-' . bin2hex(random_bytes(3));
+}
+
+function splash_erneut_zeigen(int $id): void
+{
+    db()->prepare("UPDATE splashes SET version = ? WHERE id = ? AND status = 'live'")->execute([splash_neue_version($id), $id]);
+    splash_cache_leeren();
+}
+
+function splash_zurueckziehen(int $id): void
+{
+    db()->prepare("UPDATE splashes SET status = 'archiv' WHERE id = ? AND status = 'live'")->execute([$id]);
+    splash_cache_leeren();
+}
+
+/** Kopie als neuer Entwurf (für den nächsten Splash im selben Stil). */
+function splash_kopieren(int $id, int $von): int
+{
+    $s = splash_get($id);
+    if (!$s) return 0;
+    return splash_speichern(0, (string)$s['ziel'], 'Kopie von ' . ($s['name'] !== '' ? $s['name'] : $s['inhalt']['titel']), $s['inhalt'], $von);
+}
+
+/** Löschen – nur, was gerade nicht läuft. */
+function splash_loeschen(int $id): bool
+{
+    $st = db()->prepare("DELETE FROM splashes WHERE id = ? AND status <> 'live'");
+    $st->execute([$id]);
+    return $st->rowCount() > 0;
+}
+
+/** Wie viele haben den laufenden Splash schon gesehen? ['gesamt', 'desktop', 'mobil']. */
+function splash_gesehen_zahlen(array $s): array
+{
+    $tab = $s['ziel'] === 'stupa' ? 'stupa_users' : 'members';
+    $wo  = $s['ziel'] === 'stupa' ? 'active = 1' : 'active = 1 AND onboarded = 1';
+    $st = db()->prepare("SELECT COUNT(*) AS gesamt, SUM(news_seen = :v) AS desktop, SUM(news_seen_mobil = :v) AS mobil FROM $tab WHERE $wo");
+    $st->execute([':v' => (string)$s['version']]);
+    $r = $st->fetch() ?: [];
+    return ['gesamt' => (int)($r['gesamt'] ?? 0), 'desktop' => (int)($r['desktop'] ?? 0), 'mobil' => (int)($r['mobil'] ?? 0)];
+}
+
+/** Adressen im (bereits maskierten) Text anklickbar machen. */
+function text_links_html(string $escaped): string
+{
+    return preg_replace_callback('~https?://[^\s<>"]+~u', static function (array $m): string {
+        $url = rtrim($m[0], '.,;:!?)');
+        return '<a href="' . $url . '" target="_blank" rel="noopener">' . $url . '</a>' . substr($m[0], strlen($url));
+    }, $escaped);
+}
+
+/** Text eines Punktes: **fett**, Zeilenumbrüche, Links. */
+function splash_text_html(string $t): string
+{
+    $h = preg_replace('~\*\*(.+?)\*\*~su', '<strong>$1</strong>', h($t));
+    return nl2br(text_links_html($h));
+}
+
+/** Ziel des Knopfes als fertige Adresse ('' = kein Knopf) und ob es das Namens-Menü öffnet. */
+function splash_knopf(array $p, string $ziel, string $b): array
+{
+    $z = $p['ziel'];
+    if ($z === 'menu') return ['url' => '', 'menu' => true, 'extern' => false];
+    if ($z === 'link' && $p['link'] !== '') {
+        $extern = str_starts_with($p['link'], 'https://');
+        return ['url' => $extern ? $p['link'] : $b . $p['link'], 'menu' => false, 'extern' => $extern];
+    }
+    if (str_starts_with($z, 'ort:')) {
+        $ort = app_places()[substr($z, 4)] ?? null;
+        // Wer den Ort nicht öffnen darf, bekommt keinen Knopf dorthin.
+        if ($ort && ($ort['darf'])()) return ['url' => $b . $ort['url'], 'menu' => false, 'extern' => false];
+    }
+    if (str_starts_with($z, 'seite:')) return ['url' => $b . substr($z, 6), 'menu' => false, 'extern' => false];
+    return ['url' => '', 'menu' => false, 'extern' => false];
+}
+
+/** Inhalt des laufenden App-Splashs (oder null). */
+function app_neuigkeiten(): ?array
+{
+    return splash_live('app')['inhalt'] ?? null;
+}
+
+/** Versionsstempel des laufenden App-Splashs ('' = keiner). */
+function app_neuigkeiten_version(): string
+{
+    return (string)(splash_live('app')['version'] ?? '');
 }
 
 /** Wo steht der Splash noch aus? ['desktop' => bool, 'mobil' => bool]; nur Bestand (Rundgang erledigt). */
 function app_neuigkeiten_offen(int $memberId): array
 {
     $nein = ['desktop' => false, 'mobil' => false];
-    if ($memberId <= 0) return $nein;
+    $v = app_neuigkeiten_version();
+    if ($memberId <= 0 || $v === '') return $nein;
     try {
         $s = db()->prepare('SELECT onboarded, news_seen, news_seen_mobil FROM members WHERE id = ?');
         $s->execute([$memberId]);
         $r = $s->fetch();
         if (!$r || (int)$r['onboarded'] !== 1) return $nein;
-        return ['desktop' => (string)$r['news_seen'] !== APP_NEUIGKEITEN_VERSION,
-                'mobil'   => (string)$r['news_seen_mobil'] !== APP_NEUIGKEITEN_VERSION];
+        return ['desktop' => (string)$r['news_seen'] !== $v, 'mobil' => (string)$r['news_seen_mobil'] !== $v];
     } catch (\Throwable $e) { return $nein; }
 }
 
@@ -6493,41 +6838,52 @@ function app_neuigkeiten_gesehen(int $memberId, string $geraet): void
 {
     if ($memberId <= 0 || !in_array($geraet, ['desktop', 'mobil'], true)) return;
     $spalte = $geraet === 'mobil' ? 'news_seen_mobil' : 'news_seen';
-    try { db()->prepare("UPDATE members SET $spalte = ? WHERE id = ?")->execute([APP_NEUIGKEITEN_VERSION, $memberId]); } catch (\Throwable $e) {}
+    try { db()->prepare("UPDATE members SET $spalte = ? WHERE id = ?")->execute([app_neuigkeiten_version(), $memberId]); } catch (\Throwable $e) {}
 }
 
-/** Der Splash als <dialog> – app.js öffnet ihn nach dem Laden (window.ASTA_NEWS). $n: Inhalt (Standard: der der App). */
-function app_neuigkeiten_html(string $b, ?array $n = null): string
+/**
+ * Der Splash als <dialog> – app.js öffnet ihn nach dem Laden (window.ASTA_NEWS).
+ * $n: Inhalt im Format des Baukastens (Standard: der laufende der App); $b: Pfad-Präfix der Links.
+ * $domId: 'neuSplash' für den echten, eine andere für die Vorschau im Baukasten (meldet nichts).
+ */
+function app_neuigkeiten_html(string $b, ?array $n = null, string $ziel = 'app', string $domId = 'neuSplash'): string
 {
     $n = $n ?? app_neuigkeiten();
-    $o = '<dialog class="neu-splash" id="neuSplash" aria-labelledby="neuSplashTitel">'
-       . '<div class="neu-kopf"><span class="neu-funkeln" aria-hidden="true"><i class="ti ti-sparkles"></i></span>'
+    if (!$n) return '';
+    $kopf = isset(splash_kopf_stile()[$n['kopf'] ?? '']) ? $n['kopf'] : (string)array_key_first(splash_kopf_stile());
+    $o = '<dialog class="neu-splash" id="' . h($domId) . '" aria-labelledby="' . h($domId) . 'Titel">'
+       . '<div class="neu-kopf neu-kopf-' . h($kopf) . '"><span class="neu-funkeln" aria-hidden="true"><i class="ti ti-' . h($n['kopf_icon'] ?? 'sparkles') . '"></i></span>'
        . '<span class="neu-kicker">' . h($n['kicker']) . '</span>'
-       . '<h2 id="neuSplashTitel">' . h($n['titel']) . '</h2>'
+       . '<h2 id="' . h($domId) . 'Titel">' . h($n['titel']) . '</h2>'
        . '<button type="button" class="neu-x" data-neu-zu aria-label="Schließen"><i class="ti ti-x"></i></button></div>'
        . '<ul class="neu-punkte">';
-    foreach ($n['punkte'] as $i => $p) {
-        $o .= '<li class="neu-punkt neu-' . h($p['farbe']) . '" style="--i:' . (int)$i . '">'
-            . '<span class="neu-icon" aria-hidden="true"><i class="ti ' . h($p['icon']) . '"></i></span>'
-            . '<div class="neu-inhalt"><h3>' . h($p['titel']) . '</h3><p>' . $p['text'] . '</p>';
-        if (!empty($p['orte'])) {
+    $i = 0;
+    foreach ($n['punkte'] as $p) {
+        if ($p['titel'] === '') continue;                    // halb fertige Punkte aus dem Baukasten
+        $o .= '<li class="neu-punkt neu-' . h($p['farbe']) . '" style="--i:' . $i++ . '">'
+            . '<span class="neu-icon" aria-hidden="true"><i class="ti ti-' . h($p['icon']) . '"></i></span>'
+            . '<div class="neu-inhalt"><h3>' . h($p['titel']) . '</h3>'
+            . ($p['text'] !== '' ? '<p>' . splash_text_html($p['text']) . '</p>' : '');
+        if ($p['orte']) {
             $o .= '<ul class="neu-orte">';
-            foreach ($p['orte'] as [$oIcon, $oName, $oWo]) {
-                $o .= '<li><i class="ti ' . h($oIcon) . '" aria-hidden="true"></i><strong>' . h($oName) . '</strong>'
-                    . '<span><i class="ti ti-arrow-right" aria-hidden="true"></i> ' . h($oWo) . '</span></li>';
+            foreach ($p['orte'] as $ort) {
+                $o .= '<li><i class="ti ti-' . h($ort['icon']) . '" aria-hidden="true"></i><strong>' . h($ort['name']) . '</strong>'
+                    . ($ort['wo'] !== '' ? '<span><i class="ti ti-arrow-right" aria-hidden="true"></i> ' . h($ort['wo']) . '</span>' : '') . '</li>';
             }
             $o .= '</ul>';
         }
-        if (!empty($p['link'])) {
-            $o .= '<a class="neu-mehr" href="' . h($b . $p['link']) . '" data-neu-zu>' . h($p['knopf']) . ' <i class="ti ti-arrow-right"></i></a>';
-        } elseif (($p['zeige'] ?? '') === 'menu') {
-            $o .= '<button type="button" class="neu-mehr" data-neu-zu data-neu-zeige="menu">' . h($p['knopf']) . ' <i class="ti ti-arrow-right"></i></button>';
+        $k = splash_knopf($p, $ziel, $b);
+        $knopf = h($p['knopf'] !== '' ? $p['knopf'] : ($k['menu'] ? 'Zeig mir das Menü' : 'Ansehen'));
+        if ($k['url'] !== '') {
+            $o .= '<a class="neu-mehr" href="' . h($k['url']) . '" data-neu-zu' . ($k['extern'] ? ' target="_blank" rel="noopener"' : '') . '>' . $knopf . ' <i class="ti ti-arrow-right"></i></a>';
+        } elseif ($k['menu']) {
+            $o .= '<button type="button" class="neu-mehr" data-neu-zu data-neu-zeige="menu">' . $knopf . ' <i class="ti ti-arrow-right"></i></button>';
         }
         $o .= '</div></li>';
     }
     $o .= '</ul>'
-        . (trim((string)($n['ausserdem'] ?? '')) !== '' ? '<p class="neu-ausserdem"><i class="ti ti-plus"></i> ' . h($n['ausserdem']) . '</p>' : '')
-        . '<div class="neu-fuss"><button type="button" class="btn" data-neu-zu>Alles klar</button></div>'
+        . (trim((string)($n['ausserdem'] ?? '')) !== '' ? '<p class="neu-ausserdem"><i class="ti ti-plus"></i> ' . splash_text_html($n['ausserdem']) . '</p>' : '')
+        . '<div class="neu-fuss"><button type="button" class="btn" data-neu-zu>' . h($n['fertig'] ?? 'Alles klar') . '</button></div>'
         . '</dialog>';
     return $o;
 }
@@ -6544,7 +6900,8 @@ function member_mark_onboarded(int $memberId): void
 {
     if ($memberId <= 0) return;
     // Den aktuellen Neuigkeiten-Stand gleich mit: Was neu ist, steht im Rundgang – ein Splash danach wäre doppelt.
-    try { db()->prepare('UPDATE members SET onboarded = 1, news_seen = ?, news_seen_mobil = ? WHERE id = ?')->execute([APP_NEUIGKEITEN_VERSION, APP_NEUIGKEITEN_VERSION, $memberId]); } catch (\Throwable $e) {}
+    $v = app_neuigkeiten_version();
+    try { db()->prepare('UPDATE members SET onboarded = 1, news_seen = ?, news_seen_mobil = ? WHERE id = ?')->execute([$v, $v, $memberId]); } catch (\Throwable $e) {}
 }
 
 /** Soll dem Mitglied das freiwillige Dashboard-Angebot „geh den Rundgang mal durch" gezeigt werden? */
@@ -7229,6 +7586,202 @@ function in_streak_grace(): bool
     return $today > $until && $today <= lecture_break_grace_until();
 }
 
+// --- Hinweis-Banner auf dem Dashboard ----------------------------------------------------
+// Steht bei allen ganz oben, bis jemand ihn ausschaltet; wegklicken lässt er sich nicht.
+
+/** Symbole zur Auswahl: Tabler-Name (ohne „ti-") => Beschriftung. Das erste ist die Vorgabe. */
+function banner_icons(): array
+{
+    return [
+        'info-circle'    => 'Info',
+        'speakerphone'   => 'Ankündigung',
+        'alert-triangle' => 'Achtung',
+        'calendar-event' => 'Termin',
+        'door'           => 'Raum',
+        'confetti'       => 'Feier',
+        'heart'          => 'Herz',
+        'bulb'           => 'Idee',
+        'clock'          => 'Frist',
+        'mail'           => 'Post',
+        'sun'            => 'Sommer',
+        'snowflake'      => 'Winter',
+    ];
+}
+
+/** Der gespeicherte Banner; 'an' => false heißt: keiner zu sehen. */
+function banner_get(): array
+{
+    $icon = (string)setting_get('banner_icon', '');
+    if (!isset(banner_icons()[$icon])) $icon = (string)array_key_first(banner_icons());
+    $b = [
+        'icon'  => $icon,
+        'titel' => trim((string)setting_get('banner_titel', '')),
+        'text'  => trim((string)setting_get('banner_text', '')),
+    ];
+    $b['an'] = setting_get('banner_an', '') === '1' && ($b['titel'] !== '' || $b['text'] !== '');
+    return $b;
+}
+
+/** Banner speichern und einschalten. Rückgabe: Fehlermeldung oder ''. */
+function banner_set(string $icon, string $titel, string $text): string
+{
+    $titel = trim($titel);
+    $text  = trim(str_replace("\r\n", "\n", $text));
+    if ($titel === '' && $text === '') return 'Bitte einen Titel oder einen Text eingeben.';
+    if (mb_strlen($titel) > 80)  return 'Der Titel darf höchstens 80 Zeichen lang sein.';
+    if (mb_strlen($text) > 600)  return 'Der Text darf höchstens 600 Zeichen lang sein.';
+    if (!isset(banner_icons()[$icon])) $icon = (string)array_key_first(banner_icons());
+    setting_set('banner_icon', $icon);
+    setting_set('banner_titel', $titel);
+    setting_set('banner_text', $text);
+    setting_set('banner_an', '1');
+    return '';
+}
+
+/** Ausschalten; Titel, Text und Symbol bleiben fürs nächste Mal stehen. */
+function banner_aus(): void
+{
+    setting_set('banner_an', '');
+}
+
+/** Der Banner fürs Dashboard ('' = keiner). Links im Text werden anklickbar. */
+function banner_html(): string
+{
+    $b = banner_get();
+    if (!$b['an']) return '';
+    $text = '';
+    if ($b['text'] !== '') {
+        $text = nl2br(text_links_html(h($b['text'])));
+    }
+    return '<div class="card ban-banner" id="banBanner">'
+        . '<div class="section-title"><i class="ti ti-' . h($b['icon']) . ' ban-mark" aria-hidden="true"></i> '
+        . ($b['titel'] !== '' ? h($b['titel']) : 'Hinweis') . '</div>'
+        . ($text !== '' ? '<p class="small">' . $text . '</p>' : '')
+        . '</div>';
+}
+
+// --- Wartung --------------------------------------------------------------------------
+// Während der Wartung ist die App nur zum Lesen da: Alle sehen den Warnhinweis, speichern
+// können nur Admins (Rolle admin und der Technik-Login). Gesperrt wird zentral in
+// require_login(), also genau dort, wo die interne App beginnt; der StuPa-Bereich und die
+// öffentlichen Bereiche laufen weiter. Seiten mit eigener Anmeldeprüfung rufen
+// wartung_sperre() selbst auf.
+// In Wartungszeiten entstehen keine Minuspunkte, und die Streak reißt nicht: Jede Regel fragt
+// wartung_im_zeitraum() nach dem Tag ihrer Frist – Scores und Streak sind gerechnet, deshalb
+// wirkt auch ein nachgetragener Zeitraum rückwirkend.
+
+const WARTUNG_TEXT_VORGABE = 'Gerade wird an der App gearbeitet. Bis die Wartung vorbei ist, kannst du alles ansehen, aber nichts speichern.';
+
+function wartung_aktiv(): bool
+{
+    return setting_get('wartung_an', '') === '1';
+}
+
+/** Wer die Wartung schaltet und während der Wartung trotzdem speichern darf. */
+function wartung_darf(): bool
+{
+    return current_role() === 'admin';
+}
+
+/** Gilt für diese Anfrage gerade „nur lesen"? */
+function wartung_lesen(): bool
+{
+    return wartung_aktiv() && !wartung_darf();
+}
+
+/** Der eingestellte Warnhinweis (leer = Vorgabe). */
+function wartung_text(): string
+{
+    $t = trim((string)setting_get('wartung_text', ''));
+    return $t !== '' ? $t : WARTUNG_TEXT_VORGABE;
+}
+
+function wartung_setzen(bool $an, string $text): void
+{
+    $text = trim(str_replace("\r\n", "\n", $text));
+    setting_set('wartung_text', $text === WARTUNG_TEXT_VORGABE ? '' : mb_substr($text, 0, 600));
+    setting_set('wartung_an', $an ? '1' : '');
+    $offen = (int)db()->query("SELECT COUNT(*) FROM wartung_zeiten WHERE bis = ''")->fetchColumn();
+    if ($an && !$offen) db()->prepare('INSERT INTO wartung_zeiten(von) VALUES(?)')->execute([date('Y-m-d')]);
+    if (!$an && $offen) db()->prepare("UPDATE wartung_zeiten SET bis = ? WHERE bis = ''")->execute([date('Y-m-d')]);
+    wartung_zeiten(true);
+}
+
+/**
+ * Alle Wartungszeiträume, neueste zuerst: id, von, bis ('' = läuft noch). Pro Anfrage gemerkt,
+ * weil die Scores je Event und Mitglied nachfragen; $neu liest die Tabelle wieder ein.
+ */
+function wartung_zeiten(bool $neu = false): array
+{
+    static $merker = null;
+    if ($neu) $merker = null;
+    if ($merker === null) {
+        try { $merker = db()->query('SELECT id, von, bis FROM wartung_zeiten ORDER BY von DESC, id DESC')->fetchAll(); }
+        catch (\Throwable $e) { $merker = []; }
+    }
+    return $merker;
+}
+
+/**
+ * Berührt der Zeitraum ($von bis $bis, je 'Y-m-d') einen Wartungstag? Eine laufende Wartung reicht
+ * bis heute. Tagesgenau mit Absicht: Am Tag, an dem die Wartung endet, zieht die App noch nichts ab.
+ */
+function wartung_im_zeitraum(string $von, ?string $bis = null): bool
+{
+    $bis ??= $von;
+    $heute = date('Y-m-d');
+    foreach (wartung_zeiten() as $z) {
+        if ((string)$z['von'] <= $bis && ((string)$z['bis'] !== '' ? (string)$z['bis'] : $heute) >= $von) return true;
+    }
+    return false;
+}
+
+/** Wartungszeitraum nachtragen. Rückgabe: Fehlermeldung oder ''. */
+function wartung_zeit_nachtragen(string $von, string $bis): string
+{
+    $tag = static fn(string $d): bool => ($t = DateTime::createFromFormat('Y-m-d', $d)) !== false && $t->format('Y-m-d') === $d;
+    if (!$tag($von) || !$tag($bis)) return 'Bitte beide Tage auswählen.';
+    if ($von > $bis) return 'Der Beginn liegt nach dem Ende.';
+    if ($bis > date('Y-m-d')) return 'Nachtragen geht nur für vergangene Tage.';
+    db()->prepare('INSERT INTO wartung_zeiten(von, bis) VALUES(?, ?)')->execute([$von, $bis]);
+    wartung_zeiten(true);
+    return '';
+}
+
+/** Beendeten Zeitraum entfernen (die laufende Wartung endet nur über ihren Schalter). */
+function wartung_zeit_entfernen(int $id): void
+{
+    db()->prepare("DELETE FROM wartung_zeiten WHERE id = ? AND bis <> ''")->execute([$id]);
+    wartung_zeiten(true);
+}
+
+/**
+ * Weist Schreibversuche während der Wartung ab. Lesen bleibt erlaubt, ebenso push.php
+ * (nur Buchführung: Splash gesehen, Rundgang, App geöffnet).
+ * Antwort: bei fetch-Aufrufen 503 mit JSON, sonst ein Hinweis und zurück zur vorigen Seite.
+ */
+function wartung_sperre(): void
+{
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST' || !wartung_lesen()) return;
+    if (!empty($GLOBALS['WARTUNG_FREI'])) return;
+    $msg = 'Gerade läuft eine Wartung – bis sie vorbei ist, lässt sich nichts speichern.';
+    $fetch = ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') !== ''
+        || str_contains((string)($_SERVER['HTTP_ACCEPT'] ?? ''), 'application/json');
+    if ($fetch) {
+        http_response_code(503);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['ok' => false, 'error' => $msg]);
+        exit;
+    }
+    flash($msg, 'error');
+    // Zurück, wo die Person herkam – aber nur innerhalb dieser Seite.
+    $ref     = (string)($_SERVER['HTTP_REFERER'] ?? '');
+    $refPort = parse_url($ref, PHP_URL_PORT);
+    $refHost = strtolower((string)parse_url($ref, PHP_URL_HOST)) . ($refPort ? ':' . $refPort : '');
+    $host    = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
+    redirect($host !== '' && $refHost === $host ? $ref : base() . 'dashboard.php');
+}
+
 /**
  * Vorlesungsfreie Zeit festlegen/ändern (Sekretariat/Vorsitz/Admin): schützt die Streaks
  * bis einschließlich $until – keine Kette kann reißen, gesammelt wird normal weiter.
@@ -7361,7 +7914,7 @@ function streak_admin_set(int $memberId, int $value): bool
 }
 
 /** Zahl der Tage im Zeitraum (nach $fromExclusive bis einschl. $toInclusive), die von einer
- *  eingetragenen Abwesenheit des Mitglieds abgedeckt sind (für die Streak-Kulanz). */
+ *  eingetragenen Abwesenheit des Mitglieds oder einer Wartung abgedeckt sind (für die Streak-Kulanz). */
 function member_absent_days_between(int $memberId, string $fromExclusive, string $toInclusive): int
 {
     if ($memberId <= 0) return 0;
@@ -7379,6 +7932,11 @@ function member_absent_days_between(int $memberId, string $fromExclusive, string
         $e = min(strtotime(substr((string)$a['ends_at'], 0, 10)), $to);
         for ($d = $s; $d !== false && $d <= $e; $d += 86400) $covered[date('Y-m-d', $d)] = true;
     }
+    foreach (wartung_zeiten() as $z) {
+        $s = max(strtotime((string)$z['von']), $from + 86400);
+        $e = min((string)$z['bis'] !== '' ? strtotime((string)$z['bis']) : $to, $to);
+        for ($d = $s; $d !== false && $d <= $e; $d += 86400) $covered[date('Y-m-d', $d)] = true;
+    }
     return count($covered);
 }
 
@@ -7386,7 +7944,7 @@ function member_absent_days_between(int $memberId, string $fromExclusive, string
  *  5 Tage in Folge nicht einloggt – der letzte Streak-Tag darf also bis zu 5 Tage her sein.
  *  In der vorlesungsfreien Zeit UND der 7-Tage-Schonfrist danach steht die Uhr still:
  *  Die Kette gilt zusätzlich als lebendig, wenn sie es zum Pausenbeginn war (kein Verlust).
- *  Eingetragene Abwesenheiten zählen ebenfalls NICHT gegen die Kulanz. */
+ *  Eingetragene Abwesenheiten und Wartungstage zählen ebenfalls NICHT gegen die Kulanz. */
 function streak_alive_for(int $memberId, string $lastDay): bool
 {
     $lastDay = trim($lastDay);
@@ -8724,6 +9282,7 @@ function require_login(): void
             redirect(base() . 'login.php');
         }
     }
+    wartung_sperre();
 }
 
 function require_admin(): void
@@ -12135,7 +12694,7 @@ function scored_events(string $orderBy = ''): array
 /**
  * Die EINZIGE Stelle, an der die Eventscore-Regeln eines Events für ein Mitglied stehen:
  *  - eingeteilt: +1/Schicht (+2 bei >2 h), pro Event auf `event_score_cap()` gedeckelt
- *  - gar nicht abgestimmt: −2
+ *  - gar nicht abgestimmt: −2 (0, wenn die Frist in einer Wartung lag – da ging Abstimmen nicht)
  *  - verfügbar-aber-nicht-eingeteilt / überall „nein": 0
  * Gibt null zurück, wenn das Event für dieses Mitglied nicht zählt (Frist lag vor dem Beitritt).
  * $resp/$assign sind die vorab geladenen event_responses()/event_assignments() des Events.
@@ -12165,7 +12724,9 @@ function score_event_for_member(array $event, array $slots, array $resp, array $
     }
     if ($pts > 0)    return ['points' => min($pts, $cap), 'shifts' => $shifts,
                              'reason' => 'eingeteilt (' . $shifts . ' Schicht' . ($shifts > 1 ? 'en' : '') . ')' . ($pts > $cap ? ', gedeckelt auf ' . $cap : '')];
-    if (!$responded) return ['points' => -2, 'shifts' => 0, 'reason' => 'nicht abgestimmt'];
+    if (!$responded) return wartung_im_zeitraum(substr((string)$event['deadline'], 0, 10))
+        ? ['points' => 0, 'shifts' => 0, 'reason' => 'nicht abgestimmt – die Frist lag in einer Wartung']
+        : ['points' => -2, 'shifts' => 0, 'reason' => 'nicht abgestimmt'];
     if (!$avail)     return ['points' => 0,  'shifts' => 0, 'reason' => 'überall „nein" angegeben'];
     return ['points' => 0, 'shifts' => 0, 'reason' => 'verfügbar, aber nicht eingeteilt'];
 }
@@ -12357,7 +12918,9 @@ function basis_context(?array $eventScores = null): array
     $meetPast = db()->prepare("SELECT * FROM meetings WHERE cancelled = 0 AND draft = 0 AND kind != 'stupa'
                                AND date(starts_at) >= ? AND datetime(starts_at) < datetime('now','localtime') ORDER BY starts_at");
     $meetPast->execute([$since]);
-    $meetings = $meetPast->fetchAll();
+    // Sitzungen in einer Wartung kosten nichts: weder Bericht noch Fehlen noch Lese-Haken
+    $meetings = array_values(array_filter($meetPast->fetchAll(),
+        fn($m) => !wartung_im_zeitraum(substr((string)$m['starts_at'], 0, 10))));
 
     // Berichte je (referat, meeting) mit Inhalt
     $reports = [];
@@ -12377,7 +12940,8 @@ function basis_context(?array $eventScores = null): array
     // Wichtige Infos (>7 Tage alt, seit Zählbeginn) + Gelesen-Haken
     $infoRows = db()->prepare("SELECT id, referat, created_at FROM infos WHERE date(created_at) >= ? AND datetime(created_at) <= datetime('now','localtime','-7 days')");
     $infoRows->execute([$since]);
-    $infos = $infoRows->fetchAll();
+    $infos = array_values(array_filter($infoRows->fetchAll(),                       // Lese-Frist endet in einer Wartung: zählt nicht
+        fn($i) => !wartung_im_zeitraum(date('Y-m-d', strtotime((string)$i['created_at']) + 7 * 86400))));
     $infoReads = [];
     foreach (db()->query('SELECT info_id, member_id, read_at FROM info_reads')->fetchAll() as $r) {
         $infoReads[(int)$r['member_id']][(int)$r['info_id']] = (string)$r['read_at'];
@@ -12395,7 +12959,8 @@ function basis_context(?array $eventScores = null): array
     $umStmt = db()->prepare("SELECT id, deadline, closed_at FROM circular_votes WHERE status = 'closed' AND date(deadline) >= ?");
     $umStmt->execute([$since]);
     $umlaeufe = array_values(array_filter($umStmt->fetchAll(),
-        fn($u) => !vote_closed_early((string)$u['deadline'], $u['closed_at'] ?? null)));
+        fn($u) => !vote_closed_early((string)$u['deadline'], $u['closed_at'] ?? null)
+            && !wartung_im_zeitraum(substr((string)$u['deadline'], 0, 10))));   // Frist in einer Wartung: Abstimmen ging nicht
     $umlaufBallots = [];
     foreach (db()->query('SELECT vote_id, member_id FROM circular_ballots')->fetchAll() as $r) {
         $umlaufBallots[(int)$r['member_id']][(int)$r['vote_id']] = true;
@@ -12407,7 +12972,8 @@ function basis_context(?array $eventScores = null): array
                                AND date(COALESCE(NULLIF(deadline, ''), closed_at, created_at)) >= ?");
     $mpStmt->execute([$since]);
     $mandPolls = array_values(array_filter($mpStmt->fetchAll(),   // vorzeitig beendete zählen nicht, siehe oben
-        fn($p) => !vote_closed_early((string)$p['deadline'], $p['closed_at'] ?? null)));
+        fn($p) => !vote_closed_early((string)$p['deadline'], $p['closed_at'] ?? null)
+            && !wartung_im_zeitraum(substr((string)$p['d'], 0, 10))));
     foreach ($mandPolls as &$mp) $mp['kreis_ids'] = poll_kreis_ids($mp);   // nur der Kreis war verpflichtet
     unset($mp);
     $pollVotes = [];
@@ -12453,8 +13019,8 @@ function member_basis_breakdown(array $member, ?array $ctx = null): array
         $rows[] = ['reason' => 'Unentschuldigt gefehlt: ' . meeting_label($m) . ' am ' . fmt_date(substr((string)$m['starts_at'], 0, 10)), 'points' => -2];
     }
 
-    // 3) Eventscore im schlechten Bereich
-    if (score_band_for($mid, $ctx['event_scores']) === 'ausbaufaehig') {
+    // 3) Eventscore im schlechten Bereich – ein Zustand ohne Frist, ruht also, solange die Wartung läuft
+    if (!wartung_aktiv() && score_band_for($mid, $ctx['event_scores']) === 'ausbaufaehig') {
         $rows[] = ['reason' => 'Eventscore aktuell im Bereich „Ausbaufähig"', 'points' => -1];
     }
 
@@ -12469,7 +13035,7 @@ function member_basis_breakdown(array $member, ?array $ctx = null): array
         $wk = date('o-\WW', $w);
         if (!empty($ctx['weeks'][$mid][$wk])) continue;
         $wStart = date('Y-m-d', $w); $wEnd = date('Y-m-d', $w + 6 * 86400);
-        $excused = false;
+        $excused = wartung_im_zeitraum($wStart, $wEnd);                  // Woche mit Wartungstag zählt nie
         foreach ($ctx['absences'][$mid] ?? [] as [$a, $b]) {
             if ($a <= $wEnd && $b >= $wStart) { $excused = true; break; } // Abwesenheit überlappt die Woche
         }
@@ -15001,6 +15567,7 @@ function send_voteitem_reminders(bool $dryRun = false): int
 function send_inactivity_reminders(bool $dryRun = false): int
 {
     if (!push_available()) return 0;
+    if (wartung_aktiv()) return 0;                                      // die Woche zählt ja gerade gar nicht
     $today = date('Y-m-d');
     $sent = 0;
     foreach (members_all() as $m) {
@@ -15694,18 +16261,27 @@ function expense_nc_basename(array $c): string
  */
 function expense_pdf_bytes(array $c, ?string &$err = null): ?string
 {
+    if (!class_exists('ZipArchive')) { $err = 'Word-Export nicht möglich (ZipArchive fehlt auf dem Server).'; return null; }
+    return graph_docx_pdf(expense_claim_docx($c), 'Beleg_' . (int)$c['id'], $err);
+}
+
+/**
+ * Eine DOCX über Microsoft Graph in PDF-Bytes wandeln: in den Zwischenordner der
+ * Teams-Bibliothek, als PDF zurückholen, Zwischendatei löschen. $tmpPrefix benennt die
+ * Zwischendatei (ein Zufallsteil kommt dazu). Ohne Teams-Anbindung null mit Meldung.
+ */
+function graph_docx_pdf(string $docx, string $tmpPrefix, ?string &$err = null): ?string
+{
     if (!graph_configured()) { $err = 'Für die PDF-Wandlung wird die Teams-Anbindung gebraucht (Verwaltung → Uploads und Automationen).'; return null; }
     $driveId = (string)setting_get('graph_drive_id', '');
     if ($driveId === '') { $err = 'Keine Dokumentbibliothek gewählt – ohne sie kann Graph nicht wandeln.'; return null; }
-    if (!class_exists('ZipArchive')) { $err = 'Word-Export nicht möglich (ZipArchive fehlt auf dem Server).'; return null; }
 
-    $docx = expense_claim_docx($c);
-    $tmpName = 'Beleg_' . (int)$c['id'] . '_' . bin2hex(random_bytes(4)) . '.docx';
+    $tmpName = $tmpPrefix . '_' . bin2hex(random_bytes(4)) . '.docx';
     $item = graph_upload_bytes($driveId, EXPENSE_PDF_TMP_FOLDER, $tmpName, $docx, $err);
     if (!$item || empty($item['id'])) { if (!$err) $err = 'Zwischendatei konnte nicht abgelegt werden.'; return null; }
 
     $pdf = graph_download_file((string)($item['parentReference']['driveId'] ?? $driveId), (string)$item['id'], 'pdf', $err);
-    // Zwischendatei in JEDEM Fall wieder entfernen – sie enthält Anschrift und IBAN
+    // Zwischendatei in JEDEM Fall wieder entfernen – sie enthält Anschrift bzw. IBAN
     $delErr = null;
     graph_delete_item((string)($item['parentReference']['driveId'] ?? $driveId), (string)$item['id'], $delErr);
     if ($pdf === null) return null;
@@ -15772,6 +16348,120 @@ function expense_nc_sync(int $claimId, ?string &$err = null): bool
         expense_nc_remember('expense_att', (int)$f['id'], $attPath, $attName);
     }
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// StuPa-Auszahlungsaufforderungen in die Nextcloud archivieren
+//
+// Wie die Belegblätter, im eigenen Ordner: <Ordner>/<JAHR>/Auszahlungsaufforderung_DATUM_NrID.pdf,
+// die Belege daneben als …-Beleg1.<ext> – auch die, die das Präsidium später an eine Nachricht
+// hängt. Merker in nc_files (kind 'stupa' bzw. 'stupa_att'). Abgelegt wird beim Einreichen und
+// bei nachgereichten Belegen; was dabei scheitert oder schon vor dem Einschalten da war, holt
+// cron_automations.php nach (stupa_nc_nachholen). Auch hier stehen IBANs drin: Ordner in der
+// Nextcloud nur mit dem Finanzen-Team teilen.
+// ---------------------------------------------------------------------------
+
+/** Soll archiviert werden? Ohne eigene Einstellung folgt der Schalter dem der Belegblätter. */
+function stupa_nc_enabled(): bool
+{
+    $an = setting_get('nc_stupa_enabled');
+    if ($an === null) $an = (string)setting_get('nc_expense_enabled', '0');
+    return $an === '1' && nc_configured();
+}
+
+/** Basisordner der StuPa-Ablage, relativ zur WebDAV-Wurzel des App-Kontos. */
+function stupa_nc_base(): string
+{
+    return trim(str_replace('\\', '/', (string)setting_get('nc_stupa_folder', 'Referate/Finanzen/StuPa-Auszahlungen')), '/');
+}
+
+/** Zielordner: Basisordner + Jahr der Einreichung. */
+function stupa_nc_folder(array $c): string
+{
+    $t = strtotime((string)$c['created_at']);
+    return trim(stupa_nc_base() . '/' . ($t ? date('Y', $t) : date('Y')), '/');
+}
+
+/** Dateiname ohne Endung – derselbe wie beim Herunterladen in der App, die Nr. macht ihn eindeutig. */
+function stupa_nc_basename(array $c): string
+{
+    return (string)preg_replace('/\.docx$/', '', stupa_auszahlung_filename($c));
+}
+
+/** Alle Dateien eines Vorgangs, auch die an Nachrichten (in der Reihenfolge des Hochladens). */
+function stupa_files_all_of(int $claimId): array
+{
+    $st = db()->prepare('SELECT * FROM stupa_files WHERE claim_id = ? ORDER BY id');
+    $st->execute([$claimId]);
+    return $st->fetchAll();
+}
+
+/**
+ * Aufforderung (als PDF) und alle Belege in der Nextcloud ablegen bzw. ersetzen.
+ * Rückgabe: true = abgelegt (ein einzelner Beleg kann trotzdem gescheitert sein, dann steht
+ * er in $err und der Cron versucht es wieder), false = ausgeschaltet oder Fehler.
+ */
+function stupa_nc_sync(int $claimId, ?string &$err = null): bool
+{
+    if (!stupa_nc_enabled()) return false;     // ausgeschaltet ist kein Fehler
+    $c = stupa_claim_get($claimId);
+    if (!$c) { $err = 'Auszahlungsaufforderung nicht gefunden.'; return false; }
+    if (!class_exists('ZipArchive')) { $err = 'Word-Export nicht möglich (ZipArchive fehlt auf dem Server).'; return false; }
+
+    $pdf = graph_docx_pdf(stupa_auszahlung_docx($c), 'Auszahlung_' . $claimId, $err);
+    if ($pdf === null) return false;
+    $folder = stupa_nc_folder($c);
+    $base   = stupa_nc_basename($c);
+    $target = $folder . '/' . $base . '.pdf';
+    if (!dav_put('nextcloud', $target, $pdf, $err)) return false;
+    $old = expense_nc_path('stupa', $claimId);
+    if ($old !== '' && $old !== $target) { $e = null; dav_delete('nextcloud', $old, $e); }
+    expense_nc_remember('stupa', $claimId, $target, $base . '.pdf');
+
+    $n = 0;
+    foreach (stupa_files_all_of($claimId) as $f) {
+        $n++;
+        $src = upload_dir() . '/' . basename((string)$f['stored_name']);
+        if (!is_file($src)) continue;
+        $ext = strtolower((string)pathinfo((string)$f['orig_name'], PATHINFO_EXTENSION));
+        $attName = $base . '-Beleg' . $n . ($ext !== '' ? '.' . $ext : '');
+        $attPath = $folder . '/' . $attName;
+        if (expense_nc_path('stupa_att', (int)$f['id']) === $attPath) continue;   // liegt schon dort
+        $bytes = file_get_contents($src);
+        if ($bytes === false) continue;
+        $attErr = null;
+        if (!dav_put('nextcloud', $attPath, $bytes, $attErr)) { $err = $attErr; continue; }
+        expense_nc_remember('stupa_att', (int)$f['id'], $attPath, $attName);
+    }
+    return true;
+}
+
+/** Vorgänge, die noch (ganz oder teilweise) fehlen: kein PDF abgelegt oder ein Beleg ohne Ablage. */
+function stupa_nc_ausstehend(): array
+{
+    $ids = db()->query("SELECT c.id FROM stupa_claims c
+        WHERE NOT EXISTS (SELECT 1 FROM nc_files n WHERE n.kind = 'stupa' AND n.ref_id = c.id) ORDER BY c.id")->fetchAll(PDO::FETCH_COLUMN);
+    // Belege nur, wenn die Datei noch da ist – sonst würde ein verschwundener Beleg jeden Lauf neu anstoßen
+    foreach (db()->query("SELECT f.claim_id, f.stored_name FROM stupa_files f
+        WHERE NOT EXISTS (SELECT 1 FROM nc_files n WHERE n.kind = 'stupa_att' AND n.ref_id = f.id)")->fetchAll() as $f) {
+        if (is_file(upload_dir() . '/' . basename((string)$f['stored_name']))) $ids[] = $f['claim_id'];
+    }
+    $ids = array_values(array_unique(array_map('intval', $ids)));
+    sort($ids);
+    return $ids;
+}
+
+/** Für den Cron: bis zu $max ausstehende Vorgänge ablegen. Rückgabe: ['ok' => n, 'fehler' => [Meldungen]]. */
+function stupa_nc_nachholen(int $max = 3): array
+{
+    $out = ['ok' => 0, 'fehler' => []];
+    if (!stupa_nc_enabled()) return $out;
+    foreach (array_slice(stupa_nc_ausstehend(), 0, $max) as $id) {
+        $err = null;
+        if (stupa_nc_sync($id, $err) && $err === null) $out['ok']++;
+        else $out['fehler'][] = 'Nr' . $id . ': ' . ($err ?? 'unbekannter Fehler');
+    }
+    return $out;
 }
 
 // ---------------------------------------------------------------------------
@@ -16217,41 +16907,32 @@ function raum_wochenansicht(array $o): string
 }
 
 /**
- * „Neu im StuPa-Bereich" – derselbe Splash wie in der App (app_neuigkeiten_html, app.js), mit
- * eigenem Inhalt und eigenem Merker an stupa_users. Einmal am Desktop, einmal am Handy. Anders als
- * in der App sehen ihn auch neu angelegte Zugänge: Einen Rundgang gibt es hier nicht.
- * Für ein neues Update: Version hochsetzen, Punkte tauschen (Links relativ zu stupa/).
+ * „Neu im StuPa-Bereich" – derselbe Splash wie in der App (Baukasten, Ziel 'stupa'), mit eigenem
+ * Merker an stupa_users. Einmal am Desktop, einmal am Handy. Anders als in der App sehen ihn auch
+ * neu angelegte Zugänge: Einen Rundgang gibt es hier nicht. Links sind relativ zu stupa/.
  */
-const STUPA_NEUIGKEITEN_VERSION = '2026-10-raeume-umlauf';
-
-function stupa_neuigkeiten(): array
+function stupa_neuigkeiten(): ?array
 {
-    return [
-        'kicker' => 'Neu im StuPa-Bereich',
-        'titel'  => 'Zwei neue Werkzeuge',
-        'punkte' => [
-            ['icon' => 'ti-door', 'farbe' => 'petrol', 'titel' => 'Räume buchen',
-             'text' => 'Seht auf einen Blick, wann die Räume frei sind, und bucht sie direkt. Die Bestätigung kommt per Mail.',
-             'link' => 'raeume.php', 'knopf' => 'Zur Raumbelegung'],
-            ['icon' => 'ti-mailbox', 'farbe' => 'violett', 'titel' => 'Umlaufverfahren',
-             'text' => 'Beschlüsse außerhalb der Sitzung: Mitgliederliste anlegen, Umlauf starten – jedes Mitglied stimmt über seinen <strong>persönlichen Link</strong> ab, namentlich oder geheim. Die Umläufe seht nur ihr.',
-             'link' => 'umlauf.php', 'knopf' => 'Zu den Umläufen'],
-        ],
-        'ausserdem' => 'Oben in der Leiste stehen jetzt Auszahlungen, Räume und Umläufe nebeneinander.',
-    ];
+    return splash_live('stupa')['inhalt'] ?? null;
+}
+
+function stupa_neuigkeiten_version(): string
+{
+    return (string)(splash_live('stupa')['version'] ?? '');
 }
 
 /** Wo steht der StuPa-Splash noch aus? ['desktop' => bool, 'mobil' => bool]. */
 function stupa_neuigkeiten_offen(int $userId): array
 {
     $nein = ['desktop' => false, 'mobil' => false];
-    if ($userId <= 0) return $nein;
+    $v = stupa_neuigkeiten_version();
+    if ($userId <= 0 || $v === '') return $nein;
     try {
         $s = db()->prepare('SELECT news_seen, news_seen_mobil FROM stupa_users WHERE id = ? AND active = 1');
         $s->execute([$userId]);
         $r = $s->fetch();
         if (!$r) return $nein;
-        return ['desktop' => (string)$r['news_seen'] !== STUPA_NEUIGKEITEN_VERSION, 'mobil' => (string)$r['news_seen_mobil'] !== STUPA_NEUIGKEITEN_VERSION];
+        return ['desktop' => (string)$r['news_seen'] !== $v, 'mobil' => (string)$r['news_seen_mobil'] !== $v];
     } catch (\Throwable $e) { return $nein; }
 }
 
@@ -16259,7 +16940,7 @@ function stupa_neuigkeiten_gesehen(int $userId, string $geraet): void
 {
     if ($userId <= 0 || !in_array($geraet, ['desktop', 'mobil'], true)) return;
     $spalte = $geraet === 'mobil' ? 'news_seen_mobil' : 'news_seen';
-    try { db()->prepare("UPDATE stupa_users SET $spalte = ? WHERE id = ?")->execute([STUPA_NEUIGKEITEN_VERSION, $userId]); } catch (\Throwable $e) {}
+    try { db()->prepare("UPDATE stupa_users SET $spalte = ? WHERE id = ?")->execute([stupa_neuigkeiten_version(), $userId]); } catch (\Throwable $e) {}
 }
 
 // ---- Zugänge des StuPa-Präsidiums (eigene Konten, kein Eintrag in members) ----
@@ -18209,8 +18890,10 @@ function page_header(string $title, bool $admin = false): void
 <style>.brand-logo-img{background-image:url('<?= $markeCss ?>')}</style>
 <?php endif; ?>
 </head>
-<?php $bodyClass = trim(($admin ? 'admin ' : '') . ($GLOBALS['ASTA_BODYCLASS'] ?? '')); ?>
-<body<?= $bodyClass ? ' class="' . h($bodyClass) . '"' : '' ?>>
+<?php $bodyClass = trim(($admin ? 'admin ' : '') . ($GLOBALS['ASTA_BODYCLASS'] ?? ''));
+      // Während der Wartung schaltet app.js die Speichern-Knöpfe ab – gesperrt wird auf dem Server.
+      $wartungLesen = is_logged_in() && wartung_lesen(); ?>
+<body<?= $bodyClass ? ' class="' . h($bodyClass) . '"' : '' ?><?= $wartungLesen ? ' data-wartung="1"' : '' ?>>
 <header class="topbar">
   <div class="brand-wrap">
     <a class="brand" href="<?= $b ?><?= is_logged_in() ? 'dashboard.php' : 'login.php' ?>">
@@ -18389,6 +19072,13 @@ function page_header(string $title, bool $admin = false): void
   <div class="techbanner">
     <i class="ti ti-alert-triangle-filled"></i>
     <div><strong>Du bist im Technik-Login.</strong> Dieser Zugang ist nur für <strong>Notfälle und die Ersteinrichtung</strong> gedacht – nicht für den Alltag. Melde dich für die normale Nutzung mit deinem <a href="<?= $b ?>login.php">persönlichen Login-Link</a> an.</div>
+  </div>
+<?php endif; ?>
+<?php if (wartung_aktiv()): ?>
+  <div class="techbanner wartbanner" role="status">
+    <i class="ti ti-tool"></i>
+    <div><strong>Wartung</strong> – <?= nl2br(h(wartung_text())) ?>
+      <?php if (is_logged_in() && wartung_darf()): ?><br><span class="small">Als Admin arbeitest du normal weiter. <?= app_place('verwaltung', 'Wartung beenden', 'wartung') ?></span><?php endif; ?></div>
   </div>
 <?php endif; ?>
 <?php if ($flashes): ?>

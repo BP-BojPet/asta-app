@@ -109,7 +109,7 @@ function stupa_footer(): void
     $neuZeigen = $neuOffen['desktop'] || $neuOffen['mobil'];
     ?>
 </main>
-<?php if ($neuZeigen) echo app_neuigkeiten_html('', stupa_neuigkeiten()); ?>
+<?php if ($neuZeigen) echo app_neuigkeiten_html('', stupa_neuigkeiten(), 'stupa'); ?>
 <script>window.ASTA_CSRF=<?= json_encode(csrf_token()) ?>;<?php if ($neuZeigen): ?>window.ASTA_NEWS=<?= json_encode($neuOffen) ?>;window.ASTA_NEWS_URL='neu.php';<?php endif; ?></script>
 <footer class="foot"><span class="muted small"><?= h(org_name_kurz()) ?> · Bereich des StuPa-Präsidiums</span></footer>
 <script src="../assets/app.js?v=<?= STUPA_ASSET_V ?>"></script>

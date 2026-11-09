@@ -580,6 +580,24 @@ html[data-theme="dark"] .attr-badge.a3 { color: #b48cec; }
 .techbanner a { color: #7a5200; font-weight: 700; }
 html[data-theme="dark"] .techbanner { background: #2a2010; border-color: #b9791a; color: #e6c172; }
 html[data-theme="dark"] .techbanner .ti, html[data-theme="dark"] .techbanner a { color: #e6c172; }
+/* Wartung: dieselbe Warnfarbe wie der Technik-Login; app.js sperrt die Speichern-Knöpfe (body[data-wartung]) */
+.wartbanner .small { color: inherit; opacity: .9; }
+body[data-wartung] form[method="post" i] button[disabled],
+body[data-wartung] form[method="post" i] input[type="submit"][disabled] { opacity: .45; cursor: not-allowed; }
+
+/* Hinweis-Banner auf dem Dashboard: wie der Vorlesungsfrei-Hinweis, nur ohne ✕ */
+.ban-banner { margin-bottom: 1rem; border-left: 4px solid var(--petrol); }
+.ban-banner .section-title { margin-top: 0; }
+.ban-banner .ban-mark { color: var(--petrol); }
+.ban-banner p { margin: 0; overflow-wrap: anywhere; }
+/* Symbol-Auswahl: Kacheln statt Dropdown, damit man das Symbol sieht */
+.ban-icons { display: flex; flex-wrap: wrap; gap: .4rem; margin: .3rem 0 .2rem; padding: 0; border: 0; }
+.ban-icons label { margin: 0; }
+.ban-icons input { position: absolute; opacity: 0; pointer-events: none; }
+.ban-icons span { display: inline-flex; align-items: center; justify-content: center; width: 2.6rem; height: 2.6rem;
+  border: 1px solid var(--line); border-radius: 10px; font-size: 1.3rem; color: var(--muted); cursor: pointer; }
+.ban-icons input:checked + span { border-color: var(--petrol); background: var(--petrol); color: #fff; }
+.ban-icons input:focus-visible + span { outline: 2px solid var(--petrol); outline-offset: 2px; }
 
 /* ---- Event-Detail ---- */
 .event-hero { padding: 1.4rem 1.5rem; }
@@ -5014,6 +5032,23 @@ html[data-theme="dark"] .raum-eintrag.raum-stupa { background: rgba(129, 140, 24
     radial-gradient(circle at 64% 28%, rgba(255, 255, 255, .22) 0 1px, transparent 2px),
     radial-gradient(120% 140% at 100% 0%, #1f7f99 0%, transparent 55%),
     linear-gradient(135deg, #0E5C73 0%, #083a47 100%); }
+/* Kopf-Verläufe aus dem Baukasten (splash_kopf_stile): dieselben Funkel-Punkte, anderer Grund */
+.neu-kopf-nacht, .neu-kopf-sonne, .neu-kopf-wald, .neu-kopf-beere {
+  background:
+    radial-gradient(circle at 88% 18%, rgba(255, 255, 255, .35) 0 2px, transparent 3px),
+    radial-gradient(circle at 76% 62%, rgba(255, 255, 255, .28) 0 1.5px, transparent 2.5px),
+    radial-gradient(circle at 93% 78%, rgba(255, 214, 120, .45) 0 2px, transparent 3px),
+    radial-gradient(circle at 64% 28%, rgba(255, 255, 255, .22) 0 1px, transparent 2px),
+    radial-gradient(120% 140% at 100% 0%, var(--nk-glanz) 0%, transparent 55%),
+    linear-gradient(135deg, var(--nk-a) 0%, var(--nk-b) 100%); }
+.neu-kopf-nacht { --nk-glanz: #6d4fd0; --nk-a: #3a2a7a; --nk-b: #17112f; }
+.neu-kopf-sonne { --nk-glanz: #f0a43a; --nk-a: #b4531a; --nk-b: #6e2a0c; }
+.neu-kopf-wald  { --nk-glanz: #4fae7a; --nk-a: #1e6b48; --nk-b: #0b3424; }
+.neu-kopf-beere { --nk-glanz: #e2639b; --nk-a: #9c2459; --nk-b: #4f0f2e; }
+.neu-kopf-nacht .neu-kicker { color: #d3c6f5; }
+.neu-kopf-sonne .neu-kicker { color: #ffe0b8; }
+.neu-kopf-wald  .neu-kicker { color: #c3ecd5; }
+.neu-kopf-beere .neu-kicker { color: #ffd0e3; }
 .neu-funkeln { display: inline-grid; place-items: center; width: 2.6rem; height: 2.6rem; border-radius: 50%;
   background: rgba(255, 255, 255, .14); border: 1px solid rgba(255, 255, 255, .22); font-size: 1.35rem; margin-bottom: .7rem;
   animation: neu-funkeln 2.4s ease-in-out .5s 2; }
@@ -5032,6 +5067,8 @@ html[data-theme="dark"] .raum-eintrag.raum-stupa { background: rgba(129, 140, 24
 .neu-petrol .neu-icon  { background: var(--petrol-soft); color: var(--petrol); }
 .neu-gold .neu-icon    { background: var(--amber-bg); color: var(--amber); }
 .neu-violett .neu-icon { background: var(--violet-bg); color: var(--violet); }
+.neu-gruen .neu-icon   { background: var(--green-bg); color: var(--green); }
+.neu-rot .neu-icon     { background: var(--red-bg); color: var(--red); }
 .neu-inhalt h3 { margin: .15rem 0 .2rem; font-size: 1.02rem; color: var(--ink); }
 .neu-inhalt p { margin: 0; font-size: .92rem; line-height: 1.5; color: var(--muted); }
 .neu-inhalt p strong { color: var(--ink); }
@@ -5040,6 +5077,11 @@ html[data-theme="dark"] .raum-eintrag.raum-stupa { background: rgba(129, 140, 24
 .neu-orte li { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; font-size: .86rem; line-height: 1.3;
   padding: .45rem .6rem; border-radius: 10px; background: var(--violet-bg); color: var(--ink); }
 .neu-orte li > .ti { color: var(--violet); font-size: 1.05rem; }
+/* … in der Farbe ihres Punktes (Violett ist die Grundform) */
+.neu-petrol .neu-orte li { background: var(--petrol-soft); }  .neu-petrol .neu-orte li > .ti { color: var(--petrol); }
+.neu-gold .neu-orte li   { background: var(--amber-bg); }     .neu-gold .neu-orte li > .ti   { color: var(--amber); }
+.neu-gruen .neu-orte li  { background: var(--green-bg); }     .neu-gruen .neu-orte li > .ti  { color: var(--green); }
+.neu-rot .neu-orte li    { background: var(--red-bg); }       .neu-rot .neu-orte li > .ti    { color: var(--red); }
 .neu-orte li span { color: var(--muted); font-size: .8rem; display: inline-flex; align-items: center; gap: .2rem; }
 .neu-orte li span .ti { font-size: .8rem; }
 .neu-mehr { display: inline-flex; align-items: center; gap: .3rem; margin-top: .45rem; font-size: .88rem; font-weight: 700;
@@ -5065,6 +5107,35 @@ html[data-theme="dark"] .raum-eintrag.raum-stupa { background: rgba(129, 140, 24
 @media (prefers-reduced-motion: reduce) {
   .neu-splash[open], .neu-splash::backdrop, .neu-splash.ist-zu, .neu-punkt, .neu-funkeln { animation: none; }
 }
+
+/* Splash-Baukasten (admin/neuigkeiten.php) */
+.sp-zeile { display: flex; align-items: center; justify-content: space-between; gap: .6rem 1rem; flex-wrap: wrap; }
+.sp-liste { display: flex; flex-direction: column; gap: .8rem; }
+.sp-liste .sp-zeile + .sp-zeile { border-top: 1px solid var(--line); padding-top: .8rem; }
+.sp-icon-wahl { margin: .5rem 0 .3rem; }
+.sp-icon-wahl summary { cursor: pointer; display: inline-flex; align-items: center; gap: .45rem; font-size: .9rem; font-weight: 600; }
+.sp-icon-jetzt { display: inline-grid; place-items: center; width: 2rem; height: 2rem; border-radius: 9px; background: var(--petrol-soft); color: var(--petrol); font-size: 1.1rem; }
+.sp-icon-wahl .ban-icons { margin-top: .5rem; }
+.sp-kopf-wahl { display: flex; flex-wrap: wrap; gap: .5rem; margin: .3rem 0 .4rem; }
+.sp-kopf-wahl label { margin: 0; }
+.sp-kopf-wahl input, .sp-farb-wahl input { position: absolute; opacity: 0; pointer-events: none; }
+.sp-kopf-wahl .neu-kopf { display: inline-block; padding: .55rem .9rem; border-radius: 10px; font-size: .85rem; font-weight: 700; cursor: pointer;
+  outline: 3px solid transparent; outline-offset: 2px; }
+.sp-kopf-wahl input:checked + .neu-kopf { outline-color: var(--petrol); }
+.sp-kopf-wahl input:focus-visible + .neu-kopf, .sp-farb-wahl input:focus-visible + .neu-icon { outline: 2px dashed var(--petrol); outline-offset: 3px; }
+.sp-farb-wahl { display: flex; flex-wrap: wrap; gap: .5rem; margin: .3rem 0 .4rem; }
+.sp-farb-wahl label { margin: 0; display: flex; flex-direction: column; align-items: center; gap: .2rem; cursor: pointer; }
+.sp-farb-wahl .neu-icon { width: 2.5rem; height: 2.5rem; font-size: 1.2rem; border: 2px solid transparent; }
+.sp-farb-wahl input:checked + .neu-icon { border-color: currentColor; }
+.sp-punkt { scroll-margin-top: 5rem; }
+.sp-punkt-kopf { display: flex; align-items: center; justify-content: space-between; gap: .6rem; margin-bottom: .3rem; }
+.sp-punkt-kopf strong { display: inline-flex; align-items: center; gap: .5rem; }
+.sp-mini { width: 1.9rem; height: 1.9rem; font-size: 1rem; border-radius: 9px; }
+.sp-orte { margin-top: .7rem; }
+.sp-orte summary { cursor: pointer; font-size: .9rem; font-weight: 600; }
+.sp-ort { display: grid; grid-template-columns: minmax(7rem, 10rem) 1fr 1.4fr; gap: .4rem; margin-top: .45rem; }
+.sp-aktionen { margin: 1rem 0 .4rem; }
+@media (max-width: 640px) { .sp-ort { grid-template-columns: 1fr 1fr; } .sp-ort select { grid-column: 1 / -1; } }
 
 /* -----------------------------------------------------------------------------------------
    Umlaufverfahren des StuPa: Abstimmungsseite (stupa/abstimmen.php, öffentlich, strenge CSP –

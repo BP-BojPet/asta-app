@@ -659,6 +659,32 @@
   }
 })();
 
+/* Wartung (body[data-wartung]): Speichern-Knöpfe abschalten, damit niemand erst tippt und dann
+   abgewiesen wird. Gesperrt wird auf dem Server (wartung_sperre); das hier ist nur die Anzeige.
+   Der Submit-Wächter sitzt auf window in der Capture-Phase, also vor allen anderen Handlern. */
+(function () {
+  if (!document.body || !document.body.hasAttribute('data-wartung')) return;
+  var MSG = 'Gerade läuft eine Wartung – bis sie vorbei ist, lässt sich nichts speichern.';
+  function istPost(f) { return f instanceof HTMLFormElement && (f.getAttribute('method') || '').toLowerCase() === 'post'; }
+  function sperren(root) {
+    (root || document).querySelectorAll('form').forEach(function (f) {
+      if (!istPost(f)) return;
+      f.querySelectorAll('button:not([type="button"]), input[type="submit"]').forEach(function (b) {
+        b.disabled = true;
+        b.title = MSG;
+      });
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { sperren(); });
+  else sperren();
+  window.addEventListener('submit', function (e) {
+    if (!istPost(e.target)) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (window.astaToast) astaToast(MSG, 'error');
+  }, true);
+})();
+
 /* Einstellungs-Formulare ohne Seiten-Reload (data-ajax): POST per fetch mit
    X-Requested-With, der Server antwortet 204, die UI kippt lokal. Schlägt der
    fetch fehl, wird klassisch abgeschickt (Fallback ohne Funktionsverlust). */
@@ -1401,9 +1427,10 @@
   });
 })();
 
-/* iOS-App (Standalone): Office-Dateien über das Teilen-Blatt öffnen.
+/* iOS-App (Standalone): Office- und andere Dateien über das Teilen-Blatt öffnen.
    Das In-App-Browser-Fenster (WKWebView) der installierten App kann DOCX/XLSX/PPTX
-   nicht darstellen – es bleibt eine weiße Seite (Text und PDF gehen, Word nicht).
+   (und alles, was als Anhang kommt) nicht darstellen – es bleibt eine weiße Seite
+   (Text, Bilder und PDF gehen).
    Deshalb: Tap auf einen Office-Datei-Link → Datei per fetch holen und dem
    iOS-Teilen-Blatt geben („In Word öffnen", „In Dateien sichern" …) – die App
    bleibt dabei einfach offen. PDFs/Bilder behalten ihre Fenster-Vorschau.
@@ -1412,12 +1439,15 @@
   var standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
   var ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && 'ontouchend' in document);
   if (!standalone || !ios || !navigator.canShare) return;
-  var OFFICE = /officedocument|ms-?word|ms-?excel|ms-?powerpoint/i;
-  // Endpunkte, die IMMER Word liefern; download.php nur, wenn der Link-Text nach Office-Datei aussieht
+  // Was das Fenster selbst zeigen kann; alles andere (Word, ODT, Pages, ZIP …) geht ans Teilen-Blatt.
+  var ANSEHEN = /^(application\/pdf|image\/|text\/plain)/i;
+  // Endpunkte, die IMMER Word liefern (WORD_PARAMS – der Selbsttest gleicht sie mit dem PHP ab);
+  // download.php (App und StuPa-Bereich), wenn der Link-Text nicht nach PDF, Bild oder Text aussieht
+  var WORD_PARAMS = /[?&](dl|sdl|protokoll|protokoll_intern|download)=/;
   function officeLink(a) {
     var href = a.getAttribute('href') || '';
-    if (/[?&](dl|protokoll|protokoll_intern|download)=/.test(href)) return true;
-    if (/(^|\/)download\.php\?/.test(href)) return /\.(docx?|xlsx?|pptx?)\s*$/i.test(a.textContent || '');
+    if (WORD_PARAMS.test(href)) return true;
+    if (/(^|\/)download\.php\?/.test(href)) return !/\.(pdf|jpe?g|png|gif|webp|heic|heif|txt)\s*$/i.test(a.textContent || '');
     return false;
   }
   document.addEventListener('click', function (e) {
@@ -1433,8 +1463,8 @@
       var type = (r.headers.get('Content-Type') || '').split(';')[0].trim() || 'application/octet-stream';
       return r.blob().then(function (b) { return { file: new File([b], name, { type: type }), type: type }; });
     }).then(function (got) {
-      // Kein Office (z. B. PDF-Anhang über download.php)? Dann normale Fenster-Vorschau.
-      if (!OFFICE.test(got.type)) { window.open(a.href, '_blank'); return; }
+      // Doch etwas zum Ansehen (z. B. ein PDF mit ungewöhnlichem Namen)? Dann normale Fenster-Vorschau.
+      if (ANSEHEN.test(got.type)) { window.open(a.href, '_blank'); return; }
       var data = { files: [got.file] };
       if (!navigator.canShare(data)) { window.open(a.href, '_blank'); return; }
       return navigator.share(data).catch(function (err) {
@@ -2334,4 +2364,31 @@
     if (document.querySelector('.tour-ov, .tour-tip')) return;   // Rundgang läuft
     dlg.showModal();
   }, 450);
+})();
+
+/* Splash-Baukasten: Vorschau ([data-neu-vorschau] öffnet den Dialog mit dieser id) – meldet nichts
+   und folgt keinem Link. Dazu zeigt die Symbol-Auswahl ihr gewähltes Symbol in der Zusammenfassung. */
+(function () {
+  function oeffnen(id) {
+    var d = document.getElementById(id);
+    if (d && typeof d.showModal === 'function' && !d.open) d.showModal();
+  }
+  document.addEventListener('click', function (ev) {
+    var k = ev.target.closest ? ev.target.closest('[data-neu-vorschau]') : null;
+    if (k) { oeffnen(k.getAttribute('data-neu-vorschau')); return; }
+    var d = ev.target.closest ? ev.target.closest('dialog.neu-splash') : null;
+    if (!d || d.id === 'neuSplash') return;
+    if (ev.target === d || (ev.target.closest && ev.target.closest('[data-neu-zu]'))) {
+      ev.preventDefault();
+      d.close();
+    }
+  });
+  document.addEventListener('change', function (ev) {
+    var t = ev.target;
+    if (!t || t.type !== 'radio' || !t.closest) return;
+    var wahl = t.closest('.sp-icon-wahl');
+    var jetzt = wahl ? wahl.querySelector('.sp-icon-jetzt .ti') : null;
+    if (jetzt) jetzt.className = 'ti ti-' + t.value;
+  });
+  if (window.ASTA_NEU_VORSCHAU) setTimeout(function () { oeffnen(window.ASTA_NEU_VORSCHAU); }, 300);
 })();

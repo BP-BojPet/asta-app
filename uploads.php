@@ -38,11 +38,12 @@ $FOLDER_SLOTS = [
     'protocol_intern' => ['key' => 'protocol_teams_intern_folder','anchor' => '#protokoll-workflow'], // internes Protokoll
     'protocol_olat'   => ['key' => 'protocol_olat_folder',        'anchor' => '#protokoll-workflow'], // veröffentlichtes PDF (nur öffentlich)
     'expense'         => ['key' => 'nc_expense_folder',           'anchor' => '#belege'],              // Belegblatt-Archiv in der Nextcloud
+    'stupa'           => ['key' => 'nc_stupa_folder',             'anchor' => '#stupa-belege'],        // StuPa-Auszahlungen in der Nextcloud
 ];
 // Backend eines Slots: fest (Protokoll) oder abhängig von der gewählten Ziel-Ablage (Berichte-Dok).
 $folder_backend = function (string $slot): string {
     if ($slot === 'protocol_olat') return 'olat';
-    if ($slot === 'expense') return 'nextcloud';
+    if ($slot === 'expense' || $slot === 'stupa') return 'nextcloud';
     if ($slot === 'report') {
         $t = (string)setting_get('auto_reportdoc_target', 'sharepoint');
         if ($t === 'olat' || $t === 'nextcloud') return $t;
@@ -268,6 +269,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         setting_set('nc_expense_enabled', ($_POST['enabled'] ?? '') === '1' ? '1' : '0');
         flash('Belegblatt-Archiv gespeichert.', 'success');
         redirect('uploads.php#belege');
+    }
+
+    if ($action === 'save_stupa_nc') {
+        setting_set('nc_stupa_enabled', ($_POST['enabled'] ?? '') === '1' ? '1' : '0');
+        flash('StuPa-Ablage gespeichert.' . (stupa_nc_enabled() && ($n = count(stupa_nc_ausstehend()))
+            ? ' ' . $n . ' Auszahlung(en) legt der Automations-Cron nach und nach ab.' : ''), 'success');
+        redirect('uploads.php#stupa-belege');
     }
 
     if ($action === 'save_auto_reportdoc') {
@@ -705,6 +713,46 @@ $expPdfOk  = graph_configured() && trim((string)setting_get('graph_drive_id', ''
     <span class="muted">/ <?= date('Y') ?> (automatisch)</span>
   </p>
   <?php $renderPicker('expense', $expFolder, 'Wurzel des Kontos', $expReady,
+      '<p class="help">Bitte zuerst unter <a href="uploads.php?t=nextcloud#nc-config">Technik → Nextcloud</a> die Verbindung einrichten – danach lässt sich der Ordner anklicken.</p>'); ?>
+</div>
+
+<?php
+// --- StuPa-Auszahlungen (Nextcloud) ---
+$spOn      = stupa_nc_enabled();
+$spFolder  = stupa_nc_base();
+$spOffen   = $spOn ? count(stupa_nc_ausstehend()) : 0;
+?>
+<div class="card" id="stupa-belege">
+  <div class="auto-head"><h2 style="margin:0"><i class="ti ti-building-community" style="color:var(--petrol)"></i> StuPa-Auszahlungen → Nextcloud</h2></div>
+  <p class="help">Jede Auszahlungsaufforderung des StuPa-Präsidiums wird als <strong>PDF</strong> in der Nextcloud abgelegt –
+    unter <code>&lt;Ordner&gt;/&lt;Jahr&gt;/Auszahlungsaufforderung_DATUM_NrID.pdf</code>, die Belege als eigene Dateien daneben,
+    auch die, die das Präsidium später nachreicht. Was beim Einreichen nicht klappt oder schon vorher da war,
+    legt der Automations-Cron nach und nach ab.</p>
+  <p class="help"><i class="ti ti-lock"></i> <strong>Auch hier stehen Kontoinhaber:innen und IBANs drin.</strong>
+    Teile den Ordner in der Nextcloud <strong>nur mit dem Finanzen-Team</strong>.</p>
+  <form method="post">
+    <?= csrf_field() ?><input type="hidden" name="action" value="save_stupa_nc">
+    <label class="wl-sw slim"><input type="checkbox" name="enabled" value="1"<?= $spOn ? ' checked' : '' ?><?= $expReady ? '' : ' disabled' ?>>
+      <span class="wl-sw-track" aria-hidden="true"></span>
+      <span class="wl-sw-txt"><strong>StuPa-Auszahlungen automatisch in der Nextcloud ablegen</strong></span></label>
+    <?php if (!$expReady): ?>
+      <p class="help">Dafür muss zuerst die <a href="uploads.php?t=nextcloud#nc-config">Nextcloud eingerichtet</a> sein.</p>
+    <?php elseif (!$expPdfOk): ?>
+      <p class="up-test bad"><i class="ti ti-alert-triangle"></i> Für die <strong>PDF-Wandlung</strong> wird die
+        Teams-Anbindung samt gewählter Dokumentbibliothek gebraucht – wie bei den Belegblättern.</p>
+    <?php elseif ($spOffen > 0): ?>
+      <p class="up-test"><i class="ti ti-clock"></i> Noch nicht (vollständig) abgelegt: <strong><?= $spOffen ?></strong> Auszahlung(en) –
+        der Automations-Cron holt sie nach, drei je Lauf.</p>
+    <?php endif; ?>
+    <div class="btn-row"><button class="btn" type="submit"><i class="ti ti-device-floppy"></i> Speichern</button></div>
+  </form>
+  <hr class="auto-sep">
+  <h3 style="margin:.2rem 0 .3rem"><i class="ti ti-brand-nextcloud"></i> Zielordner <span class="small muted" style="font-weight:400">· Nextcloud, Jahr kommt automatisch dazu</span></h3>
+  <p class="up-test<?= $spFolder !== '' ? ' ok' : '' ?>" style="margin:.2rem 0 .5rem">
+    <i class="ti ti-folder"></i> Aktuell: <strong><?= $spFolder !== '' ? h($spFolder) : 'Wurzel des Kontos' ?></strong>
+    <span class="muted">/ <?= date('Y') ?> (automatisch)</span>
+  </p>
+  <?php $renderPicker('stupa', $spFolder, 'Wurzel des Kontos', $expReady,
       '<p class="help">Bitte zuerst unter <a href="uploads.php?t=nextcloud#nc-config">Technik → Nextcloud</a> die Verbindung einrichten – danach lässt sich der Ordner anklicken.</p>'); ?>
 </div>
 

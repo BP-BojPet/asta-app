@@ -33,7 +33,7 @@ $ringPct = ($bestScore > 0 && $bd['total'] > 0) ? max(6, min(100, $bd['total'] /
   </div>
   <div>
     <div><span class="pill <?= ['spitze'=>'pill-spitze','gut'=>'pill-ok','okay'=>'pill-info','ausbaufaehig'=>'pill-bad'][$band] ?>"><i class="ti <?= score_band_icon($band) ?>"></i> <?= h(score_band_label($band)) ?></span> im Vergleich zum Schnitt (⌀ <?= number_format($avg, 1, ',', '') ?>)</div>
-    <p class="small muted" style="margin:.5rem 0 0">So entstehen Punkte: eingeteilte Schicht <strong>+1</strong> (über 2&nbsp;Std. <strong>+2</strong>), nicht abgestimmt <strong>−2</strong>, verfügbar aber nicht eingeteilt oder überall „nein" <strong>0</strong>. Event-Orga/Besitzer:innen bekommen für ihr eigenes Event automatisch die <strong>Event-Maximalpunktzahl minus 1</strong> (also +3, bei wichtigen Events +4) – ohne sich eintragen zu müssen.</p>
+    <p class="small muted" style="margin:.5rem 0 0">So entstehen Punkte: eingeteilte Schicht <strong>+1</strong> (über 2&nbsp;Std. <strong>+2</strong>), nicht abgestimmt <strong>−2</strong>, verfügbar aber nicht eingeteilt oder überall „nein" <strong>0</strong>. Event-Orga/Besitzer:innen bekommen für ihr eigenes Event automatisch die <strong>Event-Maximalpunktzahl minus 1</strong> (also +3, bei wichtigen Events +4) – ohne sich eintragen zu müssen. Liegt die Frist in einer Wartung der App, kostet nicht abstimmen nichts.</p>
   </div>
 </div>
 

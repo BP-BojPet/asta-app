@@ -337,6 +337,7 @@ if ($scoreBand === 'spitze' || royal_test_active()) { // Royal-Testmodus (Gefahr
       // (avatar_ring_class), damit Profil und Hero denselben Ring zeigen.
       $avRingVoll = avatar_ring_class($meId, $allScores);
       $ringTitle  = avatar_ring_titel($avRingVoll); ?>
+<?= banner_html() ?>
 <?php // Beide Hinweise lassen sich wegklicken: das ✕ lässt sie als Symbol in die Titelleiste fliegen
       // (Merker im Browser, siehe page_header/app.js) – ein Klick auf das Symbol holt sie zurück. ?>
 <?php if (in_lecture_break()): $lbUntil = lecture_break_until(); ?>

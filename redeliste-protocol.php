@@ -16,6 +16,8 @@ header('Cache-Control: no-store');
 function jfail(int $code, string $msg): void { http_response_code($code); echo json_encode(['error' => $msg]); exit; }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') jfail(405, 'method');
+// Schreibt in die App – während der Wartung nicht. Die Redeliste selbst läuft weiter.
+if (wartung_aktiv()) jfail(503, 'Gerade läuft eine Wartung der App – die Protokollführung bitte danach in der App eintragen.');
 
 $session = preg_replace('/[^a-zA-Z0-9_-]/', '', (string)($_GET['session'] ?? ''));
 $key     = (string)($_GET['key'] ?? '');

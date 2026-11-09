@@ -24,6 +24,7 @@ Wer noch keinen Zugang hat, wird vom Vorsitz oder Sekretariat angelegt und einge
 ### Dein Dashboard
 Nach dem Login landest du auf dem [Dashboard](dashboard.php). Von oben nach unten:
 
+- Ein **Hinweis für alle**, wenn Sekretariat, Vorsitz oder Admin gerade etwas ankündigen. Er bleibt stehen, bis sie ihn wieder ausschalten.
 - **Nachrichten** von Orga, Vorsitz oder Admin. Manche haben ein Sprungziel: „Ansehen" bringt dich direkt hin, „Gelesen" blendet nur aus.
 - **Offene Aufgaben** – wo du noch abstimmen musst, ob ein Bericht fehlt, ob noch ein „Evtl." offen ist, ob es neue wichtige Infos gibt oder ungelesene Abstimmungsgegenstände.
 - **Deine nächsten Einsätze** und die **nächste Sitzung**.
@@ -162,7 +163,7 @@ Du hast für den AStA Geld ausgelegt? Unter [Auslagen](finanzen.php) füllst du 
 
 Nach dem Absenden siehst du unter „Deine Einreichungen" jederzeit den Stand (**in Bearbeitung** / **erstattet**) und kannst dein Belegblatt als Word-Datei herunterladen. Jedes Belegblatt hat eine **Detailseite mit Nachrichten-Verlauf**: Finanzen kann dort nachfragen („Quittung Nr. 2 fehlt"), du antwortest – beide Seiten auch mit Anhängen. Solange dein Belegblatt offen ist, kannst du es dort auch **bearbeiten oder löschen**.
 
-**Auszahlungsaufforderungen des StuPa** laufen getrennt davon: Das **Präsidium** hat einen eigenen Zugang (ohne Mitgliedskonto) und reicht dort an, was aus einem StuPa-Topf ausgezahlt werden soll. Ein Blatt kann **mehrere Posten** tragen – wer mehrere auf einmal einreicht, bekommt sie zusammen auf **ein** Formular; sonst steht eben ein Posten drauf. Jeder Posten hat eigene Angaben zu Antragsteller:in, Zweck, Betrag, Topf und Konto. Den **Kopf des Formulars** – wievieltes Parlament und die Namen des Präsidiums – pflegt das Präsidium in seinem Bereich selbst, sodass zu Beginn einer Legislatur niemand eine Word-Datei anfassen muss. Finanzen sieht die Aufforderungen in einer eigenen Liste und kann sich das **ausgefüllte Formular als Word-Datei** herunterladen: Seite 1 ist das Blatt zum Weitergeben, Seite 2 ein Anhang mit den Kontodaten und dem Vermerk „nicht für den Druck oder zur Weiterleitung". Rückfragen laufen wie beim Belegblatt über einen Nachrichten-Verlauf – beim Präsidium kommen sie per E-Mail an, weil es kein Dashboard hat. Im selben Bereich hat das Präsidium außerdem die [Raumbelegung](#räume-buchen) und eigene **Umlaufverfahren** – mehr nicht: Mitglieder, Sitzungen oder Events des AStA sieht es dort nicht.
+**Auszahlungsaufforderungen des StuPa** laufen getrennt davon: Das **Präsidium** hat einen eigenen Zugang (ohne Mitgliedskonto) und reicht dort an, was aus einem StuPa-Topf ausgezahlt werden soll. Ein Blatt kann **mehrere Posten** tragen – wer mehrere auf einmal einreicht, bekommt sie zusammen auf **ein** Formular; sonst steht eben ein Posten drauf. Jeder Posten hat eigene Angaben zu Antragsteller:in, Zweck, Betrag, Topf und Konto. Den **Kopf des Formulars** – wievieltes Parlament und die Namen des Präsidiums – pflegt das Präsidium in seinem Bereich selbst, sodass zu Beginn einer Legislatur niemand eine Word-Datei anfassen muss. Finanzen sieht die Aufforderungen in einer eigenen Liste und kann sich das **ausgefüllte Formular als Word-Datei** herunterladen: Seite 1 ist das Blatt zum Weitergeben, Seite 2 ein Anhang mit den Kontodaten und dem Vermerk „nicht für den Druck oder zur Weiterleitung". Rückfragen laufen wie beim Belegblatt über einen Nachrichten-Verlauf – beim Präsidium kommen sie per E-Mail an, weil es kein Dashboard hat. Ist die Nextcloud-Ablage eingeschaltet, landet jede Aufforderung als PDF samt aller Belege, auch nachgereichter, im Finanzen-Ordner der Nextcloud. Im selben Bereich hat das Präsidium außerdem die [Raumbelegung](#räume-buchen) und eigene **Umlaufverfahren** – mehr nicht: Mitglieder, Sitzungen oder Events des AStA sieht es dort nicht.
 
 **Umlaufverfahren des StuPa** gehören allein dem StuPa: Sie liegen in einer eigenen Datenbank, und in der App des AStA gibt es keine Seite, die sie zeigt. Das Präsidium pflegt dafür eine **Mitgliederliste** (Name, Mail; einzeln oder mehrere auf einmal, „Name, Mail" je Zeile; inaktiv gesetzte bekommen keinen Link mehr). Beim Start eines Umlaufs bekommt jedes aktive Mitglied eine Mail mit seinem **persönlichen Abstimmungslink** und stimmt ohne Anmeldung ab. Je Umlauf wählbar: **namentlich** (Stimme bis zur Frist änderbar) oder **geheim** (Stimme und Person werden getrennt gespeichert – nicht einmal die Datenbank weiß, wer wie gestimmt hat; dafür lässt sich die Stimme nicht ändern), die Annahme-Regel (einfache Mehrheit, **Zwei-Drittel-Mehrheit**, Mehrheit aller Stimmberechtigten, einstimmig), eine Mindestbeteiligung, ob das **Ergebnis per Mail an alle** geht oder nur das Präsidium es sieht, und ob Säumige **24 Stunden vor der Frist automatisch erinnert** werden. Von Hand erinnern geht immer. Haben alle abgestimmt oder ist die Frist um, wird ausgewertet. Antworten auf die Mails gehen an das Präsidium, das den Umlauf gestartet hat.
 
@@ -286,7 +287,7 @@ Dazu bekommst du eine **Einordnung relativ zum Gruppenschnitt**: Ausbaufähig, O
 - an einem abgeschlossenen Umlaufverfahren nicht teilgenommen: **−2**
 - an einer abgeschlossenen verpflichtenden Abstimmung nicht teilgenommen: **−1**
 
-Bei den letzten beiden entschuldigt eine **Abwesenheit ausdrücklich nicht** – abstimmen geht von überall. Wird ein Umlauf oder eine Abstimmung dagegen **vorzeitig beendet** – also bevor die Frist abgelaufen ist, etwa weil das Stimmungsbild längst klar ist –, gibt es **für niemanden einen Abzug**: Wer bis zur Frist noch Zeit gehabt hätte, wird nicht dafür bestraft, dass früher abgebrochen wurde. Die Rückfrage beim Beenden sagt das auch dazu. Einordnung: über −3 einwandfrei, ab −3 schlecht, ab −6 Gesprächsbedarf. Es geht hier um die niederschwelligsten Erwartungen an die AStA-Arbeit – nichts davon kostet mehr als ein paar Minuten.
+Bei den letzten beiden entschuldigt eine **Abwesenheit ausdrücklich nicht** – abstimmen geht von überall. Wird ein Umlauf oder eine Abstimmung dagegen **vorzeitig beendet** – also bevor die Frist abgelaufen ist, etwa weil das Stimmungsbild längst klar ist –, gibt es **für niemanden einen Abzug**: Wer bis zur Frist noch Zeit gehabt hätte, wird nicht dafür bestraft, dass früher abgebrochen wurde. Die Rückfrage beim Beenden sagt das auch dazu. **Während einer Wartung der App gibt es keine Abzüge:** Was seine Frist in der Wartung hat, zählt nicht – Sitzungen samt Bericht, Infos, Umläufe, Abstimmungen und Events –, ebenso wenig Wochen, in denen sie lief. Solange sie läuft, ruht auch der Abzug für den Bereich „Ausbaufähig", und deine Streak reißt nicht. Einordnung: über −3 einwandfrei, ab −3 schlecht, ab −6 Gesprächsbedarf. Es geht hier um die niederschwelligsten Erwartungen an die AStA-Arbeit – nichts davon kostet mehr als ein paar Minuten.
 
 ### Etwas stimmt nicht?
 Ganz unten auf jeder Seite stehen zwei Knöpfe:
@@ -295,6 +296,8 @@ Ganz unten auf jeder Seite stehen zwei Knöpfe:
 - **[Feedback](feedback.php)** – für **Lob, Ideen, Kritik und Fragen**. Auch daraus wird ein Eintrag mit Verlauf, keine Mail. Du wählst die Art, schreibst den Text und bleibst, wo du warst; woher du geschrieben hast, merkt sich die App selbst. Unter „Meine Rückmeldungen" siehst du den Bearbeitungsstand, und auf ein **Abgelehnt** bekommst du immer eine Begründung.
 
 Beides sehen **nur das Technik-Referat und du selbst**. Es gibt bewusst keine app-weite Liste.
+
+Steht oben auf jeder Seite ein gelber Hinweis **„Wartung"**, wird gerade an der App gearbeitet. Bis die Wartung vorbei ist, kannst du alles ansehen, aber nichts speichern: Die Knöpfe dafür sind ausgegraut. Der StuPa-Bereich und die öffentlichen Seiten laufen normal weiter.
 
 ---
 
@@ -416,6 +419,9 @@ Die vorlesungsfreie Zeit legst **du** fest, mit Enddatum – unter Verwaltung �
 
 In dieser Zeit sind die Streaks aller Mitglieder **geschützt**: Sie können nicht reißen, tägliche Flammen sammelt aber jede:r ganz normal weiter. Nach dem Ende gilt noch eine Schonfrist von 7 Tagen.
 
+### Hinweis auf dem Dashboard
+Gleich darunter, unter [Sitzungen → Zeiträume](admin/meetings.php?t=zeitraeume#banner), stellst du einen **Hinweis für alle** ein: Symbol auswählen, Titel und Text schreiben, fertig. Er steht dann bei allen ganz oben auf dem Dashboard, Links im Text sind anklickbar. Wegklicken lässt er sich nicht; er bleibt, bis du oder Vorsitz und Admin ihn ausschalten. Titel, Text und Symbol bleiben fürs nächste Mal gespeichert.
+
 ---
 
 ## Für das Pat:innenprogramm
@@ -503,7 +509,7 @@ Das Programm hat aus gutem Grund eine **eigene Datenbank** und bindet die App-Fu
 - [Mitglieder](admin/members.php) – Stammliste, Rollen, Referate, StuPa-Zugänge. **Deaktivieren ist nur für den Übergang gedacht:** Ist ein Konto seit 14 Tagen deaktiviert, erinnert eine Karte auf dem Dashboard des Vorsitzes ans Aufräumen (löschen oder reaktivieren) – sie bleibt, bis kein Konto mehr deaktiviert ist.
 - [Events & Termine](admin/events.php) und [Sitzungen](admin/meetings.php)
 - [Sekretariatsaufgaben](admin/sekretariat.php) – dieselbe Übersicht wie die Sekki-Kachel
-- [Nachricht hinterlassen](admin/message.php)
+- [Nachricht hinterlassen](admin/message.php) und [Neuigkeiten-Splash](admin/neuigkeiten.php)
 - [Scores](admin/score.php), [Aktivitätsstatistik](admin/activity.php), [Achievements-Übersicht](admin/achievements.php)
 - [Wichtige Informationen](admin/infos.php), [Wegweiser](admin/wegweiser.php) und [Mailtexte](admin/mailtexts.php)
 - [Bug-Reports](admin/bugs.php) und [Feedback](admin/feedback.php)
@@ -513,6 +519,10 @@ Das Programm hat aus gutem Grund eine **eigene Datenbank** und bindet die App-Fu
 - [Pat:innenprogramm](admin/paten.php)
 - [Diagnose & Fehler-Log](admin/errorlog.php)
 - [Gefahrenzone](admin/reset.php) – gezieltes Löschen; Einstellungen und Technik-Login bleiben immer erhalten
+- Den **Hinweis auf dem Dashboard** stellt ihr wie das Sekretariat unter [Sitzungen → Zeiträume](admin/meetings.php?t=zeitraeume#banner) ein.
+
+### Wartung
+Nur die Rolle **Admin** (und der Technik-Login) sieht in der [Verwaltung](admin/index.php#wartung) den Abschnitt **Wartung**. Während der Wartung steht oben auf jeder Seite der Warnhinweis, den ihr dort einstellt, und die App ist **nur zum Lesen** da: Speichern, Abstimmen, Buchen und Eintragen gehen nicht, die Knöpfe sind ausgegraut. Das gilt auch für Vorsitz und Sekretariat. Admins arbeiten normal weiter und beenden die Wartung über denselben Abschnitt. Der StuPa-Bereich und die öffentlichen Bereiche (Pat:innen, Umfragen, Terminplaner, was.läuft, Anmeldungen) laufen weiter; ihre Verwaltung in der App ist aber ebenfalls gesperrt. In dieser Zeit gibt es **keine Minuspunkte** in Eventscore und Basis-Score, und keine Streak reißt. Gestartete Wartungen stehen von selbst unter „Zeiträume ohne Minuspunkte“; dort tragt ihr auch frühere Zeiträume nach oder entfernt sie, das wirkt rückwirkend auf alle Scores. Anmelden und Abmelden gehen immer. Dateien, die schon in Teams oder der Nextcloud liegen, lassen sich weiter öffnen; neu dort anlegen geht erst nach der Wartung. Die Redeliste läuft weiter, trägt die Protokollführung aber erst danach in die App ein.
 
 ### Mitglieder & Referate
 Unter [Mitglieder](admin/members.php) legst du Mitglieder an (Name, E-Mail), wählst **Rolle** und **Referat**, lädst ein oder deaktivierst. Die **Referat-Liste** darunter bestimmt, welche Referate es gibt und in welcher Reihenfolge sie im Word-Bericht erscheinen. Umbenennen zieht auf Mitglieder und bestehende Berichte durch. Ganz am Ende der Seite stehen die **StuPa-Zugänge**.
@@ -522,6 +532,17 @@ Unter [Mitglieder](admin/members.php) legst du Mitglieder an (Name, E-Mail), wä
 - **Mitgelöscht** wird alles, was nur zur Person gehört: eigene Stimmen, Einteilungen und Börsen-Angebote, Zusagen, Gelesen-Haken, Abwesenheiten, Streak und Erfolge, Mitteilungs-Einstellungen, Push-Abos, empfangene Nachrichten, gegebene und erhaltene Props sowie die eigene Pinnwand.
 - **Erhalten** bleibt alles, was die Person für den AStA erstellt hat: Events, Sitzungen, Get-Togethers, wichtige Infos, TOPs, **Umlaufbeschlüsse (das Beschluss-Archiv!)**, Abstimmungen, Terminfinder, geteilte Termine und Belegblätter samt Anhängen. Wo die Ersteller:in stünde, entfällt die Angabe.
 - **Pinnwand-Einträge bei anderen bleiben stehen** und erscheinen als „Ehemaliges Mitglied" (bzw. weiter anonym). Verschenkte Skins bleiben bei den Beschenkten.
+
+### Neuigkeiten-Splash nach einem Update
+Unter [Neuigkeiten-Splash](admin/neuigkeiten.php) baut ihr das Fenster „Neu in der App“, das nach einem Update einmal erklärt, was neu ist – und genauso eines für den StuPa-Bereich.
+
+- **Kopf:** kleine Zeile, Überschrift, ein Farbverlauf (Petrol, Nacht, Sonne, Wald, Beere) und ein Symbol.
+- **Punkte** (bis zu sechs): je Symbol, Farbe, Titel und Text (`**so**` wird fett, Adressen werden anklickbar). Ein Knopf führt auf eine Seite der App, öffnet das Namens-Menü oder geht auf eine eigene Adresse. Wer eine Seite nicht öffnen darf, sieht den Knopf nicht. Darunter passt optional eine kleine Liste **umgezogener Menüpunkte** („Abwesenheit → unter deinem Namen“). Punkte lassen sich hinzufügen, verschieben und entfernen.
+- **Schluss:** eine „Außerdem“-Zeile für Kleinigkeiten und die Aufschrift des Schließen-Knopfs.
+
+**Speichern & Vorschau** zeigt das Fenster genau so, wie es alle sehen werden; in der Vorschau führen die Knöpfe nirgendwohin. **Veröffentlichen** schaltet ihn live – ein laufender Splash endet damit, je Bereich läuft immer nur einer. In der App sehen ihn alle **Bestandsmitglieder einmal am Rechner und einmal am Handy**; wer neu dazukommt, lernt die Neuerungen im Rundgang kennen und bekommt ihn nicht. Im StuPa-Bereich sehen ihn alle Zugänge.
+
+In der Übersicht steht, wie viele ihn schon gesehen haben. Von dort aus könnt ihr ihn **euch selbst noch einmal zeigen**, **allen noch einmal zeigen** (nach einer wichtigen Korrektur) oder **zurückziehen**. Frühere Splashs bleiben in der Liste und lassen sich **als Vorlage nehmen**.
 
 ### Nachrichten aufs Dashboard hinterlassen
 Unter [Nachricht hinterlassen](admin/message.php) legst du **ausgewählten Personen** oder allen als **Ankündigung** eine kurze Nachricht direkt aufs Dashboard. Sie steht dort über den offenen Aufgaben, bis die Person sie auf „Erledigt" setzt. Standardmäßig bleibt es beim Dashboard – pro Nachricht wählst du, ob **zusätzlich eine E-Mail** rausgeht.
@@ -669,6 +690,8 @@ Beim **Löschen einer Datei** in der App fragt der Dialog per Häkchen mit, ob d
 
 **Belegblätter ins Nextcloud-Archiv** lassen sich separat einschalten: Jedes eingereichte Belegblatt landet dann als PDF unter `<Ordner>/<Jahr>/`, die Belege als eigene Dateien daneben. Wird ein Belegblatt in der App gelöscht, **bleibt** die Datei dort – sie ist das Archiv. **Achtung:** Auf einem Belegblatt stehen Anschrift und IBAN. Dieser Ordner ist bewusst getrennt von dem der App-Dokumente und sollte **nur mit dem Finanzen-Team** geteilt sein.
 
+**StuPa-Auszahlungen ins Nextcloud-Archiv** funktionieren genauso, im eigenen Ordner (Vorgabe `Referate/Finanzen/StuPa-Auszahlungen`, darunter das Jahr): Jede Auszahlungsaufforderung als PDF mit ihrer Nummer im Namen, die Belege daneben – auch die, die das Präsidium später über eine Nachricht nachreicht. Solange ihr den Schalter nicht eigens umlegt, folgt er dem der Belegblätter. Was beim Einreichen nicht geklappt hat oder schon vor dem Einschalten da war, legt der Automations-Cron nach und nach ab (drei je Lauf). Auch hier stehen IBANs drin – Ordner nur mit dem Finanzen-Team teilen.
+
 Die Einrichtung beider Anbindungen steht unten im Technik-Anhang.
 
 ### Automationen & Cron
@@ -725,9 +748,9 @@ Weil er die letzte Bastion ist, erscheint **alle 6 Monate** auf dem Dashboard de
 ## Rollen – wer darf was
 
 - **Mitglied** – abstimmen, einspringen, tauschen, Events anlegen und einteilen, Abwesenheiten, eigener Bericht, Auslagen einreichen, Abstimmungen und Terminfinder starten.
-- **Sekretariat** – zusätzlich Sitzungen, Tagesordnungen, Einladungen, Redeliste, Protokoll-Workflow und Berichte.
+- **Sekretariat** – zusätzlich Sitzungen, Tagesordnungen, Einladungen, Redeliste, Protokoll-Workflow, Berichte und der Hinweis auf dem Dashboard.
 - **Finanzen** – wie Mitglied, arbeitet zusätzlich die eingereichten **Belegblätter** ab (eigener Punkt in der Titelleiste, Dashboard-Kachel bei Bedarf).
-- **Admin** – alles: Mitglieder, Referate, Einstellungen, Gefahrenzone. Bei uns liegt das **Technik-Referat** bei dieser Rolle, deshalb hängen Bug-Reports und Feedback daran.
+- **Admin** – alles: Mitglieder, Referate, Einstellungen, Gefahrenzone. Nur Admin schaltet die **Wartung** und arbeitet währenddessen weiter. Bei uns liegt das **Technik-Referat** bei dieser Rolle, deshalb hängen Bug-Reports und Feedback daran.
 - **Vorsitz** – wie Admin, und zusätzlich darf nur der Vorsitz die **Scores bearbeiten und zurücksetzen**. Nur der Vorsitz sieht die halbjährliche Technik-Login-Kontrolle; nur Admin sieht die Props-Auswertung.
 - **Pat:innen-Verantwortliche** – eine Zusatzberechtigung, keine Rolle: Zugriff auf genau die Pat:innen-Verwaltung, sonst nichts.
 - **Technik-/Owner-Login** – das gemeinsame Notfall-Passwort, siehe oben.
