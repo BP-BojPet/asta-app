@@ -876,10 +876,6 @@ html[data-theme="dark"] .pb-no { background: #4a4a52; }
   table.calendar th { padding: .4rem .25rem; }
   .ev { font-size: .66rem; padding: .12rem .35rem; }
   .daynum { min-width: 1.35rem; height: 1.35rem; font-size: .76rem; }
-  /* Bericht-Shortcut: auf dem Handy Kurzform „Berichte" oben rechts
-     (höhere Spezifität, da die Basis-Regel .tl-short{display:none} später im File steht) */
-  .tiles .tile-link .tl-text { display: none; }
-  .tiles .tile-link .tl-short { display: inline; }
 }
 
 /* =========================================================================
@@ -1425,7 +1421,8 @@ html[data-theme-mode="royal"] .hero h1 .greet-plain { display: none; }
 
 /* Kennzahlen-Kacheln */
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .8rem; margin: 1rem 0; }
-.tile { position: relative; background: var(--white); border: 1px solid var(--line); border-radius: var(--radius); padding: .9rem 1rem; box-shadow: var(--shadow); }
+.tile { position: relative; background: var(--white); border: 1px solid var(--line); border-radius: var(--radius); padding: .9rem 1rem; box-shadow: var(--shadow);
+  container-type: inline-size; }   /* für die Kurzform des Eck-Knopfs (.tile-link, @container unten) */
 .tile .ti { font-size: 1.4rem; color: var(--petrol); }
 .tile.accent-green .ti { color: var(--green); }
 .tile.accent-amber .ti { color: var(--amber); }
@@ -1443,6 +1440,12 @@ html[data-theme-mode="royal"] .hero h1 .greet-plain { display: none; }
 .tile-link.is-done:hover { background: var(--green); color: #fff; }
 .tile-link .ti { font-size: 1em; color: inherit; }
 .tile-link .tl-short { display: none; }
+/* Schmale Kachel (Handy, aber auch vier Kacheln nebeneinander auf dem aufgeklappten iPhone Duo):
+   Kurzform, sonst schiebt sich „Bericht eintragen" übers Symbol und über den Kachelrand. */
+@container (max-width: 230px) {
+  .tile-link .tl-text { display: none; }
+  .tile-link .tl-short { display: inline; }
+}
 .tile.link { text-decoration: none; display: block; }
 .tile.link:hover { box-shadow: 0 2px 6px rgba(14,92,115,.12), 0 12px 28px rgba(14,92,115,.10); }
 
@@ -5108,6 +5111,17 @@ html[data-theme="dark"] .raum-eintrag.raum-stupa { background: rgba(129, 140, 24
   .neu-splash[open], .neu-splash::backdrop, .neu-splash.ist-zu, .neu-punkt, .neu-funkeln { animation: none; }
 }
 
+/* Diagnose → Bildschirm: Messfühler für env() und Viewport-Einheiten, dazu der Rahmen um die sichere Fläche */
+.bm-fuehler { position: fixed; inset: 0; visibility: hidden; pointer-events: none;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
+.bm-hoehe { position: absolute; top: 0; left: 0; width: 1px; visibility: hidden; pointer-events: none; }
+.bm-vh { height: 100vh; } .bm-dvh { height: 100dvh; } .bm-svh { height: 100svh; } .bm-lvh { height: 100lvh; }
+.bm-rahmen { position: fixed; z-index: 2000; pointer-events: none; border: 3px dashed var(--red);
+  top: env(safe-area-inset-top, 0px); right: env(safe-area-inset-right, 0px); bottom: env(safe-area-inset-bottom, 0px); left: env(safe-area-inset-left, 0px); }
+.bm-rahmen[hidden] { display: none; }
+.bildschirm-werte td:first-child { color: var(--muted); white-space: nowrap; }
+.bildschirm-werte td:last-child { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
 /* Splash-Baukasten (admin/neuigkeiten.php) */
 .sp-zeile { display: flex; align-items: center; justify-content: space-between; gap: .6rem 1rem; flex-wrap: wrap; }
 .sp-liste { display: flex; flex-direction: column; gap: .8rem; }
@@ -5181,3 +5195,20 @@ html[data-theme="dark"] .raum-eintrag.raum-stupa { background: rgba(129, 140, 24
 .su-mitglieder input[type="text"], .su-mitglieder input[type="email"] { width: 100%; min-width: 9rem; }
 .su-aktionen { white-space: nowrap; }
 .su-aktionen form { display: inline-block; margin: 0; }
+
+/* ---- Systemanzeigen am Rand: nichts Bedienbares darunter ----
+   Auf manchen Geräten liegen Kamera, Uhr und WLAN-Anzeige über der Seite – beim iPhone Duo in der
+   installierten App zugeklappt als Spalte rechts, quer oben rechts. iOS meldet das über
+   env(safe-area-inset-*); im Browser und auf anderen Geräten ist das 0 und nichts verschiebt sich.
+   Bewusst nur für das, was man antippt: Text und Karten dürfen darunter laufen, Knöpfe nicht. */
+.topbar { padding-left: calc(1.2rem + env(safe-area-inset-left, 0px)); padding-right: calc(1.2rem + env(safe-area-inset-right, 0px)); }
+.hero-side { margin-right: env(safe-area-inset-right, 0px); }
+.lb-chip-hero { right: calc(.6rem + env(safe-area-inset-right, 0px)); }
+.toasts { right: calc(.9rem + env(safe-area-inset-right, 0px));
+  width: min(calc(92vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)), 380px); }
+/* Dialoge mittig in der freien Fläche statt im ganzen Fenster (Schließen-Kreuz oben rechts) */
+dialog:modal { left: env(safe-area-inset-left, 0px); right: env(safe-area-inset-right, 0px); }
+.fb-modal { width: min(calc(92vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)), 440px); }
+.neu-splash, .fb-modal.fb-form, .pat-move-dlg { width: min(calc(94vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)), 560px); }
+.modal-overlay { padding-left: calc(1rem + env(safe-area-inset-left, 0px)); padding-right: calc(1rem + env(safe-area-inset-right, 0px)); }
+

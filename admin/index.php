@@ -94,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'wartu
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'wartung_zeit_weg' && wartung_darf()) {
     check_csrf();
     wartung_zeit_entfernen((int)($_POST['id'] ?? 0));
-    flash('Zeitraum entfernt – Abzüge aus dieser Zeit zählen wieder.', 'success');
+    flash('Nachgetragenen Zeitraum entfernt – Abzüge aus dieser Zeit zählen wieder.', 'success');
     redirect('index.php#wartung');
 }
 wartung_sperre();
@@ -328,15 +328,18 @@ page_header('Verwaltung', true);
   </form>
   <hr class="auto-sep" style="margin:1rem 0 .9rem">
   <p class="small" style="margin:0 0 .4rem"><strong>Zeiträume ohne Minuspunkte</strong></p>
+  <p class="small muted" style="margin:0 0 .5rem">Bleiben dauerhaft stehen: Die Scores werden bei jedem Aufruf neu gerechnet,
+    und nur solange ein Zeitraum hier steht, zählen Abzüge aus dieser Zeit nicht.</p>
   <?php $wZeiten = wartung_zeiten(); if ($wZeiten): ?>
     <ul class="small" style="margin:0 0 .7rem;padding:0;list-style:none">
       <?php foreach ($wZeiten as $wz): ?>
         <li style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.3rem">
           <span><?= h(fmt_date((string)$wz['von'])) ?> – <?= (string)$wz['bis'] !== '' ? h(fmt_date((string)$wz['bis'])) : 'läuft' ?></span>
-          <?php if ((string)$wz['bis'] !== ''): ?>
-            <form method="post" action="index.php" style="margin:0" data-confirm="Diesen Zeitraum entfernen? Abzüge aus dieser Zeit zählen dann wieder." data-confirm-ok="Entfernen">
+          <?php if ((string)$wz['art'] === 'nachgetragen'): ?>
+            <span class="muted">nachgetragen</span>
+            <form method="post" action="index.php" style="margin:0" data-confirm="Diesen nachgetragenen Zeitraum entfernen? Abzüge aus dieser Zeit zählen dann wieder – nur bei einem Tippfehler sinnvoll." data-confirm-ok="Entfernen">
               <?= csrf_field() ?><input type="hidden" name="action" value="wartung_zeit_weg"><input type="hidden" name="id" value="<?= (int)$wz['id'] ?>">
-              <button class="btn secondary small" type="submit" aria-label="Zeitraum entfernen"><i class="ti ti-trash"></i></button>
+              <button class="btn secondary small" type="submit" aria-label="Nachgetragenen Zeitraum entfernen"><i class="ti ti-trash"></i></button>
             </form>
           <?php endif; ?>
         </li>
@@ -349,7 +352,7 @@ page_header('Verwaltung', true);
     <div style="min-width:150px"><label for="wartung_bis" class="small">Bis</label><input type="text" class="fp-date" name="bis" id="wartung_bis" required placeholder="Tag wählen"></div>
     <button class="btn secondary" type="submit"><i class="ti ti-history"></i> Zeitraum nachtragen</button>
   </form>
-  <p class="small muted" style="margin:.5rem 0 0">Nachtragen wirkt rückwirkend auf alle Scores. Gestartete Wartungen stehen von selbst in der Liste.</p>
+  <p class="small muted" style="margin:.5rem 0 0">Nachtragen wirkt rückwirkend auf alle Scores. Gestartete Wartungen stehen von selbst in der Liste und lassen sich nicht entfernen; nachgetragene nur, um einen Tippfehler zu korrigieren.</p>
 </div>
 <?php endif; ?>
 

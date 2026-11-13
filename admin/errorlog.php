@@ -6003,6 +6003,42 @@ if ($doTest) {
         $offen = stupa_nc_enabled() ? count(stupa_nc_ausstehend()) : 0;
         return stupa_nc_enabled() ? 'eingeschaltet, ' . $offen . ' noch abzulegen' : 'ausgeschaltet (oder Nextcloud nicht eingerichtet) – Ablauf ohne Netz geprüft';
     });
+    $run('Diagnose → Bildschirm: Gerätemessung vorhanden', function () {
+        // Für neue Geräte (zuletzt das iPhone Duo) misst man hier in der installierten App nach.
+        $root = dirname(__DIR__);
+        $js = (string)@file_get_contents($root . '/assets/app.js');
+        $css = (string)@file_get_contents($root . '/assets/style.css');
+        st_expect(str_contains((string)@file_get_contents(__FILE__), 'id="bildschirmWerte"') && str_contains($js, "getElementById('bildschirmWerte')"),
+            'Der Abschnitt „Bildschirm“ fehlt oder app.js füllt ihn nicht');
+        st_expect(str_contains($css, 'env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px)') && str_contains($css, '.bm-rahmen'),
+            'Der Fühler für die sicheren Ränder oder der Rahmen fehlt in style.css');
+        // User-Vorgabe (iPhone Duo): Knöpfe weichen den Systemanzeigen aus, der Inhalt läuft aber
+        // weiter bis an den Rand – Apples sichere Bereiche komplett einzuhalten ist überzogen.
+        $rand = 'env(safe-area-inset-right, 0px)';
+        foreach ([['.topbar { padding-left', 'padding-right', 'Titelleiste (Menü-Knopf quer)'], ['.toasts { right', 'right', 'Meldungen (Schließen-Kreuz)'],
+                  ['dialog:modal { left', 'right', 'Dialoge'], ['.hero-side { margin-right', 'margin-right', 'Scores in der Begrüßungskarte']] as [$sel, $eig, $was]) {
+            $p = strpos($css, $sel);
+            $regel = $p === false ? '' : substr($css, $p, (int)strpos($css, '}', $p) - $p);   // nur diese Regel
+            st_expect(preg_match('~(?<![\w-])' . preg_quote($eig, '~') . '\s*:[^;]*' . preg_quote($rand, '~') . '~', $regel) === 1,
+                $was . ' weicht der Systemanzeige am rechten Rand nicht mehr aus');
+        }
+        st_expect(!preg_match('~(^|\})\s*(body|main|html)\s*\{[^}]*safe-area-inset-(left|right)~', $css),
+            'Der ganze Inhalt wird um die sicheren Bereiche eingerückt – gewollt sind nur die Bedienelemente');
+        return 'Messung, Rahmen und Ausweichen der Bedienelemente vorhanden';
+    });
+    $run('Eventscore: Events ohne Abzug fürs Nicht-Abstimmen', function () {
+        // User-Wunsch: Events, deren Abstimmung außerhalb der App lief (DuD-Poll), kosten Nicht-Abstimmen nichts –
+        // Schichtpunkte zählen weiter. Frist 2001: liegt in keiner Wartung.
+        $slots = [['id' => 1, 'starts_at' => '2001-05-08 10:00', 'ends_at' => '2001-05-08 12:00']];
+        $mit = ['id' => 1, 'deadline' => '2001-05-08', 'important' => 0, 'vote_penalty' => 1];
+        $ohne = ['vote_penalty' => 0] + $mit;
+        st_expect(score_event_for_member($mit, $slots, [], [], 0)['points'] === -2, 'Nicht-Abstimmen kostet bei normalen Events nichts mehr');
+        st_expect(score_event_for_member($ohne, $slots, [], [], 0)['points'] === 0, 'Ein Event ohne Abzug zieht fürs Nicht-Abstimmen trotzdem ab');
+        st_expect(score_event_for_member($ohne, $slots, [], [1 => [0]], 0)['points'] > 0, 'Bei einem Event ohne Abzug zählen die Schichtpunkte nicht mehr');
+        $lib = (string)@file_get_contents(dirname(__DIR__) . '/lib.php');
+        st_expect(str_contains($lib, 'plan_locked, vote_penalty FROM events'), 'scored_events() lädt vote_penalty nicht – die Einstellung wirkt dann nie');
+        return (int)db()->query('SELECT COUNT(*) FROM events WHERE vote_penalty = 0')->fetchColumn() . ' Event(s) ohne Abzug';
+    });
     $run('Formular-Token: ein leeres gilt nie', function () {
         // check_csrf() beendet die Anfrage beim Fehlschlag – darum am Quelltext geprüft.
         $lib = (string)@file_get_contents(dirname(__DIR__) . '/lib.php');
@@ -6083,8 +6119,13 @@ if ($doTest) {
             wartung_setzen(false, '');
             st_expect($offen() === 0 && wartung_im_zeitraum(date('Y-m-d')) && !wartung_im_zeitraum(date('Y-m-d', strtotime('+1 day'))),
                 'Das Ende der Wartung wird nicht richtig vermerkt');
+            // User-Fall: Nach dem Ende gelöscht, schon zählten die Abzüge rückwirkend wieder. Echte
+            // Wartungen bleiben deshalb stehen; entfernen lässt sich nur Nachgetragenes (Tippfehler).
             wartung_zeit_entfernen($id);
-            st_expect(!wartung_im_zeitraum(date('Y-m-d')), 'Ein beendeter Zeitraum lässt sich nicht entfernen');
+            st_expect(wartung_im_zeitraum(date('Y-m-d')), 'Eine über den Schalter gelaufene Wartung lässt sich entfernen – ihre Abzüge zählten dann rückwirkend wieder');
+            $nach = (int)$pdo->query("SELECT id FROM wartung_zeiten WHERE art = 'nachgetragen' AND von = '" . $vor(10) . "'")->fetchColumn();
+            wartung_zeit_entfernen($nach);
+            st_expect($nach > 0 && !streak_alive_for($mid, $vor(12)), 'Ein nachgetragener Zeitraum lässt sich nicht wieder entfernen');
             st_expect(wartung_zeit_nachtragen('2001-03-07', '2001-03-05') !== '' && wartung_zeit_nachtragen('quatsch', '2001-03-05') !== ''
                 && wartung_zeit_nachtragen(date('Y-m-d'), date('Y-m-d', strtotime('+1 day'))) !== '', 'Ungültige Zeiträume lassen sich nachtragen');
         } finally {
@@ -6966,6 +7007,19 @@ $wlBasis = trim(wl_setting('base_url', ''));
       Noch nicht gemeldete Öffnungen in der Warteschlange <strong>dieses Geräts</strong>: <span id="opens-pending">–</span>
       <script>try { document.getElementById('opens-pending').textContent = localStorage.getItem('asta-open-pending') || '0'; } catch (e) { document.getElementById('opens-pending').textContent = '?'; }</script></p>
   <?php } ?>
+</div>
+
+<?php /* Gerätemessung: was der Browser bzw. die installierte App der Seite gerade gibt.
+         Gefüllt und bei jeder Größenänderung neu gemessen von app.js (#bildschirm). */ ?>
+<div class="card" id="bildschirm" style="margin-bottom:1.1rem">
+  <div class="section-title" style="margin-top:0"><i class="ti ti-device-mobile"></i> Bildschirm</div>
+  <p class="small muted" style="margin-top:0">Was dieses Gerät der Seite gerade gibt – live, auch beim Drehen oder Auf- und Zuklappen.
+    Für neue Geräte am besten in der <strong>installierten App</strong> öffnen: Sie bekommt andere Maße als der Browser.
+    „Sichere Fläche zeigen“ legt einen gestrichelten Rahmen um den Bereich, den das System freigibt; was außerhalb liegt, kann von Uhr, Kamera oder Leisten verdeckt sein.</p>
+  <table class="list bildschirm-werte"><tbody id="bildschirmWerte"><tr><td class="muted small">wird gemessen …</td></tr></tbody></table>
+  <div class="btn-row" style="margin-top:.7rem">
+    <button class="btn secondary small" type="button" id="bildschirmRahmen"><i class="ti ti-border-corners"></i> Sichere Fläche zeigen</button>
+  </div>
 </div>
 
 <div class="section-title"><i class="ti ti-list"></i> Fehler-Log <span class="count"><?= count($lines) ?></span></div>

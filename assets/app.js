@@ -2366,6 +2366,62 @@
   }, 450);
 })();
 
+/* Diagnose → Bildschirm (#bildschirm): misst Fenster, sichtbaren Bereich, sichere Ränder und
+   Viewport-Einheiten – neu bei jeder Größenänderung, damit Drehen und Auf-/Zuklappen sichtbar werden.
+   Die Ränder liest ein unsichtbarer Fühler mit padding: env(safe-area-inset-*) aus (style.css .bm-*). */
+(function () {
+  var ziel = document.getElementById('bildschirmWerte');
+  if (!ziel) return;
+  var fuehler = document.createElement('div');
+  fuehler.className = 'bm-fuehler';
+  var hoehen = {};
+  ['vh', 'dvh', 'svh', 'lvh'].forEach(function (e) {
+    var d = document.createElement('div'); d.className = 'bm-hoehe bm-' + e; hoehen[e] = d; document.body.appendChild(d);
+  });
+  document.body.appendChild(fuehler);
+  var rahmen = document.createElement('div');
+  rahmen.className = 'bm-rahmen'; rahmen.hidden = true;
+  document.body.appendChild(rahmen);
+  function mq(q) { return window.matchMedia && matchMedia(q).matches; }
+  function messen() {
+    var cs = getComputedStyle(fuehler);
+    var rand = ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft'].map(function (k) { return Math.round(parseFloat(cs[k]) || 0); });
+    var vv = window.visualViewport;
+    var posture = navigator.devicePosture ? navigator.devicePosture.type : 'nicht verfügbar';
+    var seg = window.viewport && window.viewport.segments ? window.viewport.segments.length + ' Segment(e)' : 'nicht verfügbar';
+    var zeilen = [
+      ['Fenster', innerWidth + ' × ' + innerHeight + ' px'],
+      ['Sichtbarer Bereich', vv ? Math.round(vv.width) + ' × ' + Math.round(vv.height) + ' px' + (vv.offsetTop || vv.offsetLeft ? ' (versetzt ' + Math.round(vv.offsetLeft) + '/' + Math.round(vv.offsetTop) + ')' : '') : '–'],
+      ['Bildschirm', screen.width + ' × ' + screen.height + ' px · Faktor ' + (window.devicePixelRatio || 1)],
+      ['Sichere Ränder', 'oben ' + rand[0] + ' · rechts ' + rand[1] + ' · unten ' + rand[2] + ' · links ' + rand[3]],
+      ['Höhen', '100vh ' + hoehen.vh.offsetHeight + ' · dvh ' + hoehen.dvh.offsetHeight + ' · svh ' + hoehen.svh.offsetHeight + ' · lvh ' + hoehen.lvh.offsetHeight],
+      ['Installierte App', mq('(display-mode: standalone)') || navigator.standalone === true ? 'ja' : 'nein (Browser)'],
+      ['Ausrichtung · Eingabe', (mq('(orientation: portrait)') ? 'hochkant' : 'quer') + ' · ' + (mq('(pointer: coarse)') ? 'Touch' : 'Maus') + (mq('(hover: hover)') ? ', Hover' : '')],
+      ['Ansicht der App', innerWidth <= 720 ? 'Handy (Tab-Leiste unten)' : 'breit (Menü in der Titelleiste)'],
+      ['Klapp-Lage · Segmente', posture + ' · ' + seg],
+      ['Kennung', navigator.userAgent]
+    ];
+    ziel.textContent = '';
+    zeilen.forEach(function (z) {
+      var tr = document.createElement('tr');
+      z.forEach(function (t) { var td = document.createElement('td'); td.className = 'small'; td.textContent = t; tr.appendChild(td); });
+      ziel.appendChild(tr);
+    });
+  }
+  // iOS liefert die neuen sicheren Ränder erst kurz nach der Größenänderung – deshalb zweimal nachmessen.
+  var t = [];
+  function spaeter() { t.forEach(clearTimeout); t = [200, 800, 2000].map(function (ms) { return setTimeout(messen, ms); }); }
+  window.addEventListener('resize', spaeter);
+  if (window.visualViewport) visualViewport.addEventListener('resize', spaeter);
+  if (navigator.devicePosture) navigator.devicePosture.addEventListener('change', spaeter);
+  var knopf = document.getElementById('bildschirmRahmen');
+  if (knopf) knopf.addEventListener('click', function () {
+    rahmen.hidden = !rahmen.hidden;
+    knopf.lastChild.textContent = rahmen.hidden ? ' Sichere Fläche zeigen' : ' Rahmen ausblenden';
+  });
+  messen();
+})();
+
 /* Splash-Baukasten: Vorschau ([data-neu-vorschau] öffnet den Dialog mit dieser id) – meldet nichts
    und folgt keinem Link. Dazu zeigt die Symbol-Auswahl ihr gewähltes Symbol in der Zusammenfassung. */
 (function () {

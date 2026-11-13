@@ -179,6 +179,10 @@ function migrate_schema(PDO $pdo): void
     if (!in_array('deadline', $cols('events'), true)) {
         $pdo->exec('ALTER TABLE events ADD COLUMN deadline TEXT');
     }
+    // 0 = Nicht-Abstimmen kostet bei diesem Event nichts (z. B. wenn die Abstimmung außerhalb der App lief)
+    if (!in_array('vote_penalty', $cols('events'), true)) {
+        $pdo->exec('ALTER TABLE events ADD COLUMN vote_penalty INTEGER NOT NULL DEFAULT 1');
+    }
     $memberCols = $cols('members');
     if (!in_array('is_admin', $memberCols, true)) {
         $pdo->exec('ALTER TABLE members ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
@@ -850,8 +854,11 @@ function migrate_schema(PDO $pdo): void
     $pdo->exec("CREATE TABLE IF NOT EXISTS wartung_zeiten (
         id  INTEGER PRIMARY KEY,
         von TEXT NOT NULL,               -- 'Y-m-d'
-        bis TEXT NOT NULL DEFAULT ''     -- 'Y-m-d'; '' = läuft noch
+        bis TEXT NOT NULL DEFAULT '',    -- 'Y-m-d'; '' = läuft noch
+        art TEXT NOT NULL DEFAULT 'schalter'  -- 'schalter' (über „Wartung starten“) | 'nachgetragen'
     )");
+    // Nur Nachgetragenes lässt sich wieder entfernen – eine echte Wartung bleibt stehen.
+    if (!in_array('art', $cols('wartung_zeiten'), true)) $pdo->exec("ALTER TABLE wartung_zeiten ADD COLUMN art TEXT NOT NULL DEFAULT 'schalter'");
     // Eine Wartung, die vor dieser Liste eingeschaltet wurde, hat keinen bekannten Beginn: Sie zählt
     // ab heute, früher lässt sich in der Verwaltung nachtragen.
     if (!$pdo->query("SELECT value FROM settings WHERE key = 'wartung_zeiten_start'")->fetchColumn()) {
@@ -7708,7 +7715,7 @@ function wartung_setzen(bool $an, string $text): void
 }
 
 /**
- * Alle Wartungszeiträume, neueste zuerst: id, von, bis ('' = läuft noch). Pro Anfrage gemerkt,
+ * Alle Wartungszeiträume, neueste zuerst: id, von, bis ('' = läuft noch), art. Pro Anfrage gemerkt,
  * weil die Scores je Event und Mitglied nachfragen; $neu liest die Tabelle wieder ein.
  */
 function wartung_zeiten(bool $neu = false): array
@@ -7716,7 +7723,7 @@ function wartung_zeiten(bool $neu = false): array
     static $merker = null;
     if ($neu) $merker = null;
     if ($merker === null) {
-        try { $merker = db()->query('SELECT id, von, bis FROM wartung_zeiten ORDER BY von DESC, id DESC')->fetchAll(); }
+        try { $merker = db()->query('SELECT id, von, bis, art FROM wartung_zeiten ORDER BY von DESC, id DESC')->fetchAll(); }
         catch (\Throwable $e) { $merker = []; }
     }
     return $merker;
@@ -7743,15 +7750,18 @@ function wartung_zeit_nachtragen(string $von, string $bis): string
     if (!$tag($von) || !$tag($bis)) return 'Bitte beide Tage auswählen.';
     if ($von > $bis) return 'Der Beginn liegt nach dem Ende.';
     if ($bis > date('Y-m-d')) return 'Nachtragen geht nur für vergangene Tage.';
-    db()->prepare('INSERT INTO wartung_zeiten(von, bis) VALUES(?, ?)')->execute([$von, $bis]);
+    db()->prepare("INSERT INTO wartung_zeiten(von, bis, art) VALUES(?, ?, 'nachgetragen')")->execute([$von, $bis]);
     wartung_zeiten(true);
     return '';
 }
 
-/** Beendeten Zeitraum entfernen (die laufende Wartung endet nur über ihren Schalter). */
+/**
+ * Einen nachgetragenen Zeitraum entfernen, etwa nach einem Tippfehler. Zeiträume über den Schalter
+ * bleiben: Ohne sie zählten die Abzüge aus der Wartung rückwirkend wieder.
+ */
 function wartung_zeit_entfernen(int $id): void
 {
-    db()->prepare("DELETE FROM wartung_zeiten WHERE id = ? AND bis <> ''")->execute([$id]);
+    db()->prepare("DELETE FROM wartung_zeiten WHERE id = ? AND art = 'nachgetragen'")->execute([$id]);
     wartung_zeiten(true);
 }
 
@@ -12682,7 +12692,7 @@ function score_since(): string { return (string)setting_get('score_since', ''); 
 function scored_events(string $orderBy = ''): array
 {
     $since = score_since();
-    $sql = "SELECT id, title, important, deadline, plan_locked FROM events WHERE draft = 0 AND deadline IS NOT NULL AND deadline <> '' AND deadline < date('now','localtime')";
+    $sql = "SELECT id, title, important, deadline, plan_locked, vote_penalty FROM events WHERE draft = 0 AND deadline IS NOT NULL AND deadline <> '' AND deadline < date('now','localtime')";
     $params = [];
     if ($since !== '') { $sql .= ' AND deadline >= ?'; $params[] = $since; }
     if ($orderBy !== '') $sql .= ' ORDER BY ' . $orderBy;
@@ -12694,7 +12704,8 @@ function scored_events(string $orderBy = ''): array
 /**
  * Die EINZIGE Stelle, an der die Eventscore-Regeln eines Events für ein Mitglied stehen:
  *  - eingeteilt: +1/Schicht (+2 bei >2 h), pro Event auf `event_score_cap()` gedeckelt
- *  - gar nicht abgestimmt: −2 (0, wenn die Frist in einer Wartung lag – da ging Abstimmen nicht)
+ *  - gar nicht abgestimmt: −2 (0, wenn die Frist in einer Wartung lag – da ging Abstimmen nicht –
+ *    oder das Event ohne diesen Abzug angelegt ist: events.vote_penalty = 0)
  *  - verfügbar-aber-nicht-eingeteilt / überall „nein": 0
  * Gibt null zurück, wenn das Event für dieses Mitglied nicht zählt (Frist lag vor dem Beitritt).
  * $resp/$assign sind die vorab geladenen event_responses()/event_assignments() des Events.
@@ -12724,9 +12735,12 @@ function score_event_for_member(array $event, array $slots, array $resp, array $
     }
     if ($pts > 0)    return ['points' => min($pts, $cap), 'shifts' => $shifts,
                              'reason' => 'eingeteilt (' . $shifts . ' Schicht' . ($shifts > 1 ? 'en' : '') . ')' . ($pts > $cap ? ', gedeckelt auf ' . $cap : '')];
-    if (!$responded) return wartung_im_zeitraum(substr((string)$event['deadline'], 0, 10))
-        ? ['points' => 0, 'shifts' => 0, 'reason' => 'nicht abgestimmt – die Frist lag in einer Wartung']
-        : ['points' => -2, 'shifts' => 0, 'reason' => 'nicht abgestimmt'];
+    if (!$responded) {
+        if (isset($event['vote_penalty']) && !(int)$event['vote_penalty']) return ['points' => 0, 'shifts' => 0, 'reason' => 'nicht abgestimmt – bei diesem Event ohne Abzug'];
+        return wartung_im_zeitraum(substr((string)$event['deadline'], 0, 10))
+            ? ['points' => 0, 'shifts' => 0, 'reason' => 'nicht abgestimmt – die Frist lag in einer Wartung']
+            : ['points' => -2, 'shifts' => 0, 'reason' => 'nicht abgestimmt'];
+    }
     if (!$avail)     return ['points' => 0,  'shifts' => 0, 'reason' => 'überall „nein" angegeben'];
     return ['points' => 0, 'shifts' => 0, 'reason' => 'verfügbar, aber nicht eingeteilt'];
 }
