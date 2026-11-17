@@ -5937,6 +5937,22 @@ if ($doTest) {
                 'Eine Seite kann Buchungen der anderen löschen (Nummernkreise vermischt?)');
             st_expect(raum_buchung_loeschen($sb, 'stupa', $u, false, false) && raum_buchung_loeschen($ab, 'asta', $m + 999999, true, false),
                 'Eigene Buchung (StuPa) bzw. als Verwaltung löschen geht nicht');
+            // Hinweise zur Raumnutzung: Box + Pflicht-Bestätigung im Dialog, und ohne Häkchen kein Buchen
+            setting_set('raum_hinweise', "- Aufräumen\n\n• Fenster zu");
+            st_expect(raum_hinweise() === ['Aufräumen', 'Fenster zu'], 'Die Hinweise zur Raumnutzung werden nicht zeilenweise gelesen');
+            $ansicht = raum_wochenansicht(['woche' => date('Y-m-d', strtotime('monday this week')), 'self' => 'raeume.php', 'seite' => 'stupa', 'von_id' => $u, 'verwalter' => false, 'fp' => false]);
+            st_expect(str_contains($ansicht, 'class="raum-hinweise"') && str_contains($ansicht, 'data-confirm-check-required')
+                      && str_contains($ansicht, 'data-confirm-check-name="hinweise_ok"'),
+                'Die Hinweise erscheinen beim Buchen nicht als Box mit Pflicht-Bestätigung');
+            $postVorher = $_POST;
+            $_POST = ['action' => 'raum_buchen', 'room_id' => (string)$r, 'tag' => $di, 'von' => '16:00', 'bis' => '17:00', 'titel' => 'Ohne Häkchen'];
+            $antwort = raum_post_verarbeiten('stupa', $u, false);
+            $_POST = $postVorher;
+            $st = $pdo->prepare("SELECT COUNT(*) FROM room_bookings WHERE room_id = ? AND title = 'Ohne Häkchen'"); $st->execute([$r]);
+            st_expect(($antwort[1] ?? '') === 'error' && (int)$st->fetchColumn() === 0, 'Ohne bestätigte Hinweise wurde trotzdem gebucht');
+            $js = (string)@file_get_contents(dirname(__DIR__) . '/assets/app.js');
+            st_expect(str_contains($js, "hasAttribute('data-confirm-check-required')") && str_contains($js, 'requireCheck'),
+                'app.js: Der Bestätigungsdialog kennt das Pflicht-Häkchen nicht mehr');
         } finally {
             $pdo->rollBack();
         }
@@ -5945,7 +5961,7 @@ if ($doTest) {
         st_expect(str_contains($stupaSeite, "raum_post_verarbeiten('stupa', \$uid, false)") && str_contains($stupaSeite, "'verwalter' => false"),
             'stupa/raeume.php gibt dem StuPa Verwaltungsrechte für Räume');
         st_expect(isset(mail_templates()['raum_gebucht'], mail_templates()['raum_storniert']), 'Die Mailvorlagen der Raumbelegung fehlen');
-        return 'feste Zeit, Ausfall, Überschneidung, StuPa-Trennung geprüft (nichts gespeichert)';
+        return 'feste Zeit, Ausfall, Überschneidung, StuPa-Trennung, Hinweis-Bestätigung geprüft (nichts gespeichert)';
     });
     $run('iPhone-App: Word-Downloads gehen ans Teilen-Blatt', function () {
         // Die installierte App zeigt Word-Dateien im eigenen Fenster als weiße Seite. app.js leitet
@@ -6038,6 +6054,43 @@ if ($doTest) {
         $lib = (string)@file_get_contents(dirname(__DIR__) . '/lib.php');
         st_expect(str_contains($lib, 'plan_locked, vote_penalty FROM events'), 'scored_events() lädt vote_penalty nicht – die Einstellung wirkt dann nie');
         return (int)db()->query('SELECT COUNT(*) FROM events WHERE vote_penalty = 0')->fetchColumn() . ' Event(s) ohne Abzug';
+    });
+    $run('Eventscore: Aufschlüsselung für Vorsitz und Admin', function () {
+        // User-Wunsch: Vorsitz und Admin sehen je Mitglied, wie der Eventscore zustande kommt –
+        // mit jeder Schicht und ihren Punkten. Die Summe muss genau der Score der Rangliste sein.
+        $slots = [['id' => 1, 'starts_at' => '2001-05-08 10:00', 'ends_at' => '2001-05-08 13:00'],
+                  ['id' => 2, 'starts_at' => '2001-05-09 10:00', 'ends_at' => '2001-05-09 11:00']];
+        $ev = ['id' => 1, 'deadline' => '2001-05-01', 'important' => 0, 'vote_penalty' => 1];
+        $r = score_event_for_member($ev, $slots, [], [1 => [0], 2 => [0]], 0);
+        st_expect($r['points'] === 3 && str_contains($r['reason'], 'Di 08.05. 10:00–13:00 +2') && str_contains($r['reason'], 'Mi 09.05. 10:00–11:00 +1'),
+            'Die Begründung nennt nicht mehr jede Schicht mit ihren Punkten');
+        // Frist vor dem Beitritt: kein Abzug, aber eingeteilte Schichten zählen (User-Wunsch, Nov. 2026)
+        st_expect(score_event_for_member($ev, $slots, [], [], 0, '2001-06-01') === null, 'Ein Event vor dem Beitritt kostet Neue wieder etwas');
+        st_expect((score_event_for_member($ev, $slots, [], [2 => [0]], 0, '2001-06-01')['points'] ?? 0) === 1,
+            'Eingeteilte Schichten zählen bei einer Frist vor dem Beitritt nicht mehr');
+        $scores = member_scores();
+        $bds = member_score_breakdowns();
+        $abw = array_filter(array_keys($scores), fn($mid) => ($bds[$mid]['total'] ?? null) !== $scores[$mid]);
+        st_expect(!$abw, 'Aufschlüsselung und Rangliste rechnen verschieden (Mitglied #' . implode(', #', $abw) . ')');
+        $seite = (string)@file_get_contents(__DIR__ . '/score.php');
+        st_expect(str_contains($seite, 'member_score_breakdowns()') && str_contains($seite, 'class="score-aufschl"'),
+            'Die Score-Übersicht zeigt die Aufschlüsselung je Mitglied nicht mehr');
+        st_expect(str_contains($seite, 'require_admin();'), 'Die Score-Übersicht ist nicht mehr auf Vorsitz und Admin beschränkt');
+        return count($bds) . ' Mitglieder aufgeschlüsselt';
+    });
+    $run('Einteilungen: nur aus veröffentlichten Plänen', function () {
+        // Eventscore, Dashboard und Kalender-Abo zählen nur den veröffentlichten Plan. Zeigte die Event-Seite
+        // trotzdem „Du bist eingeteilt“, fehlten die Punkte ohne sichtbaren Grund (Plan nach „Arbeitsplan ändern“
+        // nie wieder gespeichert). Darum: überall dieselbe Bedingung, und die Orga sieht den Hinweis.
+        $root = dirname(__DIR__);
+        $ev = (string)@file_get_contents($root . '/event.php');
+        st_expect(str_contains($ev, 'if ($me && $planLocked) {'), 'Die Event-Seite zeigt „Du bist eingeteilt“ auch aus einem unveröffentlichten Plan');
+        st_expect(str_contains($ev, 'Der Arbeitsplan ist nicht veröffentlicht.'), 'Die Orga sieht auf der Event-Seite nicht mehr, dass ihr Plan unveröffentlicht ist');
+        $liste = (string)@file_get_contents($root . '/events.php');
+        st_expect(str_contains($liste, '(e.plan_locked = 1 AND EXISTS(SELECT 1 FROM assignments'), 'Die Event-Liste zeigt „Du hilfst mit“ auch aus einem unveröffentlichten Plan');
+        $lib = (string)@file_get_contents($root . '/lib.php');
+        st_expect(substr_count($lib, "\$assign = !empty(\$e['plan_locked']) ? event_assignments(\$eid) : [];") >= 2, 'Der Eventscore zählt Einteilungen nicht mehr nur aus veröffentlichten Plänen');
+        return (int)db()->query("SELECT COUNT(DISTINCT s.event_id) FROM assignments a JOIN event_slots s ON s.id = a.slot_id JOIN events e ON e.id = s.event_id WHERE e.plan_locked = 0 AND e.draft = 0")->fetchColumn() . ' Event(s) mit unveröffentlichtem Plan';
     });
     $run('Formular-Token: ein leeres gilt nie', function () {
         // check_csrf() beendet die Anfrage beim Fehlschlag – darum am Quelltext geprüft.

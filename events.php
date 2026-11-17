@@ -34,7 +34,7 @@ $st = db()->prepare(
         (SELECT COUNT(*) FROM assignments a JOIN event_slots s ON s.id = a.slot_id WHERE s.event_id = e.id) AS n_assigned,
         (SELECT GROUP_CONCAT(DISTINCT NULLIF(s.location, '')) FROM event_slots s WHERE s.event_id = e.id) AS locations,
         EXISTS(SELECT 1 FROM responses r JOIN event_slots s ON s.id = r.slot_id WHERE s.event_id = e.id AND r.member_id = :me) AS responded,
-        EXISTS(SELECT 1 FROM assignments a JOIN event_slots s ON s.id = a.slot_id WHERE s.event_id = e.id AND a.member_id = :me) AS mine,
+        (e.plan_locked = 1 AND EXISTS(SELECT 1 FROM assignments a JOIN event_slots s ON s.id = a.slot_id WHERE s.event_id = e.id AND a.member_id = :me)) AS mine, -- nur veröffentlichte Pläne
         (SELECT COUNT(DISTINCT r.member_id) FROM responses r JOIN event_slots s ON s.id = r.slot_id
            JOIN members m ON m.id = r.member_id AND m.active = 1 WHERE s.event_id = e.id) AS n_voted
      FROM events e

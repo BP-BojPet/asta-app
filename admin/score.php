@@ -112,10 +112,13 @@ $canEdit = can_edit_score();
   Bei der Zufallseinteilung werden Mitglieder mit niedrigerem Score bevorzugt.
 </p>
 
-<?php $roleLabels = ['member' => 'Mitglied', 'sekretariat' => 'Sekretariat', 'admin' => 'Admin', 'vorsitz' => 'Vorsitz']; ?>
+<?php $roleLabels = ['member' => 'Mitglied', 'sekretariat' => 'Sekretariat', 'admin' => 'Admin', 'vorsitz' => 'Vorsitz'];
+// Wie die Punkte zustande kommen – je Mitglied dieselben Posten wie auf der eigenen Score-Seite.
+// Die Seite sehen nur Vorsitz und Admin (require_admin).
+$bds = member_score_breakdowns(); ?>
 <div class="card">
   <table class="list">
-    <thead><tr><th>Mitglied</th><th>Rolle</th><th style="text-align:right">Punkte</th><th>Einordnung</th><?php if ($canEdit): ?><th style="text-align:right">Korrektur</th><?php endif; ?></tr></thead>
+    <thead><tr><th>Mitglied</th><th>Rolle</th><th style="text-align:right">Punkte</th><th>Einordnung</th><th>Aufschlüsselung</th><?php if ($canEdit): ?><th style="text-align:right">Korrektur</th><?php endif; ?></tr></thead>
     <tbody>
     <?php foreach ($members as $m): $sc = $scores[(int)$m['id']] ?? 0; $band = score_band_for((int)$m['id'], $scores);
         $pill = ['spitze' => 'pill-spitze', 'gut' => 'pill-ok', 'okay' => 'pill-info', 'ausbaufaehig' => 'pill-bad'][$band];
@@ -125,6 +128,22 @@ $canEdit = can_edit_score();
         <td class="muted small"><?= h($roleLabels[$m['role'] ?? 'member'] ?? 'Mitglied') ?></td>
         <td style="text-align:right;font-weight:700"><?= $sc ?><?php if ($adj): ?> <span class="muted small">(<?= $adj > 0 ? '+' . $adj : $adj ?>)</span><?php endif; ?></td>
         <td><span class="pill <?= $pill ?>"><?= h(score_band_label($band)) ?></span></td>
+        <td class="small">
+          <?php $bd = $bds[(int)$m['id']] ?? ['rows' => [], 'start' => 0, 'adjust' => 0];
+                $nPosten = count($bd['rows']) + ($bd['start'] ? 1 : 0) + ($bd['adjust'] ? 1 : 0); ?>
+          <?php if (!$nPosten): ?><span class="muted">—</span><?php else: ?>
+            <details class="score-aufschl"><summary><?= count($bd['rows']) ?> Event<?= count($bd['rows']) === 1 ? '' : 's' ?><?= ($bd['start'] || $bd['adjust']) ? ' + Zuschläge' : '' ?></summary>
+              <ul>
+                <?php foreach ($bd['rows'] as $r): ?>
+                  <li><span class="sa-pkt <?= $r['points'] > 0 ? 'plus' : ($r['points'] < 0 ? 'minus' : '') ?>"><?= $r['points'] > 0 ? '+' . $r['points'] : (int)$r['points'] ?></span>
+                    <span><a href="../event.php?id=<?= (int)$r['id'] ?>"><?= h($r['title']) ?></a> <span class="muted">· Frist <?= fmt_date($r['date']) ?></span><br><span class="muted"><?= h($r['reason']) ?></span></span></li>
+                <?php endforeach; ?>
+                <?php if ($bd['start']): ?><li><span class="sa-pkt plus">+<?= (int)$bd['start'] ?></span> <span>Startpunkte bei Beitritt <span class="muted">· Gruppenschnitt zu dem Zeitpunkt</span></span></li><?php endif; ?>
+                <?php if ($bd['adjust']): ?><li><span class="sa-pkt <?= $bd['adjust'] > 0 ? 'plus' : 'minus' ?>"><?= $bd['adjust'] > 0 ? '+' . $bd['adjust'] : $bd['adjust'] ?></span> <span>Manuelle Korrektur (Vorsitz)</span></li><?php endif; ?>
+              </ul>
+            </details>
+          <?php endif; ?>
+        </td>
         <?php if ($canEdit): ?>
           <td style="text-align:right">
             <div class="btn-row" style="justify-content:flex-end;gap:.3rem">

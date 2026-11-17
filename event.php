@@ -124,9 +124,10 @@ foreach (members_all(true) as $m) $mname[(int)$m['id']] = $m['name'];
 $maxShifts = (int)($event['max_shifts_per_member'] ?? 0);
 $planLocked = !empty($event['plan_locked']);
 $hasAssignments = (bool)array_filter($assign);
-// Schichten, für die das eingeloggte Mitglied eingeteilt ist
+// Schichten, für die das eingeloggte Mitglied eingeteilt ist – nur aus dem VERÖFFENTLICHTEN Plan,
+// wie Dashboard, Kalender-Abo und Eventscore. Ein Plan in Bearbeitung zählt dort nicht.
 $myAssignedSlots = [];
-if ($me) {
+if ($me && $planLocked) {
     foreach ($slots as $s) {
         if (isset($assign[(int)$s['id']][(int)$me['id']])) $myAssignedSlots[] = $s;
     }
@@ -339,6 +340,12 @@ if ($me && $planLocked && !$canManage):
 
 <?php if (event_locked($event)): ?>
   <div class="flash flash-info">Die Abstimmung ist beendet. Du kannst die Ergebnisse ansehen, aber nichts mehr ändern.</div>
+<?php endif; ?>
+<?php if (!$planLocked && $hasAssignments && $canManage): ?>
+  <div class="flash flash-info"><i class="ti ti-clipboard-off"></i> Der Arbeitsplan ist nicht veröffentlicht. Erst danach sehen die Eingeteilten ihre Schichten, und erst dann zählen sie im Eventscore.
+    <a href="admin/events.php?edit=<?= $id ?>&amp;t=plan#plan">Arbeitsplan veröffentlichen</a></div>
+<?php elseif (!$planLocked && $hasAssignments): ?>
+  <div class="flash flash-info"><i class="ti ti-clipboard-off"></i> Der Arbeitsplan wird gerade bearbeitet. Wer eingeteilt ist, siehst du, sobald die Orga ihn veröffentlicht.</div>
 <?php endif; ?>
 <?php if ($myAssignedSlots): ?>
   <div class="flash flash-success"><i class="ti ti-calendar-check"></i> Du bist eingeteilt:

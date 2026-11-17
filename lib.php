@@ -11474,6 +11474,20 @@ function slot_interval(array $slot): array
 }
 
 /** Eventscore-Punkte für eine eingeteilte Schicht: +1, lange Schicht (>2 h) +2. Zentral, damit Auto-Einteilung und Score-Berechnung nie auseinanderlaufen. */
+/** Kurzform einer Schicht für Score-Begründungen, reiner Text: „Sa 21.11. 10:00–11:00“. */
+function score_slot_label(array $slot): string
+{
+    $s = dt((string)($slot['starts_at'] ?? ''));
+    if (!$s) return 'Schicht';
+    $out = WD[(int)$s->format('N') - 1] . ' ' . $s->format('d.m.');
+    if ($s->format('H:i') !== '00:00') {
+        $out .= ' ' . $s->format('H:i');
+        $e = dt((string)($slot['ends_at'] ?? ''));
+        if ($e && !is_open_end((string)$slot['ends_at'])) $out .= '–' . $e->format('H:i');
+    }
+    return $out;
+}
+
 function slot_points(array $slot): int
 {
     $iv = slot_interval($slot);
@@ -12707,14 +12721,14 @@ function scored_events(string $orderBy = ''): array
  *  - gar nicht abgestimmt: −2 (0, wenn die Frist in einer Wartung lag – da ging Abstimmen nicht –
  *    oder das Event ohne diesen Abzug angelegt ist: events.vote_penalty = 0)
  *  - verfügbar-aber-nicht-eingeteilt / überall „nein": 0
- * Gibt null zurück, wenn das Event für dieses Mitglied nicht zählt (Frist lag vor dem Beitritt).
+ * Frist vor dem Beitritt: Die Schutzregel verhindert nur Abzüge. Eingeteilte Schichten und Orga-Punkte
+ * zählen trotzdem (gearbeitet ist gearbeitet); sonst gibt die Funktion null zurück, das Event zählt dann nicht.
  * $resp/$assign sind die vorab geladenen event_responses()/event_assignments() des Events.
  * @return array{points:int,reason:string,shifts:int}|null
  */
 function score_event_for_member(array $event, array $slots, array $resp, array $assign, int $memberId, string $joinedAt = '', array $ownerIds = []): ?array
 {
-    // Events vor dem Beitritt zählen nicht – neue Mitglieder starten bei 0 (kein Malus).
-    if ($joinedAt !== '' && substr((string)$event['deadline'], 0, 10) < $joinedAt) return null;
+    $vorBeitritt = $joinedAt !== '' && substr((string)$event['deadline'], 0, 10) < $joinedAt;
 
     $cap = event_score_cap($event);
 
@@ -12726,15 +12740,20 @@ function score_event_for_member(array $event, array $slots, array $resp, array $
         return ['points' => $orgaPts, 'shifts' => 0, 'reason' => 'Event-Orga (automatisch +' . $orgaPts . ')'];
     }
 
-    $responded = false; $avail = false; $pts = 0; $shifts = 0;
+    $responded = false; $avail = false; $pts = 0; $shifts = 0; $posten = [];
     foreach ($slots as $s) {
         $sid = (int)$s['id'];
         $r = $resp[$sid][$memberId] ?? null;
         if ($r) { $responded = true; if ($r['status'] === 'yes' || $r['status'] === 'maybe') $avail = true; }
-        if (in_array($memberId, $assign[$sid] ?? [], true)) { $pts += slot_points($s); $shifts++; }
+        if (in_array($memberId, $assign[$sid] ?? [], true)) {
+            $p = slot_points($s); $pts += $p; $shifts++;
+            $posten[] = score_slot_label($s) . ' +' . $p . ($p > 1 ? ' (über 2 Std.)' : '');
+        }
     }
+    // Jede Schicht mit ihren Punkten, damit Vorsitz/Admin und das Mitglied selbst nachrechnen können
     if ($pts > 0)    return ['points' => min($pts, $cap), 'shifts' => $shifts,
-                             'reason' => 'eingeteilt (' . $shifts . ' Schicht' . ($shifts > 1 ? 'en' : '') . ')' . ($pts > $cap ? ', gedeckelt auf ' . $cap : '')];
+                             'reason' => 'eingeteilt: ' . implode(' · ', $posten) . ($pts > $cap ? ' – gedeckelt auf ' . $cap . ' pro Event' : '')];
+    if ($vorBeitritt) return null; // ohne Einteilung zählt ein Event vor dem Beitritt nicht – also auch kein Abzug
     if (!$responded) {
         if (isset($event['vote_penalty']) && !(int)$event['vote_penalty']) return ['points' => 0, 'shifts' => 0, 'reason' => 'nicht abgestimmt – bei diesem Event ohne Abzug'];
         return wartung_im_zeitraum(substr((string)$event['deadline'], 0, 10))
@@ -13123,25 +13142,42 @@ function basis_scores(): array
  */
 function member_score_breakdown(int $memberId): array
 {
-    $joinedAt = (string)(db()->query('SELECT joined_at FROM members WHERE id = ' . (int)$memberId)->fetchColumn() ?: '');
+    return member_score_breakdowns([$memberId])[$memberId];
+}
 
-    $rows = [];
-    $total = 0;
+/**
+ * Eventscore-Aufschlüsselung für mehrere Mitglieder in EINEM Durchgang über die Events
+ * (die Score-Übersicht braucht sie für alle – je Mitglied neu laden hieße Events × Mitglieder Abfragen).
+ * Ohne $memberIds: alle aktiven Mitglieder. Unbekannte IDs liefern eine leere Aufschlüsselung.
+ * @return array<int,array{rows:array,adjust:int,start:int,total:int}>
+ */
+function member_score_breakdowns(?array $memberIds = null): array
+{
+    $mitglieder = [];
+    if ($memberIds === null) {
+        foreach (members_all() as $m) $mitglieder[(int)$m['id']] = $m;
+    } else {
+        foreach ($memberIds as $id) $mitglieder[(int)$id] = member_get((int)$id) ?? [];
+    }
+    $out = [];
+    foreach ($mitglieder as $mid => $m) $out[$mid] = ['rows' => [], 'adjust' => (int)($m['score_adjust'] ?? 0), 'start' => (int)($m['score_start'] ?? 0), 'total' => 0];
+
     foreach (scored_events('deadline DESC') as $e) {
         $eid = (int)$e['id'];
         $slots = event_slots($eid);
         if (!$slots) continue;
         $resp = event_responses($eid);
         $assign = !empty($e['plan_locked']) ? event_assignments($eid) : []; // Entwürfe (unveröffentlicht) geben noch keine Schicht-Punkte
-        $r = score_event_for_member($e, $slots, $resp, $assign, $memberId, $joinedAt, event_owner_ids($eid));
-        if (!$r) continue; // Event zählt für dieses Mitglied nicht (vor dem Beitritt)
-        $rows[] = ['id' => $eid, 'title' => (string)$e['title'], 'date' => (string)$e['deadline'], 'reason' => $r['reason'], 'points' => $r['points']];
-        $total += $r['points'];
+        $owners = event_owner_ids($eid);
+        foreach ($mitglieder as $mid => $m) {
+            $r = score_event_for_member($e, $slots, $resp, $assign, $mid, (string)($m['joined_at'] ?? ''), $owners);
+            if (!$r) continue; // Event zählt für dieses Mitglied nicht (vor dem Beitritt)
+            $out[$mid]['rows'][] = ['id' => $eid, 'title' => (string)$e['title'], 'date' => (string)$e['deadline'], 'reason' => $r['reason'], 'points' => $r['points']];
+            $out[$mid]['total'] += $r['points'];
+        }
     }
-    $mRow   = member_get($memberId) ?? [];
-    $adjust = (int)($mRow['score_adjust'] ?? 0);
-    $start  = (int)($mRow['score_start'] ?? 0); // Startpunkte (Gruppenschnitt beim Beitritt)
-    return ['rows' => $rows, 'adjust' => $adjust, 'start' => $start, 'total' => $total + $adjust + $start];
+    foreach ($out as $mid => $b) $out[$mid]['total'] += $b['adjust'] + $b['start']; // Startpunkte = Gruppenschnitt beim Beitritt
+    return $out;
 }
 
 // ---------------------------------------------------------------------------
@@ -16775,6 +16811,30 @@ function raum_serie_auslassen(int $id, string $tag): void
     db()->prepare('INSERT OR IGNORE INTO room_series_skips(series_id, day) VALUES(?, ?)')->execute([$id, $tag]);
 }
 
+/**
+ * Hinweise zur Raumnutzung, je Zeile ein Punkt (ein vorangestelltes „-" oder „•" fällt weg).
+ * Gepflegt unter „Räume & feste Zeiten", gelten für App und StuPa. Leer = keine Box und keine
+ * Bestätigung beim Buchen.
+ */
+function raum_hinweise(): array
+{
+    $out = [];
+    foreach (preg_split('/\R/u', (string)setting_get('raum_hinweise', '')) ?: [] as $z) {
+        $z = trim((string)preg_replace('/^\s*[-–•*]\s*/u', '', (string)$z));
+        if ($z !== '') $out[] = $z;
+    }
+    return $out;
+}
+
+/** Rückgabe: Fehlermeldung oder ''. */
+function raum_hinweise_speichern(string $text): string
+{
+    $text = trim(str_replace(["\r\n", "\r"], "\n", $text));
+    if (mb_strlen($text) > 3000) return 'Die Hinweise dürfen höchstens 3.000 Zeichen lang sein.';
+    setting_set('raum_hinweise', $text);
+    return '';
+}
+
 /** Montag der Woche, die nach einem Formular gezeigt werden soll: die des gebuchten Tags, sonst die zuletzt angesehene. */
 function raum_woche_nach_post(): string
 {
@@ -16804,6 +16864,11 @@ function raum_post_verarbeiten(string $seite, int $vonId, bool $verwalter): ?arr
     switch ($a) {
         case 'raum_buchen':
             $fest = $verwalter && !empty($_POST['fest']);
+            // Die Bestätigung holt der Dialog beim Buchen ein; hier wird sie erzwungen.
+            // Feste Belegungen trägt die Verwaltung für niemanden Bestimmtes ein – ohne Bestätigung.
+            if (!$fest && raum_hinweise() && empty($_POST['hinweise_ok'])) {
+                return ['Gebucht ist erst, wenn du die Hinweise zur Raumnutzung bestätigst.', 'error'];
+            }
             $tag = $p('tag');
             $e = raum_buchen((int)$p('room_id'), raum_zeitpunkt($tag, $p('von')), raum_zeitpunkt($tag, $p('bis')), $p('titel'), $seite, $vonId, $fest);
             return $e === '' ? [($fest ? 'Feste Belegung eingetragen.' : 'Gebucht.'), 'success'] : [$e, 'error'];
@@ -16822,6 +16887,9 @@ function raum_post_verarbeiten(string $seite, int $vonId, bool $verwalter): ?arr
         case 'serie_anlegen':
             $e = raum_serie_anlegen((int)$p('room_id'), (int)$p('weekday'), $p('von'), $p('bis'), $p('tag_von'), $p('tag_bis'), $p('titel'), $vonId);
             return $e === '' ? ['Feste Zeit eingetragen.', 'success'] : [$e, 'error'];
+        case 'hinweise_speichern':
+            $e = raum_hinweise_speichern((string)($_POST['hinweise'] ?? ''));
+            return $e === '' ? ['Hinweise zur Raumnutzung gespeichert.', 'success'] : [$e, 'error'];
         case 'serie_loeschen':
             raum_serie_loeschen((int)$p('id'));
             return ['Feste Zeit gelöscht – alle ihre Termine sind wieder frei.', 'success'];
@@ -16904,9 +16972,20 @@ function raum_wochenansicht(array $o): string
     }
     $h .= '</div>';
 
-    // Buchen
-    $h .= '<div class="section-title" id="buchen"><i class="ti ti-calendar-plus"></i> Raum buchen</div>'
-        . '<div class="card"><form method="post" class="raum-formular">' . csrf_field() . '<input type="hidden" name="action" value="raum_buchen">'
+    // Buchen – mit Hinweisen: als Box über dem Formular und noch einmal im Dialog zum Bestätigen
+    $hinweise = raum_hinweise();
+    $h .= '<div class="section-title" id="buchen"><i class="ti ti-calendar-plus"></i> Raum buchen</div><div class="card">';
+    if ($hinweise) {
+        $h .= '<div class="raum-hinweise" role="note"><strong class="raum-hinweise-titel"><i class="ti ti-alert-triangle"></i> Hinweise zur Raumnutzung</strong><ul>';
+        foreach ($hinweise as $z) $h .= '<li>' . h($z) . '</li>';
+        $h .= '</ul></div>';
+    }
+    $h .= '<form method="post" class="raum-formular"'
+        . ($hinweise ? ' data-confirm="Gebucht ist der Raum, sobald du die Hinweise bestätigst." data-confirm-title="Hinweise zur Raumnutzung"'
+            . ' data-confirm-icon="ti-alert-triangle" data-confirm-points="' . h((string)json_encode($hinweise, JSON_UNESCAPED_UNICODE)) . '"'
+            . ' data-confirm-check="Gelesen – ich halte mich daran." data-confirm-check-name="hinweise_ok" data-confirm-check-required'
+            . ' data-confirm-ok="Verbindlich buchen"' : '')
+        . '>' . csrf_field() . '<input type="hidden" name="action" value="raum_buchen">'
         . '<label>Raum<select name="room_id" required>';
     foreach ($raeume as $r) $h .= '<option value="' . (int)$r['id'] . '">' . h((string)$r['name']) . '</option>';
     $h .= '</select></label>'

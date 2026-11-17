@@ -34,9 +34,6 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 require_once __DIR__ . '/../lib.php';
 db();
 
-/** Cache-Buster für die Stylesheets (dieselbe Idee wie in der App). */
-const STUPA_ASSET_V = '1';
-
 /** Angemeldeter StuPa-Zugang (oder null). */
 function stupa_current(): ?array
 {
@@ -61,7 +58,7 @@ function stupa_require_login(): array
 /** Kopf der StuPa-Seiten: schlank, ohne App-Navigation. */
 function stupa_header(string $title, ?array $user = null): void
 {
-    $asset = fn(string $p) => '../' . $p . '?v=' . STUPA_ASSET_V;
+    $asset = fn(string $p) => '../' . asset_v($p);   // Dateizeit als Version – wie in der App
     ?><!doctype html>
 <html lang="de" data-theme="light">
 <head>
@@ -112,7 +109,7 @@ function stupa_footer(): void
 <?php if ($neuZeigen) echo app_neuigkeiten_html('', stupa_neuigkeiten(), 'stupa'); ?>
 <script>window.ASTA_CSRF=<?= json_encode(csrf_token()) ?>;<?php if ($neuZeigen): ?>window.ASTA_NEWS=<?= json_encode($neuOffen) ?>;window.ASTA_NEWS_URL='neu.php';<?php endif; ?></script>
 <footer class="foot"><span class="muted small"><?= h(org_name_kurz()) ?> · Bereich des StuPa-Präsidiums</span></footer>
-<script src="../assets/app.js?v=<?= STUPA_ASSET_V ?>"></script>
+<script src="../<?= h(asset_v('assets/app.js')) ?>"></script>
 </body>
 </html>
 <?php

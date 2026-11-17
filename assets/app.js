@@ -22,6 +22,8 @@
   // Öffnet ein Modal. opts = {title, message, icon, buttons:[{label, class, onClick}],
   //                           list:[{label, sub, href, icon}],   – vertikale Auswahl-Liste (z. B. Sitzungen)
   //                           input:{label, placeholder}}        – Textfeld; Wert kommt als Argument in onClick
+  //                           points:['…']                       – Aufzählung unter der Nachricht (z. B. Hinweise)
+  //                           check:{label, checked}             – Häkchen; Knopf mit requireCheck erst danach klickbar
   function astaConfirm(opts) {
     var o = ensure();
     var t = o.querySelector('.modal-title');
@@ -59,6 +61,14 @@
       cw.appendChild(document.createTextNode(' ' + (opts.check.label || '')));
       o.querySelector('.modal-msg').after(cw);
     }
+    var oldPts = o.querySelector('.modal-points');
+    if (oldPts) oldPts.remove();
+    if (opts.points && opts.points.length) {
+      var ul = document.createElement('ul');
+      ul.className = 'modal-points';
+      opts.points.forEach(function (p) { var li = document.createElement('li'); li.textContent = p; ul.appendChild(li); });
+      o.querySelector('.modal-msg').after(ul);
+    }
     if (opts.list && opts.list.length) {
       var wrap = document.createElement('div');
       wrap.className = 'modal-list';
@@ -84,7 +94,12 @@
       btn.type = 'button';
       btn.className = 'btn ' + (b.class || 'secondary');
       btn.textContent = b.label;
+      if (b.requireCheck && checkEl) {
+        btn.disabled = !checkEl.checked;
+        checkEl.addEventListener('change', function () { btn.disabled = !checkEl.checked; });
+      }
       btn.addEventListener('click', function () {
+        if (b.requireCheck && checkEl && !checkEl.checked) return;
         var v = inputEl ? inputEl.value : undefined;
         if (b.requireInput && inputEl && inputEl.value.trim() === '') { // Pflichtfeld: leer -> Modal bleibt offen
           inputEl.classList.add('input-missing');
@@ -346,17 +361,24 @@
     var danger = f.hasAttribute('data-confirm-danger');
     // Optionale Checkbox im Dialog: data-confirm-check="Label" (+ data-confirm-check-name,
     // Standard "confirm_check") -> angehakt wird ein Hidden-Feld mit Wert 1 mitgeschickt
+    // data-confirm-check-required: Bestätigen geht erst mit Häkchen (z. B. Hinweise zur Raumnutzung).
+    // data-confirm-points='["…","…"]': Aufzählung unter der Nachricht.
     var checkLabel = f.getAttribute('data-confirm-check');
+    var mussHaken = !!checkLabel && f.hasAttribute('data-confirm-check-required');
+    var punkte = null;
+    try { punkte = JSON.parse(f.getAttribute('data-confirm-points') || 'null'); } catch (err) { punkte = null; }
     astaConfirm({
       title: f.getAttribute('data-confirm-title') || 'Bist du sicher?',
-      icon: danger ? 'ti-alert-triangle' : 'ti-help-circle',
+      icon: f.getAttribute('data-confirm-icon') || (danger ? 'ti-alert-triangle' : 'ti-help-circle'),
       message: msg,
+      points: Array.isArray(punkte) ? punkte : undefined,
       check: checkLabel ? { label: checkLabel } : undefined,
       buttons: [
         { label: f.getAttribute('data-confirm-cancel') || 'Abbrechen', class: 'secondary' },
         {
           label: f.getAttribute('data-confirm-ok') || 'Bestätigen',
           class: danger ? 'danger' : '',
+          requireCheck: mussHaken,
           onClick: function (v, checked) { // f.submit() löst kein submit-Event aus -> keine Schleife
             if (checkLabel && checked) {
               var h = document.createElement('input');
@@ -1527,7 +1549,7 @@
     // ---- Kapitel 2: Sitzungen ----
     { c: 1, page: 'events', sel: '#externe, .section-title', flag: 'extern', title: 'Externe Events \uD83C\uDF9F\uFE0F', html: 'Unter <strong>Externe Events</strong> legt ihr <strong>öffentliche Anmeldungen</strong> an – Kneipentour, Fahrten, Workshops. Formular selbst zusammenstellen, Warteliste, und am Ende teilt die App die Leute in <strong>Gruppen</strong> ein: Freundeskreise bleiben zusammen, die Größen gleichen sich aus.' },
     { c: 1, to: 'raeume', title: 'Räume buchen 🚪', html: 'Gleich daneben: die <strong>Raumbelegung</strong>. Dort siehst du, wann welcher Raum frei ist.' },
-    { c: 1, page: 'raeume', sel: '.raum-raster, .section-title', title: 'Frei? Dann buchen', html: 'Je Raum eine Karte mit der ganzen Woche. Darunter buchst du: Raum, Tag, Uhrzeit, Anlass – <strong>wer zuerst bucht, hat den Raum</strong>. Die Bestätigung kommt per Mail, und das StuPa bucht über seinen eigenen Zugang mit.' },
+    { c: 1, page: 'raeume', sel: '.raum-raster, .section-title', title: 'Frei? Dann buchen', html: 'Je Raum eine Karte mit der ganzen Woche. Darunter buchst du: Raum, Tag, Uhrzeit, Anlass – <strong>wer zuerst bucht, hat den Raum</strong>. Hinweise zur Raumnutzung bestätigst du beim Buchen. Die Bestätigung kommt per Mail, und das StuPa bucht über seinen eigenen Zugang mit.' },
     { c: 2, to: 'sitzungen', title: 'Weiter zu den Sitzungen', html: 'Schauen wir uns die <strong>Sitzungen</strong> an.' },
     { c: 2, page: 'sitzungen', sel: 'h1, .section-title', title: 'Sitzungen & Berichte', html: 'Hier findest du die <strong>Tagesordnung</strong>, kannst eigene <strong>TOPs einreichen</strong>, die Protokolle lesen und dich bei Verhinderung <strong>abmelden</strong> (das steht dann sauber im Protokoll).' },
     { c: 2, page: 'sitzungen', flag: 'referat', sel: 'h1, .section-title', title: 'Dein Referats-Bericht', html: 'Weil du ein <strong>Referat</strong> hast: Vor berichtspflichtigen Sitzungen gibst du hier deinen kurzen <strong>Bericht</strong> ab. Vergisst du ihn, gibt es einen Minuspunkt im Basis-Score – also lieber dranbleiben.' },

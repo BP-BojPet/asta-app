@@ -83,6 +83,14 @@ page_header('Raumbelegung');
       </form>
       <p class="small muted" style="margin:.5rem 0 0">Einzelne Termine einer festen Zeit lässt du oben in der Wochenansicht über <i class="ti ti-calendar-off"></i> ausfallen. Einmalige feste Termine trägst du unter „Raum buchen" mit dem Häkchen „als feste Belegung" ein.</p>
     <?php endif; ?>
+
+    <h3 class="raum-h3" id="hinweise">Hinweise zur Raumnutzung</h3>
+    <form method="post" class="raum-hinweise-form">
+      <?= csrf_field() ?><input type="hidden" name="action" value="hinweise_speichern">
+      <label for="raum-hinweise-text" class="small muted">Stehen über dem Buchungsformular – hier und beim StuPa. Wer bucht, bestätigt sie vorher. Je Zeile ein Punkt; leer lassen = keine Hinweise.</label>
+      <textarea id="raum-hinweise-text" name="hinweise" rows="5" maxlength="3000" placeholder="z. B. Nach der Nutzung aufräumen und das Fenster schließen."><?= h((string)setting_get('raum_hinweise', '')) ?></textarea>
+      <button class="btn secondary small" type="submit"><i class="ti ti-device-floppy"></i> Hinweise speichern</button>
+    </form>
   </div>
   </details>
 <?php endif; ?>
